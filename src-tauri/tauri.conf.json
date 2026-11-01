@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Oceanic",
+  "version": "0.1.0",
+  "identifier": "com.oceanic.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/MystiTheDev/oceanic/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxODU1NjYyRDAzRTE2OUMKUldTY0ZqN1FZbGFGWWRpbDRCZFpOZWhrMHkzSVAxcUVmbTQ3RSs3YkhZVzNvMWMvUEdaMHVxdHoK"
+    }
+  },
+
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Oceanic",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 640,
+        "minHeight": 420,
+        "decorations": false,
+        "dragDropEnabled": false,
+        "center": true,
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      },
+      {
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required",
+        "label": "splash",
+        "title": "Oceanic",
+        "width": 520,
+        "height": 320,
+        "resizable": false,
+        "decorations": false,
+        "center": true,
+        "url": "splash.html",
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": false,
+        "backgroundColor": "#00000000"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/assets/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/installer-icon.ico"
+      }
+    }
+  }
+}

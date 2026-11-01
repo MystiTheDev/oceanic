@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Oceanic</title>
+    <style>
+      /* The window is transparent; the card inside it carries the shape and shadow. */
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+      body {
+        display: grid;
+        place-items: center;
+        font-family: Inter, "Segoe UI", system-ui, sans-serif;
+        user-select: none;
+        cursor: default;
+        transition: opacity 450ms ease;
+      }
+      html.splash-exit body { opacity: 0; }
+
+      .card {
+        position: relative;
+        width: 480px;
+        height: 280px;
+        border-radius: 16px;
+        overflow: hidden;
+        background: #020a18;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(120, 180, 255, 0.08);
+      }
+
+      /* ------------------------------------------------------------ the world
+         A tall scene (sky on top, surface, then deep water). The camera
+         "rises" by sliding it down until the surface sits at 58% of the card. */
+      .world {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 900px;
+        transform: translateY(-620px); /* start deep underwater */
+        animation: oc-ascend 4.2s 0.3s cubic-bezier(0.45, 0, 0.2, 1) forwards;
+      }
+      @keyframes oc-ascend {
+        to { transform: translateY(0); }
+      }
+      /* Surface line sits at y=162 of the world (58% of the 280px card at the end). */
+      .sky {
+        position: absolute;
+        inset: 0 0 auto;
+        height: 162px;
+        background: linear-gradient(#030817, #0a1a3a 70%, #133062);
+      }
+      .star {
+        position: absolute;
+        width: 2px;
+        height: 2px;
+        border-radius: 99px;
+        background: #cfe6ff;
+        animation: oc-twinkle var(--t) var(--dl) ease-in-out infinite;
+      }
+      @keyframes oc-twinkle {
+        0%, 100% { opacity: 0.15; }
+        50% { opacity: 0.9; }
+      }
+      .water {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 162px;
+        bottom: 0;
+        background:
+          radial-gradient(60% 40px at 50% 0%, rgba(120, 190, 255, 0.25), transparent),
+          linear-gradient(#155a9e 0%, #0f4c8a 6%, #0b3466 20%, #072248 45%, #031027 75%, #01060f);
+      }
+      /* Light shafts falling through the water from the surface. */
+      .rays {
+        position: absolute;
+        left: -30%;
+        right: -30%;
+        top: 162px;
+        height: 620px;
+        background: repeating-linear-gradient(
+          102deg,
+          transparent 0 40px,
+          rgba(150, 210, 255, 0.07) 52px 78px,
+          transparent 92px 140px
+        );
+        mask-image: linear-gradient(black, transparent 90%);
+        animation: oc-sway 8s ease-in-out infinite alternate;
+      }
+      @keyframes oc-sway {
+        from { transform: skewX(-4deg) translateX(-14px); }
+        to { transform: skewX(4deg) translateX(14px); }
+      }
+      #bubbles { position: absolute; left: 0; right: 0; top: 170px; bottom: 0; overflow: hidden; }
+      .pop {
+        position: absolute;
+        top: 162px;
+        width: 14px;
+        height: 4px;
+        margin: -2px 0 0 -7px;
+        border-radius: 50%;
+        border: 1px solid rgba(200, 235, 255, 0.8);
+        animation: oc-pop 700ms ease-out forwards;
+      }
+      @keyframes oc-pop {
+        from { transform: scale(0.3); opacity: 1; }
+        to { transform: scale(2.2); opacity: 0; }
+      }
+      .bubble {
+        position: absolute;
+        border-radius: 99px;
+        border: 1px solid rgba(170, 220, 255, 0.5);
+        background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.55), rgba(90, 162, 233, 0.08) 60%);
+      }
+      @keyframes oc-bubble {
+        0% { transform: translate(0, 0); opacity: 0; }
+        10% { opacity: 0.85; }
+        50% { transform: translate(var(--x), -220px); }
+        100% { transform: translate(calc(var(--x) * -1), -440px); opacity: 0; }
+      }
+
+      /* ------------------------------------------------------------ the surface */
+      .waves {
+        position: absolute;
+        left: 0;
+        top: 146px;
+        width: 960px;
+        height: 32px;
+        animation: oc-roll 7s linear infinite;
+      }
+      .waves.back { opacity: 0.45; animation-duration: 11s; animation-direction: reverse; top: 143px; }
+      @keyframes oc-roll {
+        to { transform: translateX(-480px); }
+      }
+
+      /* Moonlight glitter: a shimmering streak on the water below the shell. */
+      .glitter {
+        position: absolute;
+        left: 50%;
+        top: 176px;
+        width: 150px;
+        height: 110px;
+        margin-left: -75px;
+        background: repeating-linear-gradient(
+          transparent 0 3px,
+          rgba(190, 230, 255, 0.55) 3px 4px,
+          transparent 4px 7px
+        );
+        mask-image: radial-gradient(50% 100% at 50% 0%, black, transparent 85%);
+        opacity: 0;
+        animation: oc-glitter 1.6s steps(4) infinite;
+      }
+      .go .glitter { transition: opacity 1.2s 0.6s ease; opacity: 0.55; }
+      @keyframes oc-glitter {
+        0% { background-position: 0 0; }
+        100% { background-position: 0 7px; }
+      }
+      /* The shell's reflection, faint and wobbling under the surface. */
+      .reflect {
+        position: absolute;
+        left: 50%;
+        top: 176px;
+        width: 84px;
+        margin-top: 67px; /* flipped about its top edge (scaleY -0.8): shift down so it hangs below the surface */
+        height: 84px;
+        margin-left: -42px;
+        transform: scaleY(-0.8);
+        transform-origin: center top;
+        opacity: 0;
+        filter: blur(1.5px);
+        mask-image: linear-gradient(to top, black, transparent 80%);
+      }
+      .go .reflect {
+        transition: opacity 1s 1.2s ease;
+        opacity: 0.22;
+        animation: oc-ref-wobble 2.6s 1.2s ease-in-out infinite;
+      }
+      @keyframes oc-ref-wobble {
+        0%, 100% { transform: scaleY(-0.8) skewX(0); }
+        50% { transform: scaleY(-0.76) skewX(3deg); }
+      }
+      .waves.mid { opacity: 0.7; animation-duration: 9s; top: 150px; }
+
+      /* ------------------------------------------------------------ the logo
+         Rises out of the water: its holder clips at the waterline. */
+      .rise {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        width: 120px;
+        height: 162px;
+        margin-left: -60px;
+        overflow: hidden;
+      }
+      #logo {
+        position: absolute;
+        left: 18px;
+        bottom: 8px;
+        width: 84px;
+        height: 84px;
+        transform: translateY(130px);
+        filter: drop-shadow(0 0 18px rgba(60, 160, 255, 0.55));
+      }
+      .go #logo {
+        animation:
+          oc-emerge 1.6s cubic-bezier(0.2, 0.8, 0.25, 1) forwards,
+          oc-bob 4.5s 1.6s ease-in-out infinite;
+      }
+      @keyframes oc-emerge {
+        0% { transform: translateY(130px); }
+        70% { transform: translateY(-8px); }
+        100% { transform: translateY(0); }
+      }
+      @keyframes oc-bob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+      }
+      /* Ripples spreading on the surface where the logo breaks through. */
+      .ripples {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 160px;
+        height: 60px;
+        overflow: hidden;
+      }
+      .ripple {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        width: 140px;
+        height: 14px;
+        margin: -7px 0 0 -70px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(170, 225, 255, 0.7);
+        opacity: 0;
+      }
+      .go .ripple { animation: oc-ripple 2.4s ease-out forwards; }
+      .go .ripple.r2 { animation-delay: 0.45s; }
+      .go .ripple.r3 { animation-delay: 0.9s; }
+      @keyframes oc-ripple {
+        0% { transform: scale(0.3); opacity: 0.9; }
+        100% { transform: scale(2.6); opacity: 0; }
+      }
+      /* Droplets flicked up as the shell breaks the surface. */
+      .drop {
+        position: absolute;
+        left: 50%;
+        top: 158px;
+        width: 4px;
+        height: 4px;
+        border-radius: 99px;
+        background: #bfe6ff;
+        opacity: 0;
+      }
+      .go .drop { animation: oc-drop 900ms var(--dl) cubic-bezier(0.2, 0.6, 0.4, 1) forwards; }
+      @keyframes oc-drop {
+        0% { opacity: 1; transform: translate(0, 0); }
+        60% { opacity: 1; transform: translate(var(--x), var(--y)); }
+        100% { opacity: 0; transform: translate(calc(var(--x) * 1.4), 6px); }
+      }
+
+      /* ------------------------------------------------------------ wordmark
+         Shimmering under the waterline, like a reflection. */
+      #word {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 176px;
+        text-align: center;
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        background: linear-gradient(90deg, #8fc9ff, #e8f4ff 40%, #5aa2e9 60%, #bfe6ff);
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        opacity: 0;
+        filter: blur(6px);
+      }
+      .go #word {
+        animation:
+          oc-word-in 1.4s 1.3s ease-out forwards,
+          oc-shimmer 3.5s 2.7s linear infinite,
+          oc-wobble 3s 2.7s ease-in-out infinite;
+      }
+      @keyframes oc-word-in {
+        to { opacity: 0.95; filter: blur(0.3px); }
+      }
+      @keyframes oc-shimmer {
+        to { background-position: -200% 0; }
+      }
+      @keyframes oc-wobble {
+        0%, 100% { transform: skewX(0) scaleY(1); }
+        50% { transform: skewX(-2deg) scaleY(0.96); }
+      }
+
+      /* ------------------------------------------------------------ status */
+      #status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 16px;
+        display: grid;
+        justify-items: center;
+        gap: 6px;
+        opacity: 0;
+        transition: opacity 500ms ease;
+      }
+      #status.on { opacity: 1; }
+      #statusText { font-size: 11px; letter-spacing: 0.3px; color: rgba(170, 205, 240, 0.75); transition: opacity 250ms; }
+      #bar { width: 140px; height: 2px; border-radius: 2px; background: rgba(120, 180, 255, 0.15); overflow: hidden; }
+      #bar i {
+        display: block;
+        height: 100%;
+        transform-origin: left;
+        transform: scaleX(0);
+        background: linear-gradient(90deg, #0b3d91, #5aa2e9, #bfe6ff);
+        box-shadow: 0 0 8px rgba(90, 162, 233, 0.8);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .world { animation: none; transform: none; }
+        *, *::before, *::after { animation: none !important; }
+        #logo { transform: none; }
+        #word { opacity: 0.95; filter: none; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="card" id="card">
+      <div class="world">
+        <div class="sky" id="sky"></div>
+        <div class="water"></div>
+        <div class="rays"></div>
+        <div id="bubbles"></div>
+        <div class="ripples"><div class="ripple"></div><div class="ripple r2"></div><div class="ripple r3"></div></div>
+        <div class="rise"><img id="logo" src="/logo-shell.png" alt="" /></div>
+        <svg class="waves back" viewBox="0 0 960 32" preserveAspectRatio="none">
+          <path d="M0 16 Q 60 8 120 16 T 240 16 T 360 16 T 480 16 T 600 16 T 720 16 T 840 16 T 960 16 V32 H0Z" fill="#1a5ca0" />
+        </svg>
+        <svg class="waves mid" viewBox="0 0 960 32" preserveAspectRatio="none">
+          <path d="M0 16 Q 30 12 60 16 T 120 16 T 180 16 T 240 16 T 300 16 T 360 16 T 420 16 T 480 16 T 540 16 T 600 16 T 660 16 T 720 16 T 780 16 T 840 16 T 900 16 T 960 16 V32 H0Z" fill="#134f8f" />
+        </svg>
+        <svg class="waves" viewBox="0 0 960 32" preserveAspectRatio="none">
+          <path d="M0 16 Q 40 10 80 16 T 160 16 T 240 16 T 320 16 T 400 16 T 480 16 T 560 16 T 640 16 T 720 16 T 800 16 T 880 16 T 960 16 V32 H0Z" fill="#0f4c8a" />
+          <path d="M0 16 Q 40 10 80 16 T 160 16 T 240 16 T 320 16 T 400 16 T 480 16 T 560 16 T 640 16 T 720 16 T 800 16 T 880 16 T 960 16" fill="none" stroke="rgba(190,230,255,0.7)" stroke-width="1.2" />
+        </svg>
+        <div class="glitter"></div>
+        <img class="reflect" src="/logo-shell.png" alt="" />
+        <div id="drops"></div>
+        <div id="word">Oceanic</div>
+      </div>
+      <div id="status"><span id="statusText">Loading your workspace…</span><div id="bar"><i></i></div></div>
+    </div>
+
+    <script>
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const card = document.getElementById("card");
+      const rand = (a, b) => a + Math.random() * (b - a);
+
+      // Stars in the sky, bubbles rising through the whole water column.
+      const sky = document.getElementById("sky");
+      for (let i = 0; i < 26; i++) {
+        const s = document.createElement("i");
+        s.className = "star";
+        s.style.cssText = `left:${rand(0, 100)}%;top:${rand(4, 120)}px;--t:${rand(2, 5)}s;--dl:${rand(0, 4)}s`;
+        sky.appendChild(s);
+      }
+      /* Bubbles rise through the water only; at the surface each pops with a
+         tiny ring and a new one starts from the depths. (Bubble y is in the
+         #bubbles box, which starts 8px under the surface at world y=170.) */
+      const bubbles = document.getElementById("bubbles");
+      const world = document.querySelector(".world");
+      const list = [];
+      const spawn = (b, anywhere) => {
+        b.x = rand(2, 98);
+        b.y = anywhere ? rand(40, 730) : rand(700, 740);
+        b.v = rand(28, 60);
+        b.size = rand(3, 9);
+        b.phase = rand(0, 6);
+        b.el.style.width = b.el.style.height = b.size + "px";
+      };
+      for (let i = 0; i < 26 && !reduced; i++) {
+        const el = document.createElement("i");
+        el.className = "bubble";
+        bubbles.appendChild(el);
+        const b = { el };
+        spawn(b, true);
+        list.push(b);
+      }
+      let lastT = performance.now();
+      function bubbleTick(now) {
+        const dt = Math.min(0.05, (now - lastT) / 1000);
+        lastT = now;
+        for (const b of list) {
+          b.y -= b.v * dt;
+          if (b.y <= -b.size) {
+            const ring = document.createElement("i");
+            ring.className = "pop";
+            ring.style.left = b.x + "%";
+            world.appendChild(ring);
+            setTimeout(() => ring.remove(), 750);
+            spawn(b, false);
+          }
+          b.el.style.transform = `translate(${Math.sin(now / 600 + b.phase) * 4}px, ${b.y}px)`;
+          b.el.style.left = b.x + "%";
+        }
+        requestAnimationFrame(bubbleTick);
+      }
+      if (!reduced) requestAnimationFrame(bubbleTick);
+      const drops = document.getElementById("drops");
+      for (let i = 0; i < 9; i++) {
+        const d = document.createElement("i");
+        d.className = "drop";
+        d.style.cssText = `--x:${rand(-46, 46)}px;--y:${rand(-34, -12)}px;--dl:${rand(0, 180)}ms`;
+        drops.appendChild(d);
+      }
+
+      /* ---------------- sound, synthesized (no files): muffled underwater
+         rumble that clears as we near the surface, bubble bloops, a splash. */
+      const sound = (() => {
+        try {
+          const ctx = new AudioContext();
+          ctx.resume();
+          const master = ctx.createGain();
+          master.gain.value = 0.9;
+          master.connect(ctx.destination);
+          const t0 = ctx.currentTime;
+          const noise = (secs, brown) => {
+            const buf = ctx.createBuffer(1, ctx.sampleRate * secs, ctx.sampleRate);
+            const d = buf.getChannelData(0);
+            let last = 0;
+            for (let i = 0; i < d.length; i++) {
+              const w = Math.random() * 2 - 1;
+              d[i] = brown ? (last = (last + 0.02 * w) / 1.02) * 3.5 : w;
+            }
+            return buf;
+          };
+          // Ambience: looping brown noise, low-passed; the filter opens during the ascent.
+          const amb = ctx.createBufferSource();
+          amb.buffer = noise(4, true);
+          amb.loop = true;
+          const ambLp = ctx.createBiquadFilter();
+          ambLp.type = "lowpass";
+          ambLp.frequency.setValueAtTime(260, t0);
+          ambLp.frequency.linearRampToValueAtTime(260, t0 + 0.3);
+          ambLp.frequency.exponentialRampToValueAtTime(1100, t0 + 4.5);
+          const ambGain = ctx.createGain();
+          ambGain.gain.setValueAtTime(0, t0);
+          ambGain.gain.linearRampToValueAtTime(0.35, t0 + 1);
+          ambGain.gain.linearRampToValueAtTime(0.12, t0 + 6);
+          amb.connect(ambLp).connect(ambGain).connect(master);
+          amb.start();
+          // A bubble: a short sine blip sweeping up in pitch.
+          const bubble = (at, vol = 0.12) => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            const f = 300 + Math.random() * 500;
+            o.frequency.setValueAtTime(f, at);
+            o.frequency.exponentialRampToValueAtTime(f * 2.2, at + 0.07);
+            g.gain.setValueAtTime(0, at);
+            g.gain.linearRampToValueAtTime(vol, at + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, at + 0.09);
+            o.connect(g).connect(master);
+            o.start(at);
+            o.stop(at + 0.1);
+          };
+          for (let t = 0.6; t < 4.2; t += 0.15 + Math.random() * 0.45) bubble(t0 + t, 0.05 + Math.random() * 0.08);
+          for (let t = 6; t < 16; t += 0.8 + Math.random() * 1.6) bubble(t0 + t, 0.03);
+          return {
+            // The shell surfacing: a deep water "plop", then droplets trickling back.
+            splash() {
+              const at = ctx.currentTime;
+              const tone = (start, f0, f1, dur, vol) => {
+                const o = ctx.createOscillator();
+                const g = ctx.createGain();
+                o.frequency.setValueAtTime(f0, start);
+                o.frequency.exponentialRampToValueAtTime(f1, start + dur * 0.6);
+                g.gain.setValueAtTime(0, start);
+                g.gain.linearRampToValueAtTime(vol, start + 0.008);
+                g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+                o.connect(g).connect(master);
+                o.start(start);
+                o.stop(start + dur + 0.02);
+              };
+              tone(at, 110, 360, 0.22, 0.35); // the plop
+              tone(at + 0.03, 60, 45, 0.25, 0.18); // its low body
+              let t = at + 0.25;
+              for (let i = 0; i < 7; i++) {
+                const f = 900 + Math.random() * 900;
+                tone(t, f, f * 1.8, 0.07, 0.09 * (1 - i / 9));
+                t += 0.08 + Math.random() * 0.22;
+              }
+            },
+            // "Ready": two soft bell notes, rising (E5 → B5).
+            chime() {
+              const at = ctx.currentTime;
+              [[659.25, 0], [987.77, 0.18]].forEach(([f, dt]) => {
+                [[1, 0.16], [2.76, 0.03], [5.4, 0.012]].forEach(([mult, vol]) => {
+                  const o = ctx.createOscillator();
+                  const g = ctx.createGain();
+                  o.frequency.value = f * mult;
+                  g.gain.setValueAtTime(0, at + dt);
+                  g.gain.linearRampToValueAtTime(vol, at + dt + 0.01);
+                  g.gain.exponentialRampToValueAtTime(0.0005, at + dt + 1.6 / mult);
+                  o.connect(g).connect(master);
+                  o.start(at + dt);
+                  o.stop(at + dt + 1.7);
+                });
+              });
+            },
+            fadeOut() {
+              master.gain.setTargetAtTime(0, ctx.currentTime + 0.3, 0.25);
+            },
+          };
+        } catch {
+          return { splash() {}, chime() {}, fadeOut() {} };
+        }
+      })();
+
+      // After the ascent reaches the surface, the shell breaks through.
+      setTimeout(() => {
+        card.classList.add("go");
+        if (!reduced) sound.splash();
+      }, reduced ? 0 : 4300);
+
+      /* ---------------- status bar: appears once the scene has settled and
+         fills over the remaining wait, finishing when the splash leaves. */
+      const MIN_EXIT = reduced ? 150 : 17000;
+      const statusEl = document.getElementById("status");
+      const statusText = document.getElementById("statusText");
+      const barFill = document.querySelector("#bar i");
+      let appReady = false;
+      const left = () => Math.max(400, MIN_EXIT - performance.now());
+      const run = (to, ms) => {
+        barFill.style.transition = `transform ${ms}ms linear`;
+        barFill.style.transform = `scaleX(${to})`;
+      };
+      setTimeout(() => {
+        statusEl.classList.add("on");
+        run(appReady ? 1 : 0.85, left());
+      }, reduced ? 0 : 7200);
+
+      /* ---------------- exit: "Ready", hold 0.8s, then fade out and reveal the app */
+      let exited = false;
+      function beginExit() {
+        if (exited) return;
+        exited = true;
+        statusEl.classList.add("on");
+        statusText.style.opacity = "0";
+        setTimeout(() => {
+          statusText.textContent = "Ready";
+          statusText.style.opacity = "1";
+          sound.chime();
+        }, 250);
+        run(1, 300);
+        const hold = reduced ? 0 : 800;
+        setTimeout(() => {
+          document.documentElement.classList.add("splash-exit");
+          sound.fadeOut();
+          try {
+            window.__TAURI__.core.invoke("reveal_main");
+          } catch {}
+        }, hold);
+        setTimeout(() => {
+          try {
+            window.__TAURI__.core.invoke("close_splash");
+          } catch {}
+        }, hold + 600);
+      }
+
+      let finishTimer = null;
+      function requestFinish() {
+        appReady = true;
+        if (statusEl.classList.contains("on")) run(1, left());
+        if (!finishTimer) finishTimer = setTimeout(beginExit, Math.max(0, MIN_EXIT - performance.now()));
+      }
+      // The app's finish signal may arrive before this script ran (Rust sets the flag) or any time after.
+      if (window.__oceanicFinish) requestFinish();
+      addEventListener("oceanic:finish", requestFinish);
+      // Failsafe: leave anyway if the app never signals.
+      setTimeout(beginExit, 30000);
+    </script>
+  </body>
+</html>
