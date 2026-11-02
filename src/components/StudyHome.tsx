@@ -1,14 +1,14 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Atom, BookOpen, Calculator, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Compass, Dna, ExternalLink, FileText, Flame, FlaskConical, Globe,
-  GraduationCap, Landmark, Link2, ListTodo, Monitor, Music, Palette, Pause, Pencil, Play, Plus, RotateCcw, Sparkles, Square, Timer, Trash2, TrendingUp, Upload, X, Zap,
+  GraduationCap, GripVertical, Landmark, LayoutGrid, Link2, Maximize2, ListTodo, Monitor, Music, Palette, Pause, Pencil, Play, Plus, RotateCcw, Sparkles, Square, Timer, Trash2, TrendingUp, Upload, X, Zap,
 } from "lucide-react";
 import logoRaw from "../assets/logo-raw.png";
 import type { PageMeta } from "../data/workspace";
 import { isoDate, parseIsoDate, tagColor, COLORS, COLOR_IDS, type ColorId } from "../lib/colors";
 import {
-  ASSIGNMENT, EXAM, pauseTimer, resumeTimer, setStudy, startPreset, stopTimer, streak, uid, useStudy, type ClassSlot, type TimerPreset,
+  ASSIGNMENT, DEFAULT_LAYOUT, EXAM, type GridCard, pauseTimer, resumeTimer, setStudy, startPreset, stopTimer, streak, uid, useStudy, type ClassSlot, type TimerPreset,
 } from "../lib/study";
 import { Modal, ModalButton } from "./Modal";
 import { ActionPill, Empty, RecentCard, SectionTitle, StatusPill } from "./HomeView";
@@ -29,7 +29,7 @@ export function StudyHome(props: {
   onImport: () => void;
   onOpenApp: (app: "docs" | "sketch" | "calendar") => void;
   /** Creates a page with these tags (and date); returns its id. */
-  onCreate: (title: string, tags: string[], dueDate: string | null) => Promise<string | undefined>;
+  onCreate: (title: string, tags: string[], dueDate: string | null, body?: Block[]) => Promise<string | undefined>;
   onSetStatus: (id: string, done: boolean) => void;
   getDoc: (id: string) => Promise<Block[]>;
   setDoc: (id: string, blocks: Block[]) => void;
@@ -68,37 +68,33 @@ export function StudyHome(props: {
           <ActionPill tone="#94a3b8" icon={<Upload className="size-3.5" />} label="Import" onClick={props.onImport} />
         </div>
 
-        {/* ---- Student OS layout: left column, then classes + assignments/exams ---- */}
-        <div className="grid gap-5 lg:grid-cols-[230px_minmax(0,1fr)]">
-          <LeftColumn {...props} />
-          <div className="flex min-w-0 flex-col gap-5">
-            <ClassesGallery {...props} />
-            <PlannerTabs pages={pages} today={today} onOpen={onOpenPage} onSetStatus={props.onSetStatus} />
-          </div>
-        </div>
-
-        {/* ---- Our widgets ---- */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <TodayWidget pages={pages} today={today} onOpen={onOpenPage} />
-          <FocusWidget />
-          <ExamsWidget pages={pages} today={today} onOpen={onOpenPage} onCreate={props.onCreate} />
-          <TodoWidget pages={pages} getDoc={props.getDoc} setDoc={props.setDoc} onOpen={onOpenPage} />
-          <div className="md:col-span-2">
-            <TimetableWidget />
-          </div>
-          <StatsWidget />
-        </div>
-
-        <section className="min-w-0">
-          <SectionTitle icon={<Clock className="size-3.5" />}>Recently visited</SectionTitle>
-          {visited.length ? (
-            <ScrollRow deps={visited.length}>
-              {visited.map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />)}
-            </ScrollRow>
-          ) : (
-            <Empty>Pages you open will show up here.</Empty>
-          )}
-        </section>
+        <DashboardGrid
+          cards={{
+            quick: <LeftColumn {...props} part="quick" />,
+            nav: <LeftColumn {...props} part="nav" />,
+            links: <LeftColumn {...props} part="links" />,
+            classes: <ClassesGallery {...props} />,
+            planner: <PlannerTabs pages={pages} today={today} onOpen={onOpenPage} onSetStatus={props.onSetStatus} />,
+            today: <TodayWidget pages={pages} today={today} onOpen={onOpenPage} />,
+            focus: <FocusWidget />,
+            exams: <ExamsWidget pages={pages} today={today} onOpen={onOpenPage} onCreate={props.onCreate} />,
+            todo: <TodoWidget pages={pages} getDoc={props.getDoc} setDoc={props.setDoc} onOpen={onOpenPage} />,
+            timetable: <TimetableWidget />,
+            stats: <StatsWidget />,
+            recent: (
+              <section className="min-w-0">
+                <SectionTitle icon={<Clock className="size-3.5" />}>Recently visited</SectionTitle>
+                {visited.length ? (
+                  <ScrollRow deps={visited.length}>
+                    {visited.map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />)}
+                  </ScrollRow>
+                ) : (
+                  <Empty>Pages you open will show up here.</Empty>
+                )}
+              </section>
+            ),
+          }}
+        />
       </div>
     </div>
   );
@@ -115,7 +111,7 @@ function Card({ title, icon, tone, action, children }: { title: string; icon: Re
         <h2 className="flex-1 text-[14px] font-semibold text-neutral-100">{title}</h2>
         {action}
       </div>
-      <div className="relative">{children}</div>
+      <div className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto">{children}</div>
     </section>
   );
 }
@@ -267,25 +263,71 @@ function TimerDialog({ preset, onClose }: { preset: TimerPreset; onClose: () => 
   );
 }
 
-function QuickAdd({ placeholder, onAdd, onCancel }: { placeholder: string; onAdd: (title: string, date: string | null) => void; onCancel: () => void }) {
-  const [t, setT] = useState("");
-  const [d, setD] = useState("");
+/** Popup for New assignment / New exam: title, class, date, priority, notes. */
+function NewItemDialog({ kind, onCreate, onOpen, onClose }: { kind: "assignment" | "exam"; onCreate: HomeProps["onCreate"]; onOpen: (id: string) => void; onClose: () => void }) {
+  const { subjects } = useStudy();
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("");
+  const [date, setDate] = useState("");
+  const [priority, setPriority] = useState<"" | "Low" | "Medium" | "High">("");
+  const [notes, setNotes] = useState("");
+  const [open, setOpen] = useState(false);
+  const f = "mt-1 h-9 w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-2.5 text-[13.5px] text-neutral-100 outline-none focus:border-sky-500/60 [color-scheme:dark]";
+  const create = async () => {
+    if (!title.trim()) return;
+    const body: Block[] = [];
+    if (priority) body.push({ type: "paragraph", content: [{ type: "text", text: `Priority: ${priority}`, styles: { bold: true } }] as never });
+    if (notes.trim()) notes.trim().split(/\r?\n/).forEach((line) => body.push({ type: "paragraph", content: line as never }));
+    const id = await onCreate(title.trim(), [kind === "exam" ? EXAM : ASSIGNMENT, ...(subject ? [subject] : [])], date || null, body);
+    onClose();
+    if (id && open) onOpen(id);
+  };
   return (
-    <form onSubmit={(e) => (e.preventDefault(), t.trim() && onAdd(t.trim(), d || null))} className="oc-docs-pop mb-2 flex gap-2">
-      <input autoFocus value={t} onChange={(e) => setT(e.target.value)} onKeyDown={(e) => e.key === "Escape" && onCancel()} placeholder={placeholder} className="h-8 min-w-0 flex-1 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[13px] text-neutral-100 outline-none" />
-      <input type="date" value={d} onChange={(e) => setD(e.target.value)} className="h-8 rounded-md border border-white/[0.1] bg-white/[0.04] px-1.5 text-[12px] text-neutral-200 outline-none [color-scheme:dark]" />
-      <button type="submit" className="h-8 cursor-pointer rounded-md bg-sky-600 px-3 text-[13px] text-white hover:bg-sky-500">Add</button>
-    </form>
+    <Modal onClose={onClose} className="w-[440px] p-5">
+      <h2 className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-neutral-100">{kind === "exam" ? "🧪 New exam" : "📝 New assignment"}</h2>
+      <label className="text-[12px] text-neutral-400">Title
+        <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void create()} placeholder={kind === "exam" ? "e.g. Physics mid-term" : "e.g. Chemistry lab report"} className={f} />
+      </label>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <label className="text-[12px] text-neutral-400">Class
+          <select value={subject} onChange={(e) => setSubject(e.target.value)} className={f}>
+            <option value="">None</option>
+            {subjects.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </label>
+        <label className="text-[12px] text-neutral-400">{kind === "exam" ? "Exam date" : "Due date"}
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={f} />
+        </label>
+      </div>
+      <p className="mb-1 mt-3 text-[12px] text-neutral-400">Priority</p>
+      <div className="flex gap-1.5">
+        {(["", "Low", "Medium", "High"] as const).map((p) => (
+          <button key={p || "none"} type="button" onClick={() => setPriority(p)} className={`h-7 cursor-pointer rounded-full border px-3 text-[12px] transition-colors ${priority === p ? (p === "High" ? "border-red-500/60 bg-red-500/15 text-red-300" : p === "Medium" ? "border-amber-500/60 bg-amber-500/15 text-amber-300" : p === "Low" ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300" : "border-white/30 bg-white/10 text-neutral-100") : "border-white/[0.1] text-neutral-400 hover:text-neutral-200"}`}>
+            {p || "None"}
+          </button>
+        ))}
+      </div>
+      <label className="mt-3 block text-[12px] text-neutral-400">Notes
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional details" className={`${f} h-auto resize-none py-2`} />
+      </label>
+      <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13px] text-neutral-300">
+        <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} className="accent-sky-500" /> Open the page after creating
+      </label>
+      <div className="mt-5 flex justify-end gap-2">
+        <ModalButton onClick={onClose}>Cancel</ModalButton>
+        <ModalButton variant="primary" disabled={!title.trim()} onClick={() => void create()}>Create</ModalButton>
+      </div>
+    </Modal>
   );
 }
 
 /* ------------------------------------------------------------ Exams */
-function ExamsWidget({ pages, today, onOpen, onCreate }: { pages: PageMeta[]; today: string; onOpen: (id: string) => void; onCreate: (t: string, tags: string[], d: string | null) => Promise<string | undefined> }) {
+function ExamsWidget({ pages, today, onOpen, onCreate }: { pages: PageMeta[]; today: string; onOpen: (id: string) => void; onCreate: HomeProps["onCreate"] }) {
   const [adding, setAdding] = useState(false);
   const exams = pages.filter((p) => p.tags?.includes(EXAM) && p.dueDate && p.dueDate >= today).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
   return (
     <Card title="Exam countdown" icon={<GraduationCap className="size-4" />} tone="#f87171" action={<IconBtn tip="New exam" onClick={() => setAdding(true)}><Plus /></IconBtn>}>
-      {adding && <QuickAdd placeholder="Exam (e.g. Physics)" onCancel={() => setAdding(false)} onAdd={(t, d) => (setAdding(false), void onCreate(t, [EXAM], d))} />}
+      {adding && <NewItemDialog kind="exam" onCreate={onCreate} onOpen={onOpen} onClose={() => setAdding(false)} />}
       {!exams.length && !adding && <Small>No upcoming exams. Tag a page "Exam" and give it a date.</Small>}
       <div className="grid grid-cols-2 gap-2">
         {exams.slice(0, 4).map((p) => {
@@ -519,7 +561,7 @@ const guessArt = (s: string) => {
   return pairs.find(([r]) => r.test(n))?.[1] ?? "general";
 };
 
-function LeftColumn({ pages, onCreate, onOpenPage, onNewPage }: HomeProps) {
+function LeftColumn({ pages, onCreate, onOpenPage, onNewPage, part }: HomeProps & { part: "quick" | "nav" | "links" }) {
   const { links } = useStudy();
   const [adding, setAdding] = useState<null | "assignment" | "exam">(null);
   const [list, setList] = useState<null | "assignments" | "exams" | "notes">(null);
@@ -527,24 +569,22 @@ function LeftColumn({ pages, onCreate, onOpenPage, onNewPage }: HomeProps) {
   const item = "flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-[13.5px] text-neutral-300 transition-colors hover:bg-white/[0.06] hover:text-neutral-100";
   const shown = list === "assignments" ? pages.filter((p) => p.tags?.includes(ASSIGNMENT)) : list === "exams" ? pages.filter((p) => p.tags?.includes(EXAM)) : pages.filter((p) => !p.tags?.includes(ASSIGNMENT) && !p.tags?.includes(EXAM));
   return (
-    <aside className="flex flex-col gap-4">
-      <Card title="Quick capture" icon={<Zap className="size-4" />} tone="#5aa2e9">
+    <>
+      {part === "quick" && <Card title="Quick capture" icon={<Zap className="size-4" />} tone="#5aa2e9">
         <button type="button" onClick={() => setAdding("assignment")} className={item}><ListTodo className="size-4 text-sky-400" /> New assignment</button>
         <button type="button" onClick={onNewPage} className={item}><FileText className="size-4 text-neutral-400" /> New note</button>
         <button type="button" onClick={() => setAdding("exam")} className={item}><GraduationCap className="size-4 text-red-400" /> New exam</button>
         {adding && (
-          <div className="mt-2">
-            <QuickAdd placeholder={adding === "exam" ? "Exam (e.g. Physics)" : "Assignment title"} onCancel={() => setAdding(null)} onAdd={(t, d) => (setAdding(null), void onCreate(t, [adding === "exam" ? EXAM : ASSIGNMENT], d))} />
-          </div>
+          <NewItemDialog kind={adding} onCreate={onCreate} onOpen={onOpenPage} onClose={() => setAdding(null)} />
         )}
-      </Card>
-      <Card title="Navigation" icon={<Compass className="size-4" />} tone="#a78bfa">
+      </Card>}
+      {part === "nav" && <Card title="Navigation" icon={<Compass className="size-4" />} tone="#a78bfa">
         <button type="button" onClick={() => document.getElementById("oc-classes")?.scrollIntoView({ behavior: "smooth" })} className={item}><BookOpen className="size-4 text-emerald-400" /> Classes</button>
         <button type="button" onClick={() => setList("assignments")} className={item}><ListTodo className="size-4 text-sky-400" /> Assignments</button>
         <button type="button" onClick={() => setList("exams")} className={item}><GraduationCap className="size-4 text-red-400" /> Exams</button>
         <button type="button" onClick={() => setList("notes")} className={item}><FileText className="size-4 text-neutral-400" /> Notes</button>
-      </Card>
-      <Card title="Quick links" icon={<Link2 className="size-4" />} tone="#2dd4bf" action={<IconBtn tip="Add link" onClick={() => setLinkForm((v) => !v)}><Plus /></IconBtn>}>
+      </Card>}
+      {part === "links" && <Card title="Quick links" icon={<Link2 className="size-4" />} tone="#2dd4bf" action={<IconBtn tip="Add link" onClick={() => setLinkForm((v) => !v)}><Plus /></IconBtn>}>
         {linkForm && <LinkForm onDone={() => setLinkForm(false)} />}
         {!links.length && !linkForm && <Small>Add your school portal, classroom or study sites.</Small>}
         {links.map((l) => (
@@ -555,7 +595,7 @@ function LeftColumn({ pages, onCreate, onOpenPage, onNewPage }: HomeProps) {
             <button type="button" onClick={() => setStudy("links", links.filter((x) => x.id !== l.id))} className="hidden cursor-pointer px-1 text-neutral-500 hover:text-neutral-200 group-hover:block"><X className="size-3.5" /></button>
           </div>
         ))}
-      </Card>
+      </Card>}
       {list && (
         <Modal onClose={() => setList(null)} className="w-[460px] p-5">
           <h2 className="mb-3 text-[15px] font-semibold capitalize text-neutral-100">{list}</h2>
@@ -572,7 +612,7 @@ function LeftColumn({ pages, onCreate, onOpenPage, onNewPage }: HomeProps) {
           </div>
         </Modal>
       )}
-    </aside>
+    </>
   );
 }
 function LinkForm({ onDone }: { onDone: () => void }) {
@@ -746,5 +786,143 @@ function PlannerTabs({ pages, today, onOpen, onSetStatus }: { pages: PageMeta[];
         </div>
       )}
     </section>
+  );
+}
+
+/* ------------------------------------------------------------ customisable grid */
+const CARD_NAMES: Record<string, string> = {
+  quick: "Quick capture", nav: "Navigation", links: "Quick links", classes: "Classes", planner: "Assignments & Exams", today: "Today",
+  focus: "Focus timer", exams: "Exam countdown", todo: "To-do", timetable: "Weekly timetable", stats: "Study streak", recent: "Recently visited",
+};
+const ROW = 36; // px per grid row (24px + 12px gap)
+const GAP = 12;
+const overlaps = (a: GridCard, b: GridCard) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+/** Keep `moved` where it is; push anything it overlaps (and so on) straight down. */
+function settle(cards: GridCard[], moved: GridCard): GridCard[] {
+  const out = cards.map((c) => (c.id === moved.id ? moved : { ...c }));
+  const queue = [moved];
+  while (queue.length) {
+    const fixed = queue.shift()!;
+    for (const c of out) {
+      if (c.id === fixed.id || c.id === moved.id || !overlaps(c, fixed)) continue;
+      c.y = fixed.y + fixed.h;
+      queue.push(c);
+    }
+  }
+  return out;
+}
+
+/** Free 12-column grid like phone widgets: in Customize, drag cards anywhere and resize from the corner. */
+function DashboardGrid({ cards }: { cards: Record<string, ReactNode> }) {
+  const { layout } = useStudy();
+  const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [live, setLive] = useState<GridCard[] | null>(null); // layout while dragging
+  const gridRef = useRef<HTMLDivElement>(null);
+  const cur = live ?? layout;
+  const shown = cur.filter((c) => cards[c.id]);
+  const hidden = Object.keys(cards).filter((id) => !layout.some((c) => c.id === id));
+  const save = (next: GridCard[]) => setStudy("layout", next);
+  const rows = Math.max(1, ...shown.map((c) => c.y + c.h));
+
+  /** Drag to move (mode "move") or resize from the corner (mode "size"). */
+  const begin = (e: React.PointerEvent, card: GridCard, mode: "move" | "size") => {
+    e.preventDefault();
+    e.stopPropagation();
+    const grid = gridRef.current!.getBoundingClientRect();
+    const col = (grid.width + GAP) / 12;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let latest = layout;
+    const move = (ev: PointerEvent) => {
+      const dx = Math.round((ev.clientX - sx) / col);
+      const dy = Math.round((ev.clientY - sy) / ROW);
+      const next: GridCard =
+        mode === "move"
+          ? { ...card, x: Math.max(0, Math.min(12 - card.w, card.x + dx)), y: Math.max(0, card.y + dy) }
+          : { ...card, w: Math.max(3, Math.min(12 - card.x, card.w + dx)), h: Math.max(3, card.h + dy) };
+      latest = settle(layout, next);
+      setLive(latest);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setLive(null);
+      save(latest);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return (
+    <>
+      <div className="-mb-3 flex items-center justify-end gap-2">
+        {editing && (
+          <>
+            <span className="mr-auto text-[12px] text-neutral-500">Drag cards anywhere · drag the corner to resize</span>
+            <button type="button" onClick={() => save(DEFAULT_LAYOUT)} className="h-7 cursor-pointer rounded-md px-2.5 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200">Reset</button>
+            <div className="relative">
+              <button type="button" disabled={!hidden.length} onClick={() => setAdding((v) => !v)} className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-white/[0.1] px-2.5 text-[12.5px] text-neutral-200 hover:bg-white/[0.06] disabled:opacity-40">
+                <Plus className="size-3.5" /> Add widget
+              </button>
+              {adding && (
+                <>
+                  <div className="fixed inset-0 z-40" onMouseDown={() => setAdding(false)} />
+                  <div className="oc-docs-pop absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-xl">
+                    {hidden.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => {
+                          const def = DEFAULT_LAYOUT.find((c) => c.id === id) ?? { id, x: 0, y: 0, w: 6, h: 8 };
+                          save([...layout, { ...def, x: 0, y: rows }]); // added at the bottom
+                          setAdding(false);
+                        }}
+                        className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-neutral-200 hover:bg-white/[0.06]"
+                      >
+                        <Plus className="size-3.5 text-neutral-500" /> {CARD_NAMES[id]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+        <button type="button" onClick={() => (setEditing((v) => !v), setAdding(false))} className={`flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[12.5px] ${editing ? "bg-sky-600 text-white hover:bg-sky-500" : "text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"}`}>
+          {editing ? <Check className="size-3.5" /> : <LayoutGrid className="size-3.5" />} {editing ? "Done" : "Customize"}
+        </button>
+      </div>
+      <div
+        ref={gridRef}
+        className={`oc-freegrid relative grid gap-3 ${editing ? "oc-grid-lines" : ""}`}
+        style={{ gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gridAutoRows: `${ROW - GAP}px`, minHeight: rows * ROW }}
+      >
+        {shown.map((c, i) => (
+          <div
+            key={c.id}
+            className={`relative min-w-0 transition-[transform] ${editing ? "oc-jiggle rounded-2xl ring-1 ring-dashed ring-white/15" : ""} ${live && live !== layout ? "duration-150" : ""}`}
+            style={{ gridColumn: `${c.x + 1} / span ${c.w}`, gridRow: `${c.y + 1} / span ${c.h}`, animationDelay: editing ? `${(i % 4) * -0.08}s` : undefined }}
+          >
+            <div className={`oc-fill h-full ${editing ? "pointer-events-none select-none" : ""}`}>{cards[c.id]}</div>
+            {editing && (
+              <>
+                {/* Whole card is the move handle while editing */}
+                <div onPointerDown={(e) => begin(e, c, "move")} className="absolute inset-0 z-10 cursor-grab rounded-2xl active:cursor-grabbing" title="Drag to move" />
+                <div className="absolute -top-2.5 right-2 z-20 flex gap-1">
+                  <button type="button" title="Remove" onClick={() => save(layout.filter((x) => x.id !== c.id))} className="grid size-6 cursor-pointer place-items-center rounded-full border border-white/15 bg-[var(--oc-surface)] text-neutral-300 shadow hover:bg-red-500 hover:text-white">
+                    <X className="size-3" />
+                  </button>
+                </div>
+                <span className="pointer-events-none absolute left-2 top-2 z-20 text-neutral-500"><GripVertical className="size-4" /></span>
+                <div onPointerDown={(e) => begin(e, c, "size")} title="Drag to resize" className="absolute -bottom-1 -right-1 z-20 grid size-5 cursor-nwse-resize place-items-center rounded-md border border-white/20 bg-[var(--oc-surface)] text-neutral-300 shadow">
+                  <Maximize2 className="size-3 rotate-90" />
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

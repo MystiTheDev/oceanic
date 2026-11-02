@@ -1,6 +1,8 @@
 import { ASSIGNMENT, EXAM, loadStudy } from "./lib/study";
 import { parseImports, pickImportFiles, type ImportedPage } from "./lib/importNotes";
 import { StudyHome } from "./components/StudyHome";
+import { UpdateUI } from "./components/UpdateUI";
+import { checkForUpdates, startUpdates } from "./lib/updates";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import { OPEN_SEARCH_EVENT, Sidebar } from "./components/Sidebar";
@@ -252,6 +254,7 @@ export default function App() {
       loadDocsSettings(stored);
       loadSketchSettings(stored);
       loadStudy(stored);
+      void startUpdates(stored);
       setTagLibrary(JSON.parse(stored.tagLibrary ?? "[]"));
       setPageFonts(JSON.parse(stored.pageFonts ?? "{}"));
       const colors = JSON.parse(stored.tagColors ?? "{}");
@@ -596,13 +599,14 @@ export default function App() {
   };
 
   /** Student dashboard: a new page with tags/date/title, left closed (returns its id). */
-  const createTagged = async (title: string, tags: string[], dueDate: string | null) => {
+  const createTagged = async (title: string, tags: string[], dueDate: string | null, body?: PartialBlock[]) => {
     try {
       const page = toMeta(await api.createPage(null, activeWorkspaceId, dueDate));
       setPages((prev) => [...prev, { ...page, title, tags, status: "not_started" }]);
-      setDocs((prev) => ({ ...prev, [page.id]: getSeedBlocks(page.id) }));
+      setDocs((prev) => ({ ...prev, [page.id]: body?.length ? body : getSeedBlocks(page.id) }));
       api.setPageProperties(page.id, { dueDate, status: "not_started", tags }).catch(report("Save properties"));
-      if (title) api.renamePage(page.id, title).catch(report("Rename"));
+      if (body?.length) api.savePage(page.id, title, JSON.stringify(body), []).catch(report("Save page"));
+      else if (title) api.renamePage(page.id, title).catch(report("Rename"));
       return page.id;
     } catch (e) {
       report("Create page")(e);
@@ -881,6 +885,7 @@ export default function App() {
       else if (payload === "new_sketch") k.openPage(sketchEntry(newSketch(1280, 720)));
       else if (payload === "new_mindmap") void createMindmap("").then((id) => k.openPage(mindmapEntry(id)));
       else if (payload === "settings") setSettingsOpen(true);
+      else if (payload === "check_updates") void checkForUpdates(true);
       else if (payload === "calendar") (k.setActiveTabId(HOME_TAB), setView("calendar"));
       else if (payload === "search") {
         k.setActiveTabId(HOME_TAB);
@@ -1217,7 +1222,7 @@ export default function App() {
               onOpenApp={(app) =>
                 app === "calendar" ? setView("calendar") : setActiveTabId(app === "docs" ? (lastDocsTab.current ?? DOCS_HOME_TAB) : (lastSketchTab.current ?? SKETCH_HOME_TAB))
               }
-              onCreate={createTagged}
+              onCreate={(t, tags, d, body) => createTagged(t, tags, d, body as PartialBlock[] | undefined)}
               onSetStatus={(id, done) => {
                 const p = pages.find((x) => x.id === id);
                 if (p) changeProperties(id, { ...propsOf(p), status: done ? "done" : "not_started" });
@@ -1319,6 +1324,7 @@ export default function App() {
         </main>
       </div>
 
+      <UpdateUI />
       {savePrompt && (
         <SavePrompt
           path={savePrompt.path}

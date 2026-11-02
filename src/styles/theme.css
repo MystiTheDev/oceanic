@@ -1352,3 +1352,52 @@
 .oc-progress { animation: oc-progress 900ms 200ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; transform-origin: left; }
 @keyframes oc-progress { from { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .oc-class, .oc-progress { animation: none !important; } }
+
+/* Dashboard edit mode: cards wiggle gently while you rearrange them. */
+.oc-jiggle { animation: oc-jiggle 0.5s ease-in-out infinite alternate; }
+@keyframes oc-jiggle { from { transform: rotate(-0.35deg); } to { transform: rotate(0.35deg); } }
+@media (prefers-reduced-motion: reduce) { .oc-jiggle { animation: none; } }
+
+/* Free dashboard grid: cards fill their cell and scroll inside when content is taller. */
+.oc-fill > * { height: 100%; }
+.oc-fill > section, .oc-fill > aside { overflow: auto; scrollbar-width: thin; }
+.oc-fill .oc-card { height: 100%; }
+/* Faint cell guides while customising. */
+.oc-grid-lines { background-image: linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: calc((100% + 12px) / 12) 36px; border-radius: 12px; }
+@media (max-width: 767px) { .oc-freegrid { display: flex !important; flex-direction: column; } .oc-freegrid > div { min-height: 220px; } }
+
+/* ---------------------------------------------------------- Update UI */
+.oc-update-toast { animation: oc-toast-up 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards; }
+@keyframes oc-toast-up { from { opacity: 0; transform: translateY(24px) scale(0.95); } }
+.oc-update-hero { background: linear-gradient(180deg, #0b1d3a, #0b3d91 85%); }
+.oc-update-sea { overflow: hidden; }
+.oc-wave { position: absolute; left: 0; top: 0; width: 200%; height: 48px; fill: var(--oc-brand); animation: oc-wave-move linear infinite; }
+.oc-wave-0 { opacity: .35; animation-duration: 9s; }
+.oc-wave-1 { opacity: .5; top: 8px; animation-duration: 6s; animation-direction: reverse; }
+.oc-wave-2 { opacity: .8; top: 16px; animation-duration: 4.5s; fill: color-mix(in srgb, var(--oc-brand) 70%, #fff 0%); }
+@keyframes oc-wave-move { to { transform: translateX(-50%); } }
+.oc-update-logo { animation: oc-logo-bob 3s ease-in-out infinite, oc-node-pop 600ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards; }
+@keyframes oc-logo-bob { 50% { translate: 0 -6px; rotate: -3deg; } }
+.oc-update-badge { animation: oc-rise-in 500ms 200ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-confetti { width: 7px; height: 11px; border-radius: 2px; animation: oc-confetti 1.8s cubic-bezier(0.3, 0.6, 0.5, 1) forwards; }
+@keyframes oc-confetti { from { transform: translateY(-20px) rotate(0); opacity: 1; } to { transform: translateY(170px) rotate(540deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .oc-update-toast, .oc-wave, .oc-update-logo, .oc-update-badge, .oc-confetti { animation: none !important; } }
+
+/* Update hero, richer: deeper wave colours, rays, bubbles, shimmering badge. */
+.oc-wave-0 { fill: #1e5fb8; }
+.oc-wave-1 { fill: #2a78d6; }
+.oc-wave-2 { fill: #3b8ff0; }
+.oc-update-sea > div { background: linear-gradient(180deg, #2f7fe0, #0b3d91) !important; }
+.oc-rays { position: absolute; inset: -40% -20% auto; height: 180%; pointer-events: none;
+  background: repeating-conic-gradient(from 200deg at 50% 0%, rgba(255,255,255,0.09) 0deg 6deg, transparent 6deg 18deg);
+  mask-image: linear-gradient(180deg, black, transparent 70%); animation: oc-rays 14s ease-in-out infinite alternate; }
+@keyframes oc-rays { to { transform: rotate(8deg) translateX(4%); } }
+.oc-bubble { position: absolute; bottom: -10px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.12); animation: oc-bubble linear infinite; }
+@keyframes oc-bubble { 0% { transform: translateY(0) translateX(0); opacity: 0; } 15% { opacity: 1; } 50% { transform: translateY(-60px) translateX(6px); } 100% { transform: translateY(-130px) translateX(-4px); opacity: 0; } }
+.oc-update-logo { animation: oc-ride 3.2s ease-in-out infinite, oc-node-pop 600ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards; }
+@keyframes oc-ride { 0%, 100% { translate: 0 0; rotate: -4deg; } 50% { translate: 0 -7px; rotate: 4deg; } }
+.oc-shimmer { overflow: hidden; }
+.oc-shimmer::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%); transform: translateX(-120%); animation: oc-shine 2.8s 0.8s ease-in-out infinite; }
+@keyframes oc-shine { 60%, 100% { transform: translateX(120%); } }
+@media (prefers-reduced-motion: reduce) { .oc-rays, .oc-bubble, .oc-shimmer::after { animation: none !important; } }

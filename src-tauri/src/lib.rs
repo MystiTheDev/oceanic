@@ -411,6 +411,7 @@ fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem]) -> tau
             &docs_menu,
             &PredefinedMenuItem::separator(app)?,
             &item("settings", "Settings")?,
+            &item("check_updates", "Check for updates…")?,
             &item("quit", "Quit Oceanic")?,
         ],
     )
@@ -438,7 +439,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             match id {
                 "show" => show_main(app),
                 "quit" => app.exit(0),
-                "new_page" | "search" | "mindmap" | "calendar" | "new_doc" | "new_sketch" | "new_mindmap" | "docs" | "sketch" | "settings" => {
+                "new_page" | "search" | "mindmap" | "calendar" | "new_doc" | "new_sketch" | "new_mindmap" | "docs" | "sketch" | "settings" | "check_updates" => {
                     show_main(app);
                     let _ = app.emit("tray-action", id);
                 }
@@ -497,6 +498,14 @@ pub fn run() {
             handoff_existing_app(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        // Remember the main window's size, position and maximized state between launches.
+        // Visibility is left alone: the splash decides when the window appears.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["splash"])
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())

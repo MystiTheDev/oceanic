@@ -1,3 +1,4 @@
+import { checkForUpdates } from "../lib/updates";
 import { pickSketchFolder, setSketchLayout, useSketch, type SketchLayout } from "../sketch/store";
 import { pickFolder, setUiStyle, useDocs, type DocsUiStyle } from "../docs/store";
 import { useEffect, useState, type ReactNode } from "react";
@@ -255,6 +256,11 @@ function StorageSection() {
 
   return (
     <>
+      <Setting title="Updates" description="Oceanic checks at startup and every few hours.">
+        <button type="button" onClick={() => void checkForUpdates(true)} className="h-8 cursor-pointer rounded-md border border-white/[0.08] px-3 text-[13px] text-neutral-200 hover:bg-white/[0.06]">
+          Check for updates
+        </button>
+      </Setting>
       <Setting title="Database location" description={path}>
         <ModalButton onClick={pick} disabled={!isTauri()}>
           Change…

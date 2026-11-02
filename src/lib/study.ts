@@ -29,13 +29,25 @@ type Study = {
   /** Class details per subject tag. */
   classes: Record<string, ClassInfo>;
   links: QuickLink[];
+  /** Dashboard cards in order; `wide` spans both columns. */
+  layout: GridCard[];
 };
+/** A dashboard card on the 12-column grid (x/w in columns, y/h in rows). */
+export type GridCard = { id: string; x: number; y: number; w: number; h: number };
+const g = (id: string, x: number, y: number, w: number, h: number): GridCard => ({ id, x, y, w, h });
+/** Student OS look: narrow left column, classes + planner on the right, widgets below. */
+export const DEFAULT_LAYOUT: GridCard[] = [
+  g("quick", 0, 0, 3, 6), g("nav", 0, 6, 3, 6), g("links", 0, 12, 3, 5),
+  g("classes", 3, 0, 9, 6), g("planner", 3, 6, 9, 11),
+  g("today", 0, 17, 6, 8), g("focus", 6, 17, 6, 8), g("exams", 0, 25, 6, 8), g("todo", 6, 25, 6, 8),
+  g("timetable", 0, 33, 12, 8), g("stats", 0, 41, 6, 7), g("recent", 0, 48, 12, 7),
+];
 export type ClassInfo = { teacher: string; room: string; art: string };
 export type QuickLink = { id: string; label: string; url: string };
-const KEYS = { timetable: "studyTimetable", todos: "studyTodos", todoSource: "studyTodoSource", subjects: "studySubjects", timers: "studyTimers", focusLog: "studyFocusLog", classes: "studyClasses", links: "studyLinks" } as const;
+const KEYS = { timetable: "studyTimetable", todos: "studyTodos", todoSource: "studyTodoSource", subjects: "studySubjects", timers: "studyTimers", focusLog: "studyFocusLog", classes: "studyClasses", links: "studyLinks", layout: "studyLayout" } as const;
 const POMODORO: TimerPreset = { id: "pomodoro", name: "Pomodoro", minutes: 25, breakMinutes: 5 };
 
-let state: Study = { timetable: [], todos: [], todoSource: { mode: "list", pageId: null }, subjects: [], timers: [POMODORO], focusLog: {}, sessions: 0, timer: null, classes: {}, links: [] };
+let state: Study = { timetable: [], todos: [], todoSource: { mode: "list", pageId: null }, subjects: [], timers: [POMODORO], focusLog: {}, sessions: 0, timer: null, classes: {}, links: [], layout: DEFAULT_LAYOUT };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 export const useStudy = () =>
@@ -62,6 +74,8 @@ export function loadStudy(stored: Record<string, string>) {
     focusLog: read(KEYS.focusLog, {}),
     classes: read(KEYS.classes, {}),
     links: read(KEYS.links, []),
+    // Older saves (order + wide only) fall back to the default positions.
+    layout: ((l: GridCard[]) => (l.every((c) => typeof c.x === "number") ? l : DEFAULT_LAYOUT))(read(KEYS.layout, DEFAULT_LAYOUT)),
   };
   emit();
 }
