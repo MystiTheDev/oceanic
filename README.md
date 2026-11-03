@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="branding/oceanic-logo-transparent.png" alt="Oceanic logo" width="280" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/oceanic-logo-transparent.png" />
+    <img src="branding/oceanic-logo-light.png" alt="Oceanic logo" width="280" />
+  </picture>
 </p>
 
 <h1 align="center">Oceanic</h1>
@@ -57,7 +60,8 @@ Oceanic brings your notes, writing, mind maps, sketches and calendar into one ap
 - 🗺️ **Three ways to view a workspace.** Switch between **Document**, **Calendar** and **Spatial Canvas** views.
 - 🔗 **Connected notes.** Backlinks, page peeks and auto-generated outlines.
 - ⚡ **Fast and light.** It's a native desktop app that stays smooth with hundreds of pages.
-- 📤 **No lock-in.** Export to **PDF**, **Markdown** or **HTML** anytime.
+- 📤 **No lock-in.** Export to **PDF**, **Markdown** or **HTML** anytime, or as an **.ocean** file that keeps everything. Send it to a friend and they can double-click it to open.
+- 🎨 **Make it yours.** Pick an accent colour and profile picture, change the text size, and choose which day your week starts on.
 - 🛟 **Hard to lose work.** Deleted pages go to the Trash first.
 
 ## ⬇️ Download
