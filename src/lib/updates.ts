@@ -15,10 +15,27 @@ type State = {
   toast: boolean;
   modal: boolean;
   error: string;
+  /** Plain-words reason for the error (the raw text stays in `error`). */
+  errorText: string;
+  /** Which step failed, so Retry repeats the right one. */
+  errorKind: "check" | "install";
   /** Shown once after an update installed. */
   whatsNew: { version: string; notes: string } | null;
 };
-let state: State = { phase: "idle", version: "", notes: "", progress: 0, toast: false, modal: false, error: "", whatsNew: null };
+let state: State = { phase: "idle", version: "", notes: "", progress: 0, toast: false, modal: false, error: "", errorText: "", errorKind: "check", whatsNew: null };
+export const RELEASES_URL = "https://github.com/MystiTheDev/oceanic/releases";
+/** A check that hasn't answered by then counts as failed (it used to hang on "Checking…" forever). */
+const CHECK_TIMEOUT = 15_000;
+/** Bumped per check: a late answer from a timed-out check is ignored. */
+let checkId = 0;
+const friendly = (e: string) =>
+  /timed? ?out|timeout/i.test(e)
+    ? "The update server didn't answer in time."
+    : /network|connect|dns|resolve|offline|unreachable|request/i.test(e)
+      ? "Couldn't reach the update server. Check your internet connection."
+      : /signature|pubkey/i.test(e)
+        ? "The update's signature couldn't be verified."
+        : "Something went wrong while checking.";
 let update: Update | null = null;
 const listeners = new Set<() => void>();
 const set = (p: Partial<State>) => ((state = { ...state, ...p }), listeners.forEach((l) => l()));
@@ -32,16 +49,30 @@ export const closeUpdateModal = () => set({ modal: false });
 export const dismissToast = () => set({ toast: false });
 export const closeWhatsNew = () => set({ whatsNew: null });
 
-/** `manual`: user asked (show "up to date" / errors and open the modal directly). */
+/** `manual`: user asked (show "up to date" / errors and open the modal directly). Background checks stay silent. */
 export async function checkForUpdates(manual = false) {
-  if (!isTauri() || ["checking", "downloading", "installing", "restarting"].includes(state.phase)) return;
-  set({ phase: "checking", error: "", modal: manual ? true : state.modal });
+  if (!isTauri() || ["downloading", "installing", "restarting"].includes(state.phase)) return;
+  // A check is already running: bring its popup back instead of doing nothing.
+  if (state.phase === "checking") return void (manual && set({ modal: true }));
+  const id = ++checkId;
+  set({ phase: "checking", error: "", errorText: "", modal: manual ? true : state.modal });
+  let timer = 0;
   try {
-    update = await check();
+    const found = await Promise.race([
+      check({ timeout: CHECK_TIMEOUT }),
+      new Promise<never>((_, fail) => (timer = window.setTimeout(() => fail(new Error("Update check timed out")), CHECK_TIMEOUT + 1000))),
+    ]);
+    if (id !== checkId) return;
+    update = found;
     if (!update) return set({ phase: "uptodate" });
     set({ phase: "available", version: update.version, notes: update.body ?? "", toast: !manual, modal: manual });
   } catch (e) {
-    set({ phase: manual ? "error" : "idle", error: String(e) });
+    if (id !== checkId) return;
+    const error = String(e);
+    // Shown when the user asked, or if they reopened the popup while it ran.
+    set(manual || state.modal ? { phase: "error", error, errorText: friendly(error), errorKind: "check" } : { phase: "idle" });
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
@@ -61,9 +92,12 @@ export async function installUpdate() {
     set({ phase: "restarting" });
     await relaunch();
   } catch (e) {
-    set({ phase: "error", error: String(e) });
+    set({ phase: "error", error: String(e), errorText: "The update couldn't be downloaded or installed.", errorKind: "install" });
   }
 }
+
+/** Retry whatever failed last. */
+export const retryUpdate = () => (state.errorKind === "install" && update ? installUpdate() : checkForUpdates(true));
 
 /** On startup: show "What's new" if we just updated; then check now and every 4 hours. */
 export async function startUpdates(stored: Record<string, string>) {

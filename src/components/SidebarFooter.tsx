@@ -7,7 +7,7 @@ import { colorOf } from "../lib/colors";
 import { openContextMenu } from "./ContextMenu";
 import { setDragGhost } from "../lib/dragGhost";
 
-export const APP_VERSION = "1.0.1";
+export const APP_VERSION = "1.0.2";
 
 type SidebarFooterProps = {
   workspaces: WorkspaceRecord[];

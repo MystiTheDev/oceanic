@@ -1,3 +1,11 @@
+# 🌊 Oceanic v1.0.2: Smoother updates
+
+- Fixed a bug where checking for updates could get stuck on "Checking for updates…" forever.
+- Update checks now give up after 15 seconds instead of hanging.
+- If an update fails, Oceanic now explains what went wrong in plain words.
+- Added a Retry button and a link to the Releases page when an update fails.
+- On v1.0.1 and stuck on "Checking for updates…"? Download v1.0.2 once from the Releases page. Future updates will work normally.
+
 # 🌊 Oceanic v1.0.0: Hello, world!
 
 Hey there 👋

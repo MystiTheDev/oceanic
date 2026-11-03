@@ -1,7 +1,10 @@
-import { ArrowDownToLine, PartyPopper, Sparkles, X } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ArrowDownToLine, ExternalLink, PartyPopper, RotateCcw, Sparkles, TriangleAlert, X } from "lucide-react";
 import logoRaw from "../assets/logo-raw.png";
 import { Modal, ModalButton } from "./Modal";
-import { closeUpdateModal, closeWhatsNew, dismissToast, installUpdate, openUpdateModal, useUpdates } from "../lib/updates";
+import { closeUpdateModal, closeWhatsNew, dismissToast, installUpdate, openUpdateModal, RELEASES_URL, retryUpdate, useUpdates } from "../lib/updates";
+
+const openReleases = () => void openUrl(RELEASES_URL).catch(() => window.open(RELEASES_URL, "_blank"));
 
 /** Release notes: one bullet per non-empty line ("- " / "* " stripped). */
 function Notes({ text }: { text: string }) {
@@ -84,9 +87,22 @@ export function UpdateUI() {
             )}
           </div>
           <div className="p-5">
-            {u.phase === "checking" && <p className="text-[14px] text-neutral-300">Checking for updates…</p>}
+            {u.phase === "checking" && (
+              <p className="flex items-center gap-2 text-[14px] text-neutral-300">
+                <span className="size-3.5 animate-spin rounded-full border-2 border-white/20 border-t-[color:var(--oc-brand-light)]" /> Checking for updates…
+              </p>
+            )}
             {u.phase === "uptodate" && <p className="text-[14px] text-neutral-200">You're up to date. 🎉</p>}
-            {u.phase === "error" && <p className="text-[13px] text-red-400">Couldn't update: {u.error}</p>}
+            {u.phase === "error" && (
+              <div>
+                <p className="flex items-center gap-2 text-[14px] font-medium text-neutral-100"><TriangleAlert className="size-4 text-amber-400" /> {u.errorKind === "install" ? "Couldn't install the update" : "Couldn't check for updates"}</p>
+                <p className="mt-1 text-[13px] text-neutral-400">{u.errorText} You can try again, or download the latest version from the releases page.</p>
+                <details className="mt-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-neutral-500">
+                  <summary className="cursor-pointer select-none text-neutral-400">Technical details</summary>
+                  <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[11.5px] text-neutral-400">{u.error}</pre>
+                </details>
+              </div>
+            )}
             {(u.phase === "available" || busy) && (
               <>
                 <h2 className="mb-3 text-[17px] font-semibold text-neutral-100">A new Oceanic is here</h2>
@@ -109,6 +125,12 @@ export function UpdateUI() {
                 <>
                   <ModalButton onClick={closeUpdateModal}>Later</ModalButton>
                   <ModalButton variant="primary" autoFocus onClick={() => void installUpdate()}>Update now</ModalButton>
+                </>
+              ) : u.phase === "error" ? (
+                <>
+                  <button type="button" onClick={openReleases} className="mr-auto flex cursor-pointer items-center gap-1.5 text-[13px] text-neutral-400 hover:text-neutral-200"><ExternalLink className="size-3.5" /> Releases page</button>
+                  <ModalButton onClick={closeUpdateModal}>Close</ModalButton>
+                  <ModalButton variant="primary" autoFocus onClick={() => void retryUpdate()}><span className="flex items-center gap-1.5"><RotateCcw className="size-3.5" /> Retry</span></ModalButton>
                 </>
               ) : !busy ? (
                 <ModalButton onClick={closeUpdateModal}>Close</ModalButton>

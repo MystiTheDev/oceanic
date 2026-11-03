@@ -45,6 +45,25 @@ jobs:
 
       - run: npm ci
 
+      - name: Read release notes
+        id: notes
+        shell: bash
+        run: |
+          # Take the "# ... vX.Y.Z ..." section of RELEASE_NOTES.md, up to the next "# " heading.
+          awk -v tag="${GITHUB_REF_NAME}" '
+            /^# / { if (found) exit; if (index($0, tag)) { found = 1; next } }
+            found { print }
+          ' RELEASE_NOTES.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::No '# ... ${GITHUB_REF_NAME}' section found in RELEASE_NOTES.md"
+            exit 1
+          fi
+          {
+            echo "body<<NOTES_EOF"
+            cat notes.md
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,7 +72,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Oceanic ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
