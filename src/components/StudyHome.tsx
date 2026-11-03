@@ -4,11 +4,14 @@ import {
   Atom, BookOpen, Calculator, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Compass, Dna, ExternalLink, FileText, Flame, FlaskConical, Globe,
   GraduationCap, GripVertical, Landmark, LayoutGrid, Link2, Maximize2, ListTodo, Monitor, Music, Palette, Pause, Pencil, Play, Plus, RotateCcw, Sparkles, Square, Timer, Trash2, TrendingUp, Upload, X, Zap,
 } from "lucide-react";
+import { weekOrder } from "../lib/prefs";
 import logoRaw from "../assets/logo-raw.png";
 import type { PageMeta } from "../data/workspace";
-import { isoDate, parseIsoDate, tagColor, COLORS, COLOR_IDS, type ColorId } from "../lib/colors";
+import { colorOf, isoDate, parseIsoDate, tagColor, COLORS, COLOR_IDS, type ColorId } from "../lib/colors";
+import { EmojiPicker } from "./EmojiPicker";
+import { openContextMenu } from "./ContextMenu";
 import {
-  ASSIGNMENT, DEFAULT_LAYOUT, EXAM, type GridCard, pauseTimer, resumeTimer, setStudy, startPreset, stopTimer, streak, uid, useStudy, type ClassSlot, type TimerPreset,
+  ASSIGNMENT, DEFAULT_LAYOUT, EXAM, type GridCard, pauseTimer, resumeTimer, clock, durationLabel, setStudy, startPreset, stopTimer, streak, uid, useStudy, type ClassSlot, type QuickLink, type TimerPreset,
 } from "../lib/study";
 import { Modal, ModalButton } from "./Modal";
 import { ActionPill, Empty, RecentCard, SectionTitle, StatusPill } from "./HomeView";
@@ -176,7 +179,7 @@ function FocusWidget() {
   const { timer, timers, sessions } = useStudy();
   const [editing, setEditing] = useState<TimerPreset | null>(null);
   const pct = timer ? 1 - timer.remaining / timer.total : 0;
-  const mm = timer ? `${Math.floor(timer.remaining / 60)}:${String(timer.remaining % 60).padStart(2, "0")}` : "";
+  const mm = timer ? clock(timer.remaining) : "";
   const R = 46;
   return (
     <Card
@@ -213,7 +216,7 @@ function FocusWidget() {
             {timers.map((p) => (
               <span key={p.id} className="group flex items-center rounded-full border border-white/[0.08] bg-white/[0.04]">
                 <button type="button" onClick={() => startPreset(p)} className="cursor-pointer py-1 pl-3 pr-2 text-[12px] text-neutral-200 hover:text-white">
-                  {p.name} · {p.minutes}m
+                  {p.name} · {durationLabel(p.minutes)}
                 </button>
                 <button type="button" title="Edit" onClick={() => setEditing(p)} className="hidden cursor-pointer pr-2 text-neutral-500 hover:text-neutral-200 group-hover:block">
                   <Pencil className="size-3" />
@@ -228,27 +231,53 @@ function FocusWidget() {
     </Card>
   );
 }
+/** Hours : minutes : seconds boxes over a value in seconds (max 23:59:59). */
+function HmsInput({ value, onChange }: { value: number; onChange: (secs: number) => void }) {
+  const parts = [Math.floor(value / 3600), Math.floor((value % 3600) / 60), value % 60];
+  const max = [23, 59, 59];
+  const set = (i: number, n: number) => {
+    const next = [...parts];
+    next[i] = Math.min(max[i], Math.max(0, Math.floor(n) || 0));
+    onChange(next[0] * 3600 + next[1] * 60 + next[2]);
+  };
+  return (
+    <div className="mt-1 flex items-center gap-1.5">
+      {["h", "m", "s"].map((unit, i) => (
+        <label key={unit} className="flex h-8 flex-1 items-center rounded-md border border-white/[0.1] bg-white/[0.04] pr-2 focus-within:border-pink-400/50">
+          <input
+            type="number" min={0} max={max[i]} value={parts[i]}
+            onChange={(e) => set(i, Number(e.target.value))}
+            onFocus={(e) => e.target.select()}
+            className="w-full min-w-0 bg-transparent px-2 text-[13px] tabular-nums text-neutral-100 outline-none"
+          />
+          <span className="text-[12px] text-neutral-500">{unit}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function TimerDialog({ preset, onClose }: { preset: TimerPreset; onClose: () => void }) {
   const { timers } = useStudy();
   const [name, setName] = useState(preset.name);
-  const [minutes, setMinutes] = useState(preset.minutes);
-  const [brk, setBrk] = useState(preset.breakMinutes ?? 0);
+  const [focus, setFocus] = useState(() => Math.round(preset.minutes * 60));
+  const [brk, setBrk] = useState(() => Math.round((preset.breakMinutes ?? 0) * 60));
   const exists = timers.some((t) => t.id === preset.id);
   const field = "mt-1 h-8 w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[13px] text-neutral-100 outline-none";
   const save = (start: boolean) => {
-    const p: TimerPreset = { id: preset.id, name: name.trim() || "Focus", minutes: Math.max(1, minutes), breakMinutes: brk > 0 ? brk : undefined };
+    const p: TimerPreset = { id: preset.id, name: name.trim() || "Focus", minutes: Math.max(1, focus) / 60, breakMinutes: brk > 0 ? brk / 60 : undefined };
     setStudy("timers", exists ? timers.map((t) => (t.id === p.id ? p : t)) : [...timers, p]);
     if (start) startPreset(p);
     onClose();
   };
   return (
-    <Modal onClose={onClose} className="w-[380px] p-5">
+    <Modal onClose={onClose} className="w-[400px] p-5">
       <h2 className="mb-4 text-[15px] font-semibold text-neutral-100">{exists ? "Edit timer" : "New timer"}</h2>
       <label className="text-[12px] text-neutral-400">Name<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Maths revision" className={field} /></label>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <label className="text-[12px] text-neutral-400">Minutes<input type="number" min={1} max={600} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className={field} /></label>
-        <label className="text-[12px] text-neutral-400">Break after (0 = none)<input type="number" min={0} max={120} value={brk} onChange={(e) => setBrk(Number(e.target.value))} className={field} /></label>
-      </div>
+      <p className="mt-3 text-[12px] text-neutral-400">Focus</p>
+      <HmsInput value={focus} onChange={setFocus} />
+      <p className="mt-3 text-[12px] text-neutral-400">Break after <span className="text-neutral-500">(0 = none)</span></p>
+      <HmsInput value={brk} onChange={setBrk} />
       <div className="mt-5 flex items-center gap-2">
         {exists && (
           <button type="button" onClick={() => (setStudy("timers", timers.filter((t) => t.id !== preset.id)), onClose())} className="mr-auto flex cursor-pointer items-center gap-1 text-[13px] text-red-400 hover:text-red-300">
@@ -440,7 +469,7 @@ function TodoWidget({ pages, getDoc, setDoc, onOpen }: { pages: PageMeta[]; getD
 function TimetableWidget() {
   const { timetable } = useStudy();
   const [edit, setEdit] = useState<ClassSlot | null>(null);
-  const order = [1, 2, 3, 4, 5, 6, 0];
+  const order = weekOrder();
   return (
     <Card
       title="Weekly timetable"
@@ -565,7 +594,7 @@ function LeftColumn({ pages, onCreate, onOpenPage, onNewPage, part }: HomeProps 
   const { links } = useStudy();
   const [adding, setAdding] = useState<null | "assignment" | "exam">(null);
   const [list, setList] = useState<null | "assignments" | "exams" | "notes">(null);
-  const [linkForm, setLinkForm] = useState(false);
+  const [linkForm, setLinkForm] = useState<QuickLink | null>(null);
   const item = "flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-[13.5px] text-neutral-300 transition-colors hover:bg-white/[0.06] hover:text-neutral-100";
   const shown = list === "assignments" ? pages.filter((p) => p.tags?.includes(ASSIGNMENT)) : list === "exams" ? pages.filter((p) => p.tags?.includes(EXAM)) : pages.filter((p) => !p.tags?.includes(ASSIGNMENT) && !p.tags?.includes(EXAM));
   return (
@@ -584,15 +613,21 @@ function LeftColumn({ pages, onCreate, onOpenPage, onNewPage, part }: HomeProps 
         <button type="button" onClick={() => setList("exams")} className={item}><GraduationCap className="size-4 text-red-400" /> Exams</button>
         <button type="button" onClick={() => setList("notes")} className={item}><FileText className="size-4 text-neutral-400" /> Notes</button>
       </Card>}
-      {part === "links" && <Card title="Quick links" icon={<Link2 className="size-4" />} tone="#2dd4bf" action={<IconBtn tip="Add link" onClick={() => setLinkForm((v) => !v)}><Plus /></IconBtn>}>
-        {linkForm && <LinkForm onDone={() => setLinkForm(false)} />}
-        {!links.length && !linkForm && <Small>Add your school portal, classroom or study sites.</Small>}
+      {part === "links" && <Card title="Quick links" icon={<Link2 className="size-4" />} tone="#2dd4bf" action={<IconBtn tip="Add link" onClick={() => setLinkForm({ id: uid(), label: "", url: "https://", icon: "favicon", color: "blue" })}><Plus /></IconBtn>}>
+        {linkForm && <LinkDialog link={linkForm} onClose={() => setLinkForm(null)} />}
+        {!links.length && <Small>Add your school portal, classroom or study sites.</Small>}
         {links.map((l) => (
-          <div key={l.id} className="group flex items-center">
-            <a href={l.url} onClick={(e) => (e.preventDefault(), void openUrl(l.url).catch(() => window.open(l.url, "_blank")))} className={`${item} min-w-0 flex-1`}>
-              <ExternalLink className="size-3.5 shrink-0 text-teal-400" /> <span className="truncate">{l.label}</span>
+          <div key={l.id} className="group flex items-center" onContextMenu={(e) => openContextMenu(e, [
+            { label: "Open", icon: <ExternalLink className="size-4" />, onSelect: () => openLink(l.url) },
+            { label: "Edit", icon: <Pencil className="size-4" />, onSelect: () => setLinkForm(l) },
+            "divider",
+            { label: "Remove", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => setStudy("links", links.filter((x) => x.id !== l.id)) },
+          ])}>
+            <a href={l.url} onClick={(e) => (e.preventDefault(), openLink(l.url))} className={`${item} min-w-0 flex-1`}>
+              <LinkIcon link={l} /> <span className="truncate">{l.label}</span>
             </a>
-            <button type="button" onClick={() => setStudy("links", links.filter((x) => x.id !== l.id))} className="hidden cursor-pointer px-1 text-neutral-500 hover:text-neutral-200 group-hover:block"><X className="size-3.5" /></button>
+            <button type="button" data-tip="Edit" onClick={() => setLinkForm(l)} className="hidden cursor-pointer px-1 text-neutral-500 hover:text-neutral-200 group-hover:block"><Pencil className="size-3.5" /></button>
+            <button type="button" data-tip="Remove" onClick={() => setStudy("links", links.filter((x) => x.id !== l.id))} className="hidden cursor-pointer px-1 text-neutral-500 hover:text-neutral-200 group-hover:block"><X className="size-3.5" /></button>
           </div>
         ))}
       </Card>}
@@ -615,17 +650,101 @@ function LeftColumn({ pages, onCreate, onOpenPage, onNewPage, part }: HomeProps 
     </>
   );
 }
-function LinkForm({ onDone }: { onDone: () => void }) {
-  const { links } = useStudy();
-  const [label, setLabel] = useState("");
-  const [url, setUrl] = useState("https://");
-  const f = "h-7 w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[12.5px] text-neutral-100 outline-none";
+const openLink = (url: string) => void openUrl(url).catch(() => window.open(url, "_blank"));
+const withScheme = (url: string) => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`);
+const shortUrl = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+const faviconOf = (url: string) => {
+  try {
+    return new URL(url).origin + "/favicon.ico";
+  } catch {
+    return null;
+  }
+};
+
+/** A link's icon in its color: the site's favicon (first letter if it fails to load) or an emoji. */
+function LinkIcon({ link, size = 20 }: { link: QuickLink; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  const c = colorOf(link.color ?? "blue");
+  const fav = !link.icon || link.icon === "favicon" ? faviconOf(link.url) : null;
+  useEffect(() => setBroken(false), [link.url]);
   return (
-    <form onSubmit={(e) => (e.preventDefault(), url.length > 8 && (setStudy("links", [...links, { id: uid(), label: label.trim() || url.replace(/^https?:\/\//, ""), url }]), onDone()))} className="oc-docs-pop mb-2 flex flex-col gap-1.5">
-      <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Name (e.g. Khan Academy)" className={f} />
-      <input value={url} onChange={(e) => setUrl(e.target.value)} className={f} />
-      <button type="submit" className="h-7 cursor-pointer rounded-md bg-teal-600 text-[12.5px] text-white hover:bg-teal-500">Add link</button>
-    </form>
+    <span className="grid shrink-0 place-items-center overflow-hidden rounded-md" style={{ width: size, height: size, background: c.bg, color: c.text, fontSize: size * 0.6 }}>
+      {fav && !broken ? (
+        <img src={fav} alt="" onError={() => setBroken(true)} style={{ width: size * 0.7, height: size * 0.7 }} />
+      ) : link.icon && link.icon !== "favicon" ? (
+        <span className="leading-none">{link.icon}</span>
+      ) : (
+        <span className="font-semibold leading-none">{(link.label || shortUrl(link.url)).charAt(0).toUpperCase()}</span>
+      )}
+    </span>
+  );
+}
+
+/** Add / edit a quick link: name, URL, icon (site icon or emoji) and color. */
+function LinkDialog({ link, onClose }: { link: QuickLink; onClose: () => void }) {
+  const { links } = useStudy();
+  const exists = links.some((l) => l.id === link.id);
+  const [label, setLabel] = useState(link.label);
+  const [url, setUrl] = useState(link.url);
+  const [icon, setIcon] = useState(link.icon ?? "favicon");
+  const [color, setColor] = useState(link.color ?? "blue");
+  const [picker, setPicker] = useState<HTMLElement | null>(null);
+  const full = withScheme(url.trim());
+  const valid = (() => {
+    try {
+      const h = new URL(full).hostname;
+      return h.includes(".") || h === "localhost";
+    } catch {
+      return false;
+    }
+  })();
+  const field = "mt-1 h-8 w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[13px] text-neutral-100 outline-none focus:border-teal-400/50";
+  const choice = (on: boolean) =>
+    `flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border text-[12.5px] ${on ? "border-teal-400/60 bg-teal-500/15 text-teal-200" : "border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.07]"}`;
+  const save = () => {
+    if (!valid) return;
+    const next: QuickLink = { id: link.id, label: label.trim() || shortUrl(full), url: full, icon, color };
+    setStudy("links", exists ? links.map((l) => (l.id === next.id ? next : l)) : [...links, next]);
+    onClose();
+  };
+  return (
+    <Modal onClose={onClose} className="w-[400px] p-5">
+      <form onSubmit={(e) => (e.preventDefault(), save())}>
+        <div className="mb-4 flex items-center gap-3">
+          <LinkIcon link={{ id: link.id, label, url: full, icon, color }} size={36} />
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-neutral-100">{exists ? "Edit link" : "New quick link"}</h2>
+            <p className="truncate text-[12px] text-neutral-500">{valid ? full : "Enter a web address"}</p>
+          </div>
+        </div>
+        <label className="text-[12px] text-neutral-400">Name<input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Khan Academy" className={field} /></label>
+        <label className="mt-3 block text-[12px] text-neutral-400">URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className={field} /></label>
+        <p className="mt-3 text-[12px] text-neutral-400">Icon</p>
+        <div className="mt-1 flex gap-2">
+          <button type="button" onClick={() => setIcon("favicon")} className={choice(icon === "favicon")}>Site icon</button>
+          <button type="button" onClick={(e) => setPicker(e.currentTarget)} className={choice(icon !== "favicon")}>
+            {icon !== "favicon" && <span className="text-[15px]">{icon}</span>} Emoji…
+          </button>
+        </div>
+        {picker && <EmojiPicker anchor={picker} onSelect={(e) => (setIcon(e), setPicker(null))} onClose={() => setPicker(null)} />}
+        <p className="mt-3 text-[12px] text-neutral-400">Color</p>
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          {COLOR_IDS.map((id) => (
+            <button key={id} type="button" data-tip={COLORS[id].label} onClick={() => setColor(id)} className={`size-6 cursor-pointer rounded-full transition-transform hover:scale-110 ${color === id ? "ring-2 ring-white/70 ring-offset-2 ring-offset-neutral-900" : ""}`} style={{ background: COLORS[id].solid }} />
+          ))}
+        </div>
+        <div className="mt-5 flex items-center gap-2">
+          {exists && (
+            <button type="button" onClick={() => (setStudy("links", links.filter((l) => l.id !== link.id)), onClose())} className="flex cursor-pointer items-center gap-1 text-[13px] text-red-400 hover:text-red-300">
+              <Trash2 className="size-3.5" /> Remove
+            </button>
+          )}
+          <span className="flex-1" />
+          <ModalButton onClick={onClose}>Cancel</ModalButton>
+          <ModalButton variant="primary" onClick={save}>{exists ? "Save" : "Add link"}</ModalButton>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

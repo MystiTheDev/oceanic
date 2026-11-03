@@ -1,9 +1,12 @@
+import { OpenNowRow, type OpenItem } from "../components/OpenNowRow";
 import { HomeMotif } from "../components/HomeMotif";
 import { useEffect, useState, type ReactNode } from "react";
-import { FolderOpen, FolderSearch, ImageIcon, Plus } from "lucide-react";
+import { Brush, ExternalLink, FolderOpen, FolderSearch, ImageIcon, Plus, Trash2, X } from "lucide-react";
+import { openContextMenu } from "../components/ContextMenu";
+import { requestDelete } from "../lib/confirmDelete";
 import sketchLogo from "../assets/sketch-logo.png";
 import { Modal, ModalButton } from "../components/Modal";
-import { newSketch, pickImage, pickSketchFolder, readImageFile, sketchTitle, useSketch } from "./store";
+import { newSketch, pickImage, pickSketchFolder, readImageFile, sketchTitle, useSketch, forgetRecentSketch, revealSketch, trashSketch } from "./store";
 
 const PRESETS: [string, number, number][] = [
   ["HD", 1280, 720],
@@ -50,7 +53,7 @@ export function NewCanvasDialog({ onCreate, onClose }: { onCreate: (path: string
 }
 
 /** Oceanic Sketch's Home: animated brand, new canvas, recent images. */
-export function SketchHome({ onOpen }: { onOpen: (path: string) => void }) {
+export function SketchHome({ onOpen, openNow, onFocusTab, onCloseTab }: { onOpen: (path: string) => void; openNow: OpenItem[]; onFocusTab: (tabId: string) => void; onCloseTab: (tabId: string) => void }) {
   const { folder, files, recent } = useSketch();
   const [asking, setAsking] = useState(false);
   const elsewhere = recent.filter((r) => !files.some((f) => f.path === r)).slice(0, 6);
@@ -74,6 +77,7 @@ export function SketchHome({ onOpen }: { onOpen: (path: string) => void }) {
           <p className="oc-fade-in text-[14px] text-neutral-400 [animation-delay:1.6s] [animation-fill-mode:backwards]">Draw, paint and edit images.</p>
         </div>
 
+        <OpenNowRow items={openNow} icon={<Brush className="size-4" />} tone="var(--oc-sketch)" onFocus={onFocusTab} onClose={onCloseTab} />
         <section className="flex flex-wrap gap-3">
           <button type="button" onClick={() => setAsking(true)} className="oc-template flex cursor-pointer items-center gap-3 rounded-xl border px-5 py-4 text-left" style={{ "--tone": "var(--oc-sketch)" } as React.CSSProperties}>
             <Plus className="size-6 text-[color:var(--oc-sketch-light)]" />
@@ -107,14 +111,14 @@ export function SketchHome({ onOpen }: { onOpen: (path: string) => void }) {
             </button>
           </div>
           {files.length ? (
-            <Grid>{files.map((f) => <Thumb key={f.path} path={f.path} onOpen={onOpen} />)}</Grid>
+            <Grid>{files.map((f) => <Thumb key={f.path} path={f.path} inFolder onOpen={onOpen} />)}</Grid>
           ) : (
             <p className="oc-glass p-6 text-center text-[14px] text-neutral-400">No images here yet. Start a new canvas above.</p>
           )}
           {elsewhere.length > 0 && (
             <>
               <p className="mb-2 mt-6 text-[12px] font-medium text-neutral-500">Opened from elsewhere</p>
-              <Grid>{elsewhere.map((r) => <Thumb key={r} path={r} onOpen={onOpen} />)}</Grid>
+              <Grid>{elsewhere.map((r) => <Thumb key={r} path={r} inFolder={false} onOpen={onOpen} />)}</Grid>
             </>
           )}
         </section>
@@ -126,7 +130,23 @@ export function SketchHome({ onOpen }: { onOpen: (path: string) => void }) {
 
 const Grid = ({ children }: { children: ReactNode }) => <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4">{children}</div>;
 
-function Thumb({ path, onOpen }: { path: string; onOpen: (p: string) => void }) {
+/** Right-click on a Sketch image: Open, Show in Explorer, then Delete (folder) or Remove from list (elsewhere). */
+export function sketchMenu(e: React.MouseEvent, path: string, inFolder: boolean, onOpen: (p: string) => void, onOpenNewTab?: (p: string) => void) {
+  e.preventDefault();
+  e.stopPropagation();
+  const title = sketchTitle(path);
+  openContextMenu(e, [
+    { label: "Open", icon: <ImageIcon className="size-4" />, onSelect: () => onOpen(path) },
+    ...(onOpenNewTab ? [{ label: "Open in new tab", icon: <ExternalLink className="size-4" />, onSelect: () => onOpenNewTab(path) }] : []),
+    { label: "Show in File Explorer", icon: <FolderOpen className="size-4" />, onSelect: () => void revealSketch(path).catch(() => {}) },
+    "divider",
+    inFolder
+      ? { label: "Delete", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => requestDelete({ app: "sketch", kind: "recycle", title, entry: `sketch:${path}`, run: () => trashSketch(path) }) }
+      : { label: "Remove from list", icon: <X className="size-4" />, danger: true, onSelect: () => requestDelete({ app: "sketch", kind: "remove", title, entry: `sketch:${path}`, run: () => forgetRecentSketch(path) }) },
+  ]);
+}
+
+function Thumb({ path, inFolder, onOpen }: { path: string; inFolder: boolean; onOpen: (p: string) => void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let u: string | null = null;
@@ -135,12 +155,26 @@ function Thumb({ path, onOpen }: { path: string; onOpen: (p: string) => void }) 
       .catch(() => {});
     return () => void (u && URL.revokeObjectURL(u));
   }, [path]);
+  const del = () =>
+    inFolder
+      ? requestDelete({ app: "sketch", kind: "recycle", title: sketchTitle(path), entry: `sketch:${path}`, run: () => trashSketch(path) })
+      : requestDelete({ app: "sketch", kind: "remove", title: sketchTitle(path), entry: `sketch:${path}`, run: () => forgetRecentSketch(path) });
   return (
-    <button type="button" onClick={() => onOpen(path)} title={path} className="group flex cursor-pointer flex-col gap-2 text-left">
-      <span className="oc-checker grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-lg border border-white/[0.08] transition-all group-hover:-translate-y-1 group-hover:border-[color:var(--oc-sketch)]">
-        {url ? <img src={url} alt="" className="max-h-full max-w-full object-contain" /> : <ImageIcon className="size-6 text-neutral-500" />}
-      </span>
-      <span className="truncate text-[13px] font-medium text-neutral-200">{sketchTitle(path)}</span>
-    </button>
+    <div className="group relative">
+      <button type="button" onClick={() => onOpen(path)} onContextMenu={(e) => sketchMenu(e, path, inFolder, onOpen)} title={path} className="flex w-full cursor-pointer flex-col gap-2 text-left">
+        <span className="oc-checker grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-lg border border-white/[0.08] transition-all group-hover:-translate-y-1 group-hover:border-[color:var(--oc-sketch)]">
+          {url ? <img src={url} alt="" className="max-h-full max-w-full object-contain" /> : <ImageIcon className="size-6 text-neutral-500" />}
+        </span>
+        <span className="truncate text-[13px] font-medium text-neutral-200">{sketchTitle(path)}</span>
+      </button>
+      <button
+        type="button"
+        data-tip={inFolder ? "Delete" : "Remove from list"}
+        onClick={del}
+        className="absolute right-1.5 top-1.5 grid size-7 cursor-pointer place-items-center rounded-md bg-neutral-900/80 text-neutral-300 opacity-0 shadow-md backdrop-blur transition-all hover:bg-red-500/90 hover:text-white group-hover:-translate-y-1 group-hover:opacity-100"
+      >
+        {inFolder ? <Trash2 className="size-3.5" /> : <X className="size-3.5" />}
+      </button>
+    </div>
   );
 }

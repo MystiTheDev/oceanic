@@ -1,7 +1,12 @@
+import { requestDelete } from "../lib/confirmDelete";
+import { OpenNowRow, type OpenItem } from "../components/OpenNowRow";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { importOmap } from "../lib/omapFile";
+import { readFileBytes } from "../lib/fileIO";
 import { HomeMotif } from "../components/HomeMotif";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollRow } from "../components/ScrollRow";
-import { Copy, LayoutGrid, List, MoreHorizontal, PenLine, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, LayoutGrid, List, MoreHorizontal, Network, PenLine, Plus, Search, Trash2 } from "lucide-react";
 import { api, type MindmapRecord } from "../data/api";
 import { openContextMenu } from "../components/ContextMenu";
 import { Modal, ModalButton } from "../components/Modal";
@@ -11,6 +16,9 @@ import { ROOT, SUBJECTS, fromRecord, layout, subjectOf, toRecord, type MNode } f
 
 const SAVED = "oceanic:mindmap-saved";
 const announce = (id: string) => window.dispatchEvent(new CustomEvent(SAVED, { detail: id }));
+/** Mindmap's Delete (permanent), per Settings → Deleting; blocked while the map is open. */
+export const askDeleteMindmap = (m: { id: string; title: string }) =>
+  requestDelete({ app: "mindmap", kind: "permanent", title: m.title, entry: `mindmap:${m.id}`, run: async () => (await api.deleteMindmap(m.id), announce(m.id)) });
 
 /** Creates a map from a subject preset (its branches pre-filled) and returns its id. */
 export async function createMindmap(subjectId: string): Promise<string> {
@@ -58,9 +66,8 @@ function useNodes(m: MindmapRecord) {
 }
 
 /** Oceanic Mindmap home: branded header, template strip, then every map as grid or list. */
-export function MindmapGallery({ onOpen }: { onOpen: (id: string) => void }) {
+export function MindmapGallery({ onOpen, openNow, onFocusTab, onCloseTab }: { onOpen: (id: string) => void; openNow: OpenItem[]; onFocusTab: (tabId: string) => void; onCloseTab: (tabId: string) => void }) {
   const [maps, setMaps] = useState<MindmapRecord[] | null>(null);
-  const [confirm, setConfirm] = useState<MindmapRecord | null>(null);
   const [renaming, setRenaming] = useState<MindmapRecord | null>(null);
   const [subject, setSubject] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -111,7 +118,7 @@ export function MindmapGallery({ onOpen }: { onOpen: (id: string) => void }) {
       { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(m) },
       { label: "Duplicate", icon: <Copy className="size-4" />, onSelect: () => void duplicate(m) },
       "divider",
-      { label: "Delete", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => setConfirm(m) },
+      { label: "Delete", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => askDeleteMindmap(m) },
     ]);
 
   const usedSubjects = useMemo(() => [...new Set((maps ?? []).map((m) => m.subjectTag))], [maps]);
@@ -154,6 +161,7 @@ export function MindmapGallery({ onOpen }: { onOpen: (id: string) => void }) {
           <p className="text-[14px] text-neutral-400">Create wonderful Mind Maps without ever switching!!</p>
         </div>
 
+        <OpenNowRow items={openNow} icon={<Network className="size-4" />} tone="var(--oc-mm-violet)" onFocus={onFocusTab} onClose={onCloseTab} />
         {/* ---- Templates ---- */}
         <div className="oc-mm-hero rounded-2xl border px-6 py-5">
           <h2 className="mb-3 text-[16px] font-semibold text-neutral-100">Start a new map</h2>
@@ -188,6 +196,21 @@ export function MindmapGallery({ onOpen }: { onOpen: (id: string) => void }) {
         <section>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <h2 className="mr-2 text-[12px] font-semibold uppercase tracking-wide text-neutral-500">Your maps</h2>
+            <button
+              type="button"
+              onClick={async () => {
+                const f = await openDialog({ title: "Open a mindmap", filters: [{ name: "Oceanic mindmap", extensions: ["omap"] }] });
+                if (typeof f !== "string") return;
+                try {
+                  onOpen(await importOmap(await readFileBytes(f)));
+                } catch (e) {
+                  window.alert(`Couldn't open this mindmap: ${e instanceof Error ? e.message : e}`);
+                }
+              }}
+              className="order-last ml-auto flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"
+            >
+              Open .omap
+            </button>
             <Chip active={subject === null} onClick={() => setSubject(null)}>
               All
             </Chip>
@@ -298,28 +321,6 @@ export function MindmapGallery({ onOpen }: { onOpen: (id: string) => void }) {
               </button>
             </div>
           </form>
-        </Modal>
-      )}
-      {confirm && (
-        <Modal onClose={() => setConfirm(null)}>
-          <div className="flex flex-col gap-3 p-5">
-            <h2 className="text-[15px] font-semibold text-neutral-100">Delete “{confirm.title}”?</h2>
-            <p className="text-[13px] text-neutral-400">This can't be undone.</p>
-            <div className="flex justify-end gap-2">
-              <ModalButton onClick={() => setConfirm(null)}>Cancel</ModalButton>
-              <ModalButton
-                variant="danger"
-                autoFocus
-                onClick={async () => {
-                  await api.deleteMindmap(confirm.id);
-                  setConfirm(null);
-                  announce(confirm.id);
-                }}
-              >
-                Delete
-              </ModalButton>
-            </div>
-          </div>
         </Modal>
       )}
     </div>

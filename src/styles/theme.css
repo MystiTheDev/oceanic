@@ -1401,3 +1401,16 @@
 .oc-shimmer::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%); transform: translateX(-120%); animation: oc-shine 2.8s 0.8s ease-in-out infinite; }
 @keyframes oc-shine { 60%, 100% { transform: translateX(120%); } }
 @media (prefers-reduced-motion: reduce) { .oc-rays, .oc-bubble, .oc-shimmer::after { animation: none !important; } }
+
+/* Settings → Preferences → Editor text size (headings are em-based, so they follow). */
+:root[data-editor-size="small"] .bn-container .bn-editor { font-size: 14px; }
+:root[data-editor-size="large"] .bn-container .bn-editor { font-size: 18px; }
+
+/* App-switch loader: logo lifts in with a soft glow, name follows, bar fills. */
+@keyframes oc-loader-logo { from { opacity: 0; transform: translateY(14px) scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes oc-loader-glow { 0%, 100% { filter: drop-shadow(0 0 0 transparent); } 50% { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--tone) 55%, transparent)); } }
+@keyframes oc-loader-text { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes oc-loader-bar { from { width: 0; } to { width: 100%; } }
+.oc-loader-logo { animation: oc-loader-logo 600ms cubic-bezier(0.2, 0, 0, 1) backwards, oc-loader-glow 2.2s 600ms ease-in-out infinite; }
+.oc-loader-text { animation: oc-loader-text 500ms 250ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.oc-loader-bar { width: 0; animation: oc-loader-bar linear forwards; animation-delay: 200ms; }

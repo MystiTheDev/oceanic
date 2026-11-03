@@ -1,5 +1,3 @@
-import docsLogo from "../assets/docs-logo.png";
-import sketchLogo from "../assets/sketch-logo.png";
 import {
   useEffect,
   useRef,
@@ -12,7 +10,6 @@ import {
   AppWindow,
   FolderInput,
   ChevronRight,
-  LayoutGrid,
   Copy,
   MoreHorizontal,
   PenLine,
@@ -34,7 +31,6 @@ import type { WorkspaceRecord } from "../data/api";
 import { openContextMenu } from "./ContextMenu";
 import { flashLanded, setDragGhost } from "../lib/dragGhost";
 import logoRaw from "../assets/logo-raw.png";
-import mindmapLogo from "../assets/mindmap-logo.png";
 
 type SidebarProps = {
   /** Live pages of the active workspace. */
@@ -53,10 +49,6 @@ type SidebarProps = {
   onOpenTags: () => void;
   /** Import notes: the picker (no files) or files dropped on the sidebar. */
   onImport: (files?: File[]) => void;
-  onOpenMindmaps: () => void;
-  onOpenDocs: () => void;
-  /** Oceanic Sketch entry in More apps; hidden until the app wires it. */
-  onOpenSketch?: () => void;
   trashedPages: PageMeta[];
   activePageId: string | null;
   onOpenPage: (id: string) => void;
@@ -115,9 +107,6 @@ export function Sidebar({
   onLibrary,
   onOpenTags,
   onImport,
-  onOpenMindmaps,
-  onOpenDocs,
-  onOpenSketch,
 }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [fileOver, setFileOver] = useState(false);
@@ -151,7 +140,6 @@ export function Sidebar({
   };
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [privateOpen, setPrivateOpen] = useState(true);
-  const [appsOpen, setAppsOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["roadmap"]));
   const [menu, setMenu] = useState<{ pageId: string; anchor: HTMLElement } | null>(null);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
@@ -492,44 +480,6 @@ export function Sidebar({
 
       {/* ---- Bottom: Trash + New page ---- */}
       <div className="flex flex-col gap-px p-2">
-        {/* ---- More apps ---- */}
-        <button
-          type="button"
-          onClick={() => setAppsOpen((v) => !v)}
-          className="group flex w-full cursor-pointer items-center gap-1.5 px-2 pb-0.5 pt-3 text-[12px] font-semibold text-neutral-500 hover:text-neutral-400"
-        >
-          <LayoutGrid className="size-3.5" />
-          <span className="flex-1 text-left">More apps</span>
-          <ChevronRight className={`size-3 transition-transform duration-200 ${appsOpen ? "rotate-90" : ""}`} />
-        </button>
-        <Collapse open={appsOpen}>
-        <button
-          type="button"
-          onClick={onOpenMindmaps}
-          className="flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
-        >
-          <img src={mindmapLogo} alt="" className="size-5 shrink-0 object-contain" />
-          <span className="flex-1 text-left">Oceanic Mindmap</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenDocs}
-          className="flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
-        >
-          <img src={docsLogo} alt="" className="size-5 shrink-0 object-contain" />
-          <span className="flex-1 text-left">Oceanic Docs</span>
-        </button>
-        {onOpenSketch && (
-          <button
-            type="button"
-            onClick={onOpenSketch}
-            className="flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
-          >
-            <img src={sketchLogo} alt="" className="size-5 shrink-0 object-contain" />
-            <span className="flex-1 text-left">Oceanic Sketch</span>
-          </button>
-        )}
-        </Collapse>
       </div>
 
       {footer}

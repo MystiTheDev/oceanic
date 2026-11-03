@@ -1,3 +1,4 @@
+import { readFileBytes } from "../lib/fileIO";
 import { useSyncExternalStore } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -136,13 +137,7 @@ export function setUiStyle(uiStyle: DocsUiStyle) {
 
 /** Binary IPC as base64 strings: raw number[] arrays serialize to ~4x-size
     JSON, which made big .docx files (lots of images) slow to open and save. */
-export const readDoc = async (path: string): Promise<Uint8Array> => {
-  const b64 = await invoke<string>("docs_read", { path });
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
+export const readDoc = readFileBytes;
 
 /** Binary IPC as base64 strings (see readDoc). */
 export const writeDoc = (path: string, data: Uint8Array) => {

@@ -150,6 +150,8 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
       ParagraphFormat,
       WordFeel,
     ],
+    // Word opens with the caret blinking at the start of the document.
+    autofocus: "start",
     editorProps: { attributes: { class: "oc-doc-body", spellcheck: "true" } },
     onUpdate: () => scheduleSave(),
   });
@@ -511,7 +513,7 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
         <div className="oc-doc-zoom-box mx-auto" style={{ width: w * PX_PER_MM * zoom, height: (pages * stride - gap) * zoom }}>
           <div className="oc-doc-zoom transition-transform duration-200 ease-out" style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: w * PX_PER_MM }}>
         {/* Page cards behind one continuous editor; pagination.ts pushes blocks onto the next card. */}
-        <div ref={pagesEl} className="oc-doc-pages relative" style={{ width: w * PX_PER_MM, height: pages * stride - gap }}>
+        <div ref={pagesEl} className="oc-doc-pages relative cursor-text" style={{ width: w * PX_PER_MM, height: pages * stride - gap }} onMouseDown={(e) => placeCaret(e, editor)}>
           {Array.from({ length: pages }, (_, i) => (
             <div
               key={i}
@@ -544,7 +546,6 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
           </div>
         </div>
       </div>
-      <DocsTooltip />
       <StatusBar
         editor={editor}
         pagesEl={pagesEl}
@@ -580,6 +581,19 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
 
 /* ------------------------------------------------------------ context menu */
 /** Right-click in the page. Shift+right-click keeps the WebView's own menu (spelling suggestions). */
+/** Like Word: a click anywhere on the paper (margins, empty space below the text)
+    puts the caret at the nearest spot, not only clicks on existing lines. */
+function placeCaret(e: React.MouseEvent, editor: Editor | null) {
+  if (!editor || e.button !== 0 || (e.target as HTMLElement).closest(".ProseMirror")) return;
+  e.preventDefault();
+  const r = editor.view.dom.getBoundingClientRect();
+  const left = Math.min(r.right - 2, Math.max(r.left + 2, e.clientX));
+  const top = Math.min(r.bottom - 2, Math.max(r.top + 2, e.clientY));
+  const hit = editor.view.posAtCoords({ left, top });
+  const pos = hit ? hit.pos : e.clientY > r.bottom ? editor.state.doc.content.size : 0;
+  editor.chain().focus().setTextSelection(pos).run();
+}
+
 function docMenu(e: React.MouseEvent, editor: Editor, openDialog: (d: "font" | "paragraph") => void) {
   if (e.shiftKey) return;
   const c = () => editor.chain().focus();
@@ -1294,34 +1308,6 @@ function Select({ value, onChange, options, width, fontPreview }: { value: strin
   );
 }
 
-/** Word-style tooltip card for any [data-tip] inside Docs (after a short hover). */
-function DocsTooltip() {
-  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
-  useEffect(() => {
-    let timer = 0;
-    const over = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement).closest?.("[data-tip]") as HTMLElement | null;
-      window.clearTimeout(timer);
-      if (!el) return setTip(null);
-      timer = window.setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        setTip({ text: el.dataset.tip!, x: r.left + r.width / 2, y: r.bottom + 8 });
-      }, 450);
-    };
-    const hide = () => (window.clearTimeout(timer), setTip(null));
-    document.addEventListener("mouseover", over);
-    document.addEventListener("mousedown", hide);
-    return () => (document.removeEventListener("mouseover", over), document.removeEventListener("mousedown", hide), window.clearTimeout(timer));
-  }, []);
-  if (!tip) return null;
-  const [name, key] = tip.text.split(/ \((.+)\)$/);
-  return (
-    <div className="oc-docs-tip pointer-events-none fixed z-[70] -translate-x-1/2 rounded-md border border-white/[0.1] bg-[var(--oc-raised)] px-2.5 py-1.5 text-[12px] shadow-lg" style={{ left: tip.x, top: tip.y }}>
-      <span className="font-medium text-neutral-100">{name}</span>
-      {key && <span className="ml-2 text-neutral-400">{key}</span>}
-    </div>
-  );
-}
 
 const SWATCHES = ["#000000", "#434343", "#999999", "#c00000", "#e36c09", "#f1c232", "#38761d", "#0b5394", "#674ea7", "#a61c00", "#ffff00", "#00ff00", "#00ffff", "#ff00ff"];
 function ColorBtn({ title, onPick, highlight, children }: { title: string; onPick: (c: string) => void; highlight?: boolean; children: ReactNode }) {

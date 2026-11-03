@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
+  House,
   ArrowRight, Brush, Circle, ClipboardPaste, Copy, Crop, Droplet, Eraser, Eye, EyeOff, FlipHorizontal, FlipVertical, Hand, Highlighter,
   Layers, Minus, MousePointer2, PaintBucket, Pencil, Pipette, Plus, Redo2, RotateCcw, RotateCw, Save, Scaling, Scissors, Slash, Square, SprayCan,
   Trash2, Triangle, Type, Undo2, ArrowUp, ArrowDown, Merge, CopyPlus,
@@ -52,6 +53,11 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const [selection, setSelection] = useState<Rect | null>(null);
   const [floating, setFloating] = useState<Floating | null>(null);
   const [text, setText] = useState<{ at: Pt; value: string } | null>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  // Focus the new text box once it's in the page (autoFocus loses to the canvas click).
+  useEffect(() => {
+    if (text) textRef.current?.focus();
+  }, [text?.at.x, text?.at.y]);
   const [showLayers, setShowLayers] = useState(true);
   const [dialog, setDialog] = useState<null | "new" | "resize">(null);
   const [menu, setMenu] = useState(false);
@@ -290,6 +296,8 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     }
     if (tool === "fill") return edit((doc) => floodFill(doc.ctx, ix, iy, color));
     if (tool === "text") {
+      // Keep the browser from moving focus to the canvas after the box mounts.
+      e.preventDefault();
       if (text) return commitText();
       return setText({ at: p, value: "" });
     }
@@ -584,6 +592,8 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   );
   const titleStrip = (
     <div data-tauri-drag-region className="oc-docs-chrome oc-docs-enter flex h-10 shrink-0 items-center gap-1 pl-2">
+      <IBtn tip="Sketch Home" onClick={onHome}><House /></IBtn>
+      <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
       {fileMenu}
       <IBtn tip="Save (Ctrl+S)" onClick={() => void save()}><Save /></IBtn>
       <IBtn tip="Undo (Ctrl+Z)" disabled={!doc.canUndo} onClick={() => (commitFloating(), doc.undo(), changed())}><Undo2 /></IBtn>
@@ -641,7 +651,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
           )}
           {text && (
             <textarea
-              autoFocus
+              ref={textRef}
               value={text.value}
               onChange={(e) => setText({ ...text, value: e.target.value })}
               onKeyDown={(e) => {
@@ -684,7 +694,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   );
 
   return (
-    <div className="oc-sketch relative flex h-full flex-col" onMouseDown={(e) => text && !(e.target as HTMLElement).closest("textarea") && commitText()}>
+    <div className="oc-sketch relative flex h-full flex-col" onMouseDown={(e) => text && !(e.target as HTMLElement).closest("textarea") && !stackRef.current?.contains(e.target as Node) && commitText()}>
       {titleStrip}
       {layout === "paint" ? (
         <>

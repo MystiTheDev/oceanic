@@ -1,7 +1,8 @@
+import { buildOceanFile } from "../lib/oceanFile";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PartialBlock } from "@blocknote/core";
-import { FileCode2, FileDown, FileText, Loader2 } from "lucide-react";
+import { FileCode2, FileDown, FileText, Loader2, Waves } from "lucide-react";
 import { subtreeIds, type PageMeta } from "../data/workspace";
 import { buildExport, exportFilename, pickSaveTarget, printPage, type ExportFormat, type PaperSize } from "../lib/export";
 
@@ -13,8 +14,9 @@ type ExportDialogProps = {
   onClose: () => void;
 };
 
-type Format = ExportFormat | "pdf";
+type Format = ExportFormat | "pdf" | "ocean";
 const FORMATS: { id: Format; label: string; hint: string; desc: string; icon: typeof FileText }[] = [
+  { id: "ocean", label: "Oceanic file", hint: ".ocean", desc: "Everything kept: subpages, images, properties", icon: Waves },
   { id: "markdown", label: "Markdown", hint: ".md", desc: "Plain text, works anywhere", icon: FileText },
   { id: "html", label: "HTML", hint: ".html", desc: "Opens in any browser", icon: FileCode2 },
   { id: "pdf", label: "PDF", hint: ".pdf", desc: "Print-ready, page numbers", icon: FileDown },
@@ -43,6 +45,14 @@ export function ExportDialog({ page, pages, loadBlocks, onDone, onClose }: Expor
     try {
       if (format === "pdf") {
         await printPage(page, loadBlocks, paper);
+        onClose();
+        return;
+      }
+      if (format === "ocean") {
+        const target = await pickSaveTarget(`${(page.title || "Untitled").replace(/[\/:*?"<>|]/g, "-")}.ocean`);
+        if (!target) return;
+        await target.write(await buildOceanFile(page.id, pages, loadBlocks, includeSubpages));
+        onDone(`Exported to ${target.label}`);
         onClose();
         return;
       }

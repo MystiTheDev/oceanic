@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, Copy, ExternalLink, FileText, FolderOpen, House, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, FileText, FolderOpen, House, Pencil, Plus, Trash2 } from "lucide-react";
 import { openContextMenu } from "../components/ContextMenu";
+import { requestDelete } from "../lib/confirmDelete";
 import docsLogo from "../assets/docs-logo.png";
 import { docTitle, duplicateDoc, newUntitled, refreshFiles, renameDoc, replaceRecent, revealDoc, trashDoc, useDocs } from "./store";
 
@@ -11,7 +12,6 @@ export function DocsSidebar({
   activePath,
   onOpen,
   onHome,
-  onBack,
   onOpenNewTab,
   onRenamed,
   onDeleted,
@@ -23,7 +23,6 @@ export function DocsSidebar({
   activePath: string | null;
   onOpen: (p: string) => void;
   onHome: () => void;
-  onBack: () => void;
   footer: ReactNode;
 }) {
   const { files } = useDocs();
@@ -55,15 +54,22 @@ export function DocsSidebar({
       { label: "Show in File Explorer", icon: <FolderOpen className="size-4" />, onSelect: () => void revealDoc(path) },
       "divider",
       {
-        label: "Move to Recycle Bin",
+        label: "Delete",
         icon: <Trash2 className="size-4" />,
         danger: true,
-        onSelect: async () => {
-          await trashDoc(path);
-          replaceRecent(path, null);
-          onDeleted(path);
-          void refreshFiles();
-        },
+        onSelect: () =>
+          requestDelete({
+            app: "docs",
+            kind: "recycle",
+            title: docTitle(path),
+            entry: `doc:${path}`,
+            run: async () => {
+              await trashDoc(path);
+              replaceRecent(path, null);
+              onDeleted(path);
+              void refreshFiles();
+            },
+          }),
       },
     ]);
   return (
@@ -73,10 +79,6 @@ export function DocsSidebar({
         <div className="oc-docs-word min-w-0 flex-1 truncate text-[17px] font-extrabold tracking-[-0.02em]">Oceanic Docs</div>
       </div>
       <div className="flex flex-col gap-px px-2 pb-1">
-        <button type="button" onClick={onBack} className={`${ROW} text-neutral-400 hover:bg-white/5 hover:text-neutral-300`}>
-          <ArrowLeft className="size-4 shrink-0 text-neutral-500" />
-          <span className="flex-1 text-left">Back to Oceanic</span>
-        </button>
         <button
           type="button"
           onClick={onHome}

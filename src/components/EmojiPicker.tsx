@@ -109,7 +109,7 @@ export function EmojiPicker({
     <div
       ref={ref}
       style={{ left: Math.min(r.left, window.innerWidth - 420), top: Math.max(8, top) }}
-      className="oc-pop-in fixed z-50 flex max-h-[380px] w-[408px] flex-col rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] shadow-xl shadow-black/50"
+      className="oc-pop-in fixed z-[85] flex max-h-[380px] w-[408px] flex-col rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] shadow-xl shadow-black/50"
     >
       <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-2 pb-2 pt-2">
         <div className="flex h-7 flex-1 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 focus-within:border-sky-500/60">

@@ -528,20 +528,20 @@
 
       /* ---------------- status bar: appears once the scene has settled and
          fills over the remaining wait, finishing when the splash leaves. */
-      const MIN_EXIT = reduced ? 150 : 17000;
+      const MIN_EXIT = reduced ? 150 : 12000;
       const statusEl = document.getElementById("status");
       const statusText = document.getElementById("statusText");
       const barFill = document.querySelector("#bar i");
       let appReady = false;
       const left = () => Math.max(400, MIN_EXIT - performance.now());
       const run = (to, ms) => {
-        barFill.style.transition = `transform ${ms}ms linear`;
+        barFill.style.transition = `transform ${ms}ms cubic-bezier(0.2, 0.6, 0.35, 1)`;
         barFill.style.transform = `scaleX(${to})`;
       };
       setTimeout(() => {
         statusEl.classList.add("on");
         run(appReady ? 1 : 0.85, left());
-      }, reduced ? 0 : 7200);
+      }, reduced ? 0 : 6000);
 
       /* ---------------- exit: "Ready", hold 0.8s, then fade out and reveal the app */
       let exited = false;

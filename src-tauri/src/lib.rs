@@ -488,14 +488,32 @@ fn on_close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
     }
 }
 
+/// The first .ocean / .omap path in a command line (Windows passes the double-clicked file).
+fn oceanic_file_arg(args: &[String]) -> Option<String> {
+    args.iter().skip(1).find(|a| {
+        let l = a.to_ascii_lowercase();
+        l.ends_with(".ocean") || l.ends_with(".omap")
+    }).cloned()
+}
+
+/// File Oceanic was launched with (if any), for the app to open once it's ready.
+#[tauri::command]
+fn launch_file() -> Option<String> {
+    oceanic_file_arg(&std::env::args().collect::<Vec<_>>())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         // Must be the FIRST plugin: on a second launch of the executable
         // (desktop shortcut, taskbar, …) the new process forwards to this
         // running one and exits immediately.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             handoff_existing_app(app);
+            // Double-clicked .ocean / .omap while Oceanic runs: open it here.
+            if let Some(file) = oceanic_file_arg(&args) {
+                let _ = app.emit("open-file", file);
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         // Remember the main window's size, position and maximized state between launches.
@@ -611,6 +629,7 @@ pub fn run() {
             docs_reveal,
             docs_default_dir,
             sketch_list,
+            launch_file,
             sketch_default_dir,
             set_tray_recent,
             import_audio_bytes,

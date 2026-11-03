@@ -24,6 +24,7 @@ import {
   Copy,
   Download,
   GitBranchPlus,
+  House,
   Scissors,
   ExternalLink,
   FileText,
@@ -43,7 +44,9 @@ import { api } from "../data/api";
 import type { PageMeta } from "../data/workspace";
 import { COLOR_IDS, COLORS, colorOf } from "../lib/colors";
 import { pickSaveTarget } from "../lib/export";
+import { buildOmap } from "../lib/omapFile";
 import { openContextMenu, type MenuItem } from "../components/ContextMenu";
+import { WindowControls } from "../components/TitleBar";
 import {
   ROOT,
   childSpot,
@@ -64,6 +67,8 @@ type Props = {
   pages: PageMeta[];
   onOpenPage: (id: string) => void;
   onTitle: (id: string, title: string) => void;
+  /** Back to Mindmap Home (the map stays open in the background). */
+  onHome: () => void;
 };
 
 type TopicData = MNode & {
@@ -198,7 +203,7 @@ const TopicNode = memo(function TopicNode({ data, selected }: NodeProps<Node<Top
 const nodeTypes = { topic: TopicNode };
 
 /* ---------------------------------------------------------------- editor */
-function Editor({ mindmapId, pages, onOpenPage, onTitle }: Props) {
+function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
   const rf = useReactFlow();
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
@@ -475,6 +480,8 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle }: Props) {
       { label: "PNG image (2×)", onSelect: () => void exportImage("png") },
       { label: "SVG vector", onSelect: () => void exportImage("svg") },
       { label: "Mermaid (.md)", onSelect: () => void exportMermaid() },
+      "divider",
+      { label: "Oceanic mindmap (.omap)", onSelect: () => void buildOmap(mindmapId).then((b) => save(`${title || "Mindmap"}.omap`, b)) },
     ]);
   };
 
@@ -606,12 +613,13 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle }: Props) {
   return (
     <div ref={wrap} tabIndex={0} onKeyDown={onKeyDown} className={`oc-mindmap relative h-full outline-none ${connectFrom ? "is-connecting" : ""}`}>
       {connectFrom && (
-        <div className="oc-fade-in absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-lg bg-sky-600 px-3 py-1.5 text-[13px] font-medium text-[#fff] shadow-lg">
+        <div className="oc-fade-in absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-lg bg-sky-600 px-3 py-1.5 text-[13px] font-medium text-[#fff] shadow-lg">
           Click a topic to connect “{nodes.find((n) => n.id === connectFrom)?.label}” to it · Esc to cancel
         </div>
       )}
-      <div className="absolute left-4 right-4 top-3 z-10 flex items-center gap-2">
-        <span className="text-[18px]">{subj.icon}</span>
+      {/* Docs-style chrome: full-window like Docs/Sketch, so it carries the window controls. */}
+      <div data-tauri-drag-region className="oc-docs-chrome oc-docs-enter absolute inset-x-0 top-0 z-10 flex h-11 items-center gap-2 pl-3">
+        <span className="text-[17px]">{subj.icon}</span>
         <input
           value={title}
           onChange={(e) => {
@@ -619,24 +627,30 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle }: Props) {
             onTitle(mindmapId, e.target.value);
           }}
           placeholder="Untitled mindmap"
-          className="min-w-0 flex-1 bg-transparent text-[18px] font-bold tracking-tight text-neutral-100 outline-none placeholder:text-neutral-600"
+          className="min-w-0 max-w-[420px] flex-1 rounded-md bg-transparent px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-neutral-100 outline-none transition-colors placeholder:text-neutral-600 hover:bg-white/[0.05] focus:bg-white/[0.06]"
         />
-        <span className="hidden text-[11px] text-neutral-500 md:block">Tab child · Enter sibling · F2 edit · Del remove</span>
-        <button type="button" onClick={tidy} className="oc-mm-btn" title="Re-arrange branches">
+        <span data-tauri-drag-region className="flex-1" />
+        <span data-tauri-drag-region className="hidden text-[11px] text-neutral-500 lg:block">Tab child · Enter sibling · F2 edit · Del remove</span>
+        <button type="button" onClick={tidy} className="oc-mm-btn oc-press" data-tip="Re-arrange branches">
           <Sparkles size={14} /> Tidy up
+        </button>
+        <button type="button" onClick={onHome} className="oc-mm-btn oc-press !px-2" data-tip="Mindmap Home" aria-label="Mindmap Home">
+          <House size={15} />
         </button>
         <button
           type="button"
           onClick={toggleMinimap}
           aria-pressed={minimap}
-          title={minimap ? "Hide minimap" : "Show minimap"}
-          className={`oc-mm-btn ${minimap ? "is-on" : ""}`}
+          data-tip={minimap ? "Hide minimap" : "Show minimap"}
+          className={`oc-mm-btn oc-press ${minimap ? "is-on" : ""}`}
         >
           <MapIcon size={14} /> Minimap
         </button>
-        <button type="button" onClick={exportMenu} className="oc-mm-btn">
+        <button type="button" onClick={exportMenu} className="oc-mm-btn oc-press" data-tip="Export as image or .omap">
           <Download size={14} /> Export
         </button>
+        <span className="w-1" />
+        <div className="flex h-full self-stretch"><WindowControls /></div>
       </div>
 
       <ReactFlow

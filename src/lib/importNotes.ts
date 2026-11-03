@@ -1,8 +1,9 @@
+import { readOceanFile, type OceanPage } from "./oceanFile";
 import JSZip from "jszip";
 import mammoth from "mammoth";
 import { BlockNoteEditor, type PartialBlock } from "@blocknote/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { readFileBytes } from "./fileIO";
 import { schema } from "../editor/schema";
 import { uploadFile } from "../editor/audio";
 
@@ -10,7 +11,7 @@ import { uploadFile } from "../editor/audio";
  * Import notes: Markdown, plain text, HTML, Word (.docx) and Notion export
  * zips. Each file becomes a page; a Notion export keeps its page tree.
  */
-export type ImportedPage = { title: string; blocks: PartialBlock[]; children: ImportedPage[] };
+export type ImportedPage = { title: string; blocks: PartialBlock[]; children: ImportedPage[]; icon?: string; props?: { dueDate: string | null; status: string | null; tags: string[] } };
 export type InFile = { name: string; bytes: Uint8Array };
 
 let parser: BlockNoteEditor | null = null;
@@ -24,13 +25,17 @@ async function toBlocks(name: string, bytes: Uint8Array, rewriteMd?: (md: string
   switch (ext(name)) {
     case "md":
     case "markdown": {
-      let md = text().replace(/^# .*\n+/, ""); // the first heading is the page title
+      let md = text().replace(/^﻿?\s*# .*\r?\n+/, ""); // the first heading is the page title
       if (rewriteMd) md = await rewriteMd(md);
       return editor().tryParseMarkdownToBlocks(md);
     }
     case "html":
-    case "htm":
-      return editor().tryParseHTMLToBlocks(text());
+    case "htm": {
+      // Oceanic's own HTML export repeats the icon and title above the body: drop them.
+      const doc = new DOMParser().parseFromString(text(), "text/html");
+      doc.querySelectorAll("style, script, .icon, h1.title").forEach((el) => el.remove());
+      return editor().tryParseHTMLToBlocks((doc.querySelector("main") ?? doc.body).innerHTML);
+    }
     case "docx": {
       const { value } = await mammoth.convertToHtml({ arrayBuffer: bytes.slice().buffer as ArrayBuffer });
       return editor().tryParseHTMLToBlocks(value);
@@ -80,17 +85,33 @@ async function fromZip(bytes: Uint8Array): Promise<ImportedPage[]> {
   return roots;
 }
 
-export async function parseImports(files: InFile[]): Promise<ImportedPage[]> {
+/** Why a file didn't import, in words for the summary. */
+export type ImportFailure = { name: string; reason: string };
+const reasonOf = (name: string, e: unknown) => {
+  const m = e instanceof Error ? e.message : String(e);
+  if (ext(name) === "ocean" && /JSON|Unexpected|Not an Oceanic/i.test(m)) return "not an Oceanic note file";
+  if (/zip|central directory/i.test(m)) return "not a valid zip";
+  return m || "unreadable";
+};
+
+export async function parseImports(files: InFile[]): Promise<{ pages: ImportedPage[]; failed: ImportFailure[] }> {
   const out: ImportedPage[] = [];
+  const failed: ImportFailure[] = [];
   for (const f of files) {
     try {
+      if (!f.bytes.length) throw new Error("the file is empty");
       if (ext(f.name) === "zip") out.push(...(await fromZip(f.bytes)));
+      else if (ext(f.name) === "ocean") {
+        const conv = (p: OceanPage): ImportedPage => ({ title: p.title, icon: p.icon, blocks: p.blocks, props: { dueDate: p.dueDate, status: p.status, tags: p.tags }, children: p.children.map(conv) });
+        out.push(conv(await readOceanFile(f.bytes)));
+      }
       else out.push({ title: cleanTitle(f.name), blocks: await toBlocks(f.name, f.bytes), children: [] });
     } catch (e) {
       console.error("Import failed for", f.name, e);
+      failed.push({ name: f.name, reason: reasonOf(f.name, e) });
     }
   }
-  return out;
+  return { pages: out, failed };
 }
 
 /** File picker (several files at once). */
@@ -98,8 +119,8 @@ export async function pickImportFiles(): Promise<InFile[]> {
   const picked = await open({
     multiple: true,
     title: "Import notes",
-    filters: [{ name: "Notes", extensions: ["md", "markdown", "txt", "html", "htm", "docx", "zip"] }],
+    filters: [{ name: "Notes", extensions: ["ocean", "md", "markdown", "txt", "html", "htm", "docx", "zip"] }],
   });
   const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
-  return Promise.all(paths.map(async (p) => ({ name: p.split(/[\\/]/).pop()!, bytes: new Uint8Array(await invoke<number[]>("docs_read", { path: p })) })));
+  return Promise.all(paths.map(async (p) => ({ name: p.split(/[\\/]/).pop()!, bytes: await readFileBytes(p) })));
 }

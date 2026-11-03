@@ -1,3 +1,4 @@
+import { Avatar } from "./SettingsModal";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronsUpDown, Moon, MoreHorizontal, PenLine, Plus, Settings, Sun, Trash2 } from "lucide-react";
@@ -6,12 +7,13 @@ import { colorOf } from "../lib/colors";
 import { openContextMenu } from "./ContextMenu";
 import { setDragGhost } from "../lib/dragGhost";
 
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.0.1";
 
 type SidebarFooterProps = {
   workspaces: WorkspaceRecord[];
   activeWorkspaceId: string;
   userName: string;
+  avatar: string;
   theme: "dark" | "light";
   onSelectWorkspace: (id: string) => void;
   onNewWorkspace: () => void;
@@ -24,7 +26,7 @@ type SidebarFooterProps = {
 
 /** Notion's sidebar bottom: workspace switcher, then the user row with a theme toggle. */
 export function SidebarFooter(props: SidebarFooterProps) {
-  const { workspaces, activeWorkspaceId, userName, theme } = props;
+  const { workspaces, activeWorkspaceId, userName, avatar, theme } = props;
   const [open, setOpen] = useState<"workspaces" | "user" | null>(null);
   const wsRef = useRef<HTMLButtonElement>(null);
   const userRef = useRef<HTMLButtonElement>(null);
@@ -54,7 +56,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
             open === "user" ? "bg-white/[0.07] text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
           }`}
         >
-          <Avatar name={userName} />
+          <Avatar name={userName} avatar={avatar} />
           <span className="truncate">{userName || "You"}</span>
         </button>
         <button
@@ -75,7 +77,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
       {open === "user" && userRef.current && (
         <Popover anchor={userRef.current} onClose={() => setOpen(null)}>
           <div className="flex items-center gap-2.5 px-2.5 py-2">
-            <Avatar name={userName} size="lg" />
+            <Avatar name={userName} avatar={avatar} size={32} />
             <div className="min-w-0">
               <p className="truncate text-[13px] font-medium text-neutral-100">{userName || "You"}</p>
               <p className="text-[11px] text-neutral-500">Local profile</p>
@@ -184,18 +186,6 @@ export function WorkspaceIcon({ ws }: { ws: Pick<WorkspaceRecord, "icon" | "colo
       style={{ backgroundColor: colorOf(ws.color).bg }}
     >
       {ws.icon}
-    </span>
-  );
-}
-
-function Avatar({ name, size = "sm" }: { name: string; size?: "sm" | "lg" }) {
-  return (
-    <span
-      className={`grid shrink-0 place-items-center rounded-full bg-neutral-700 font-medium text-neutral-200 ${
-        size === "lg" ? "size-8 text-[13px]" : "size-[22px] text-[11px]"
-      }`}
-    >
-      {(name.trim()[0] ?? "?").toUpperCase()}
     </span>
   );
 }

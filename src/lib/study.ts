@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { PageMeta } from "../data/workspace";
 import { api } from "../data/api";
 import { isoDate } from "./colors";
+import { prefs } from "./prefs";
 
 /** Student tags: pages tagged these show in Home's widgets and on the Calendar. */
 export const ASSIGNMENT = "Assignment";
@@ -12,7 +13,18 @@ export const studyKind = (p: PageMeta): "assignment" | "exam" | null =>
 /* ------------------------------------------------------------------ state */
 export type ClassSlot = { id: string; day: number; subject: string; start: string; end: string; room: string; color: string };
 export type Todo = { id: string; text: string; done: boolean };
+/** Durations are in minutes and may be fractional (seconds = minutes × 60). */
 export type TimerPreset = { id: string; name: string; minutes: number; breakMinutes?: number };
+/** 3725 → "1:02:05", 90 → "1:30". */
+export const clock = (secs: number) => {
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), sec = secs % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
+};
+/** Short label for a preset duration: 25m, 1h 30m, 2m 15s. */
+export const durationLabel = (minutes: number) => {
+  const t = Math.round(minutes * 60), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return [h && `${h}h`, m && `${m}m`, sec && `${sec}s`].filter(Boolean).join(" ") || "0s";
+};
 export type RunningTimer = { name: string; phase: "focus" | "break"; total: number; endsAt: number | null; remaining: number; preset: TimerPreset };
 
 type Study = {
@@ -43,7 +55,8 @@ export const DEFAULT_LAYOUT: GridCard[] = [
   g("timetable", 0, 33, 12, 8), g("stats", 0, 41, 6, 7), g("recent", 0, 48, 12, 7),
 ];
 export type ClassInfo = { teacher: string; room: string; art: string };
-export type QuickLink = { id: string; label: string; url: string };
+/** `icon`: "favicon" (site's /favicon.ico) or an emoji. `color`: a COLORS id. */
+export type QuickLink = { id: string; label: string; url: string; icon?: string; color?: string };
 const KEYS = { timetable: "studyTimetable", todos: "studyTodos", todoSource: "studyTodoSource", subjects: "studySubjects", timers: "studyTimers", focusLog: "studyFocusLog", classes: "studyClasses", links: "studyLinks", layout: "studyLayout" } as const;
 const POMODORO: TimerPreset = { id: "pomodoro", name: "Pomodoro", minutes: 25, breakMinutes: 5 };
 
@@ -95,8 +108,8 @@ const setTimer = (timer: RunningTimer | null) => {
   emit();
 };
 export function startPreset(p: TimerPreset, phase: "focus" | "break" = "focus") {
-  const mins = phase === "focus" ? p.minutes : (p.breakMinutes ?? 5);
-  setTimer({ name: phase === "focus" ? p.name : "Break", phase, total: mins * 60, endsAt: Date.now() + mins * 60_000, remaining: mins * 60, preset: p });
+  const secs = Math.round((phase === "focus" ? p.minutes : (p.breakMinutes ?? 5)) * 60);
+  setTimer({ name: phase === "focus" ? p.name : "Break", phase, total: secs, endsAt: Date.now() + secs * 1000, remaining: secs, preset: p });
   run();
 }
 export function pauseTimer() {
@@ -135,6 +148,7 @@ function finished(t: RunningTimer) {
 }
 /** Soft two-note chime (no sound files). */
 function chime() {
+  if (!prefs.chime) return;
   try {
     const ctx = new AudioContext();
     [660, 880].forEach((f, i) => {

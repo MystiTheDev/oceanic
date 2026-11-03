@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { readFileBytes } from "../lib/fileIO";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api } from "../data/api";
@@ -68,6 +69,20 @@ export async function refreshSketches() {
   }
 }
 
+/** Drop an image from the recents list (file untouched). */
+export function forgetRecentSketch(path: string) {
+  const recent = state.recent.filter((p) => p !== path);
+  set({ recent });
+  api.setSetting("recentSketches", JSON.stringify(recent)).catch(() => {});
+}
+/** Folder images go to the Recycle Bin. */
+export async function trashSketch(path: string) {
+  await invoke("docs_trash", { path });
+  forgetRecentSketch(path);
+  await refreshSketches();
+}
+export const revealSketch = (path: string) => invoke("docs_reveal", { path });
+
 export async function pickSketchFolder() {
   const dir = await open({ directory: true, title: "Choose your Oceanic Sketch folder" });
   if (typeof dir !== "string") return;
@@ -104,5 +119,5 @@ export function setSketchLayout(layout: SketchLayout) {
   api.setSetting("sketchLayout", layout).catch(() => {});
 }
 
-export const readImageFile = async (path: string) => new Uint8Array(await invoke<number[]>("docs_read", { path }));
+export const readImageFile = readFileBytes;
 export const writeImageFile = (path: string, data: Uint8Array) => invoke("docs_write", { path, data: Array.from(data) });

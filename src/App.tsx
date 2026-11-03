@@ -1,5 +1,6 @@
 import { ASSIGNMENT, EXAM, loadStudy } from "./lib/study";
-import { parseImports, pickImportFiles, type ImportedPage } from "./lib/importNotes";
+import { parseImports, pickImportFiles, type ImportedPage, type ImportFailure } from "./lib/importNotes";
+import { importOmap } from "./lib/omapFile";
 import { StudyHome } from "./components/StudyHome";
 import { UpdateUI } from "./components/UpdateUI";
 import { checkForUpdates, startUpdates } from "./lib/updates";
@@ -31,6 +32,12 @@ import { listen } from "@tauri-apps/api/event";
 import { CalendarDays } from "lucide-react";
 import type { AppView } from "./components/ViewSwitcher";
 import { SidebarFooter } from "./components/SidebarFooter";
+import { Tooltip } from "./components/Tooltip";
+import { prefs } from "./lib/prefs";
+import { readFileBytes } from "./lib/fileIO";
+import { AppLoader, AppSwitcher, type AppId } from "./components/AppSwitcher";
+import { DeleteConfirmHost, loadConfirmDeleteSettings, requestDelete, setOpenProbe } from "./lib/confirmDelete";
+import type { OpenItem } from "./components/OpenNowRow";
 import { WorkspaceDialog } from "./components/WorkspaceDialog";
 import { Modal, ModalButton } from "./components/Modal";
 import { PageProperties } from "./components/PageProperties";
@@ -122,7 +129,7 @@ const toMeta = (r: PageRecord): PageMeta => ({
   tags: r.tags,
 });
 
-const DEFAULT_SETTINGS: AppSettings = { userName: "", theme: "dark", accent: "#2383e2", closeToTray: true, startup: "home", homeStyle: "classic" };
+const DEFAULT_SETTINGS: AppSettings = { userName: "", avatar: "", theme: "dark", accent: "#2383e2", closeToTray: true, startup: "home", homeStyle: "classic", weekStart: "sunday", editorSize: "default", studyChime: true, appLoader: true };
 
 /** Recolors Tailwind's sky scale (the app's accent) from one hex value. */
 const systemDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -207,6 +214,8 @@ export default function App() {
     return () => window.removeEventListener(MINDMAP_SAVED, reload);
   }, []);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
+  /** Files an import couldn't read, listed in a small dialog. */
+  const [importFailures, setImportFailures] = useState<{ count: number; failed: ImportFailure[] } | null>(null);
   const [prefersDark, setPrefersDark] = useState(systemDark);
   const resolvedTheme = settings.theme === "system" ? (prefersDark ? "dark" : "light") : settings.theme;
   const themeReady = useRef(false);
@@ -243,8 +252,14 @@ export default function App() {
         closeToTray: stored.closeToTray !== "false",
         startup: stored.startup === "last" ? "last" : "home",
         homeStyle: stored.homeStyle === "student" ? "student" : "classic",
+        avatar: stored.avatar ?? "",
+        weekStart: stored.weekStart === "monday" ? "monday" : "sunday",
+        editorSize: stored.editorSize === "small" || stored.editorSize === "large" ? stored.editorSize : "default",
+        studyChime: stored.studyChime !== "false",
+        appLoader: stored.appLoader !== "false",
       };
       setSettings(next);
+      loadConfirmDeleteSettings(stored);
       applyAccent(next.accent);
       setAskName(!next.userName);
       setWorkspaces(wsList);
@@ -267,7 +282,7 @@ export default function App() {
       // Restore tabs, dropping pages that no longer exist or sit in Trash.
       let restored: Tab[] = savedTabs.flatMap((t) => {
         if (PINNED.has(t.id)) return [];
-        const history = t.history.filter((id) => id !== HOME && (isAppEntry(id) || visible.has(id)));
+        const history = t.history.filter((id) => id !== HOME && id !== LIBRARY && (isAppEntry(id) || visible.has(id)));
         if (!history.length) return [];
         const index = Math.max(0, history.lastIndexOf(t.history[t.historyIndex]));
         return [{ id: t.id, history, index }];
@@ -333,7 +348,12 @@ export default function App() {
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
-  const activePageId = activeTab ? currentPage(activeTab) : null;
+  /** Library lives inside the Home tab: shown after clicking Library, gone once you leave Home. */
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  useEffect(() => {
+    if (activeTabId !== HOME_TAB) setLibraryOpen(false);
+  }, [activeTabId]);
+  const activePageId = activeTab ? (activeTab.id === HOME_TAB && libraryOpen ? LIBRARY : currentPage(activeTab)) : null;
   /** Each app (Oceanic, Oceanic Mindmap) shows only its own tabs. */
   const activeApp = activeTab ? appOf(activeTab) : "notes";
   const visibleTabs = tabs.filter((t) => appOf(t) === activeApp);
@@ -574,11 +594,16 @@ export default function App() {
         ? await Promise.all(dropped.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
         : await pickImportFiles();
       if (!files.length) return;
-      const parsed = await parseImports(files);
+      const { pages: parsed, failed } = await parseImports(files);
       let count = 0;
       const create = async (p: ImportedPage, parentId: string | null): Promise<string> => {
         const rec = await api.createPage(parentId, activeWorkspaceId, null);
         await api.savePage(rec.id, p.title, JSON.stringify(p.blocks), []);
+        // Seed the open-document cache too, so the page shows its content at once
+        // (and the normal save path re-saves it).
+        setDocs((prev) => ({ ...prev, [rec.id]: p.blocks.length ? p.blocks : getSeedBlocks(rec.id) }));
+        if (p.icon) api.setPageIcon(rec.id, p.icon).catch(() => {});
+        if (p.props) api.setPageProperties(rec.id, p.props as PageProps).catch(() => {});
         count++;
         for (const c of p.children) await create(c, rec.id);
         return rec.id;
@@ -591,10 +616,11 @@ export default function App() {
       const list = await api.getPages();
       setPages(list.map(toMeta));
       if (first) openPage(first);
-      window.alert(`Imported ${count} page${count === 1 ? "" : "s"}.`);
+      if (count) setNotice({ text: `Imported ${count} page${count === 1 ? "" : "s"}`, key: Date.now() });
+      if (failed.length) setImportFailures({ count, failed });
     } catch (e) {
       report("Import")(e);
-      window.alert("Import failed. Check the file and try again.");
+      setImportFailures({ count: 0, failed: [{ name: "Import", reason: e instanceof Error ? e.message : String(e) }] });
     }
   };
 
@@ -615,6 +641,7 @@ export default function App() {
 
   /** Sidebar Home row: show Home in the active tab, like Notion. */
   const goHome = () => {
+    setLibraryOpen(false);
     setView("document");
     navigate(HOME);
   };
@@ -789,6 +816,10 @@ export default function App() {
     api.deletePage(pageId).catch(report("Move to Trash"));
   };
 
+  /** Notes' Delete: through Settings → Deleting (confirm unless turned off). */
+  const askTrashPage = (pageId: string) =>
+    requestDelete({ app: "notes", kind: "trash", title: pages.find((p) => p.id === pageId)?.title ?? "", run: () => trashPage(pageId) });
+
   const restorePage = (pageId: string) => {
     setPages((prev) =>
       prev.map((p) => (p.id === pageId ? { ...p, trashedAt: undefined } : p)),
@@ -858,8 +889,8 @@ export default function App() {
     );
     if (gone.size) pruneTabs(gone);
   };
-  const keys = useRef({ openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps });
-  keys.current = { openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps };
+  const keys = useRef({ importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps });
+  keys.current = { importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps };
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -892,6 +923,16 @@ export default function App() {
         window.setTimeout(() => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT)), 50);
       }
     });
+    // .ocean / .omap opened from Explorer (at launch or while running).
+    const openFile = async (path: string) => {
+      const bytes = await readFileBytes(path);
+      const name = path.split(/[\\/]/).pop()!;
+      setView("document");
+      if (/\.omap$/i.test(path)) keys.current.openPage(mindmapEntry(await importOmap(bytes)));
+      else void keys.current.importNotes([new File([bytes as BlobPart], name)]);
+    };
+    void invoke<string | null>("launch_file").then((p) => { if (p) void openFile(p); }).catch(() => {});
+    const offFile = listen<string>("open-file", ({ payload }) => void openFile(payload));
     const offPage = listen<string>("tray-open-page", ({ payload }) => {
       setView("document");
       k_open(payload);
@@ -900,6 +941,7 @@ export default function App() {
     return () => {
       void off.then((f) => f());
       void offPage.then((f) => f());
+      void offFile.then((f) => f());
     };
   }, []);
 
@@ -986,7 +1028,40 @@ export default function App() {
   /** Oceanic Mindmap acts as its own app: its own sidebar while a map tab is in front. */
   // Like Word: the sidebar hides while a document is open, and returns elsewhere (Ctrl+\\ still toggles).
   // Docs and Sketch editors are full-window like Word/Paint: no Oceanic top bar or sidebar.
-  const inDocEditor = view === "document" && (!!activePageId?.startsWith("doc:") || !!activePageId?.startsWith("sketch:"));
+  /** Files of one app still open in background tabs, for its Home's "Open now" row. */
+  const openNow = (prefix: string, title: (page: string) => string): OpenItem[] =>
+    tabs.filter((t) => currentPage(t).startsWith(prefix)).map((t) => ({ tabId: t.id, title: title(currentPage(t)) }));
+  /** Sidebar "More apps": jump to an app's last tab (or its Home), behind a short loader. */
+  const [appLoading, setAppLoading] = useState<AppId | null>(null);
+  /** Bumped as the loader fades: Homes remount so their intro plays where you can see it. */
+  const [homeKey, setHomeKey] = useState(0);
+  const switchApp = (app: AppId) => {
+    const doc = activePageId?.startsWith("doc:") ? activePageId.slice(4) : null;
+    if (doc && isDirtyUntitled(doc)) return setSavePrompt({ path: doc, proceed: () => go(app) });
+    go(app);
+  };
+  const go = (app: AppId) => {
+    setView("document");
+    setActiveTabId(
+      app === "notes" ? (lastNotesTab.current ?? HOME_TAB)
+      : app === "docs" ? (lastDocsTab.current ?? DOCS_HOME_TAB)
+      : app === "sketch" ? (lastSketchTab.current ?? SKETCH_HOME_TAB)
+      : (lastMindmapTab.current ?? MM_HOME_TAB),
+    );
+    if (settings.appLoader) setAppLoading(app);
+  };
+  const footerFor = (app: AppId) => (
+    <>
+      <AppSwitcher current={app} onSwitch={switchApp} />
+      {sidebarFooter}
+    </>
+  );
+  // Preferences read outside props (calendar maths, timer chime, editor CSS).
+  prefs.weekStart = settings.weekStart === "monday" ? 1 : 0;
+  prefs.chime = settings.studyChime;
+  useEffect(() => void (document.documentElement.dataset.editorSize = settings.editorSize), [settings.editorSize]);
+  setOpenProbe((entry) => tabs.some((t) => currentPage(t) === entry));
+  const inDocEditor = view === "document" && (!!activePageId?.startsWith("doc:") || !!activePageId?.startsWith("sketch:") || !!activePageId?.startsWith("mindmap:"));
   useEffect(() => setSidebarCollapsed(inDocEditor), [inDocEditor]);
   const inDocsApp = view === "document" && !!activePageId && isDocEntry(activePageId);
   const inSketchApp = view === "document" && !!activePageId && isSketchEntry(activePageId);
@@ -996,6 +1071,7 @@ export default function App() {
       workspaces={workspaces}
       activeWorkspaceId={activeWorkspaceId}
       userName={settings.userName}
+      avatar={settings.avatar}
       theme={resolvedTheme}
       onSelectWorkspace={selectWorkspace}
       onNewWorkspace={() => setWsDialog("new")}
@@ -1043,11 +1119,8 @@ export default function App() {
               activePath={activePageId?.startsWith("sketch:") ? activePageId.slice(7) : null}
               onOpen={(p) => openPage(sketchEntry(p))}
               onHome={() => setActiveTabId(SKETCH_HOME_TAB)}
-              onBack={() => {
-                setView("document");
-                setActiveTabId(lastNotesTab.current ?? HOME_TAB);
-              }}
-              footer={sidebarFooter}
+              onOpenNewTab={(p) => openInNewTab(sketchEntry(p))}
+              footer={footerFor("sketch")}
             />
           ) : inDocsApp ? (
             <DocsSidebar
@@ -1059,16 +1132,7 @@ export default function App() {
                 setTabs((prev) => prev.map((t) => ({ ...t, history: t.history.map((h) => (h === docEntry(from) ? docEntry(to) : h)) })))
               }
               onDeleted={(p) => pruneTabs(new Set([docEntry(p)]))}
-              onBack={() => {
-                const back = () => {
-                  setView("document");
-                  setActiveTabId(lastNotesTab.current ?? HOME_TAB);
-                };
-                const doc = activePageId?.startsWith("doc:") ? activePageId.slice(4) : null;
-                if (doc && isDirtyUntitled(doc)) setSavePrompt({ path: doc, proceed: back });
-                else back();
-              }}
-              footer={sidebarFooter}
+              footer={footerFor("docs")}
             />
           ) : inMindmapApp ? (
             <MindmapSidebar
@@ -1076,12 +1140,9 @@ export default function App() {
               activeId={activePageId?.startsWith("mindmap:") ? activePageId.slice(8) : null}
               onOpen={(id) => navigate(mindmapEntry(id))}
               onGallery={() => setActiveTabId(MM_HOME_TAB)}
+              onOpenNewTab={(id) => openInNewTab(mindmapEntry(id))}
               onNew={async () => navigate(mindmapEntry(await createMindmap("")))}
-              onBack={() => {
-                setView("document");
-                setActiveTabId(lastNotesTab.current ?? HOME_TAB);
-              }}
-              footer={sidebarFooter}
+              footer={footerFor("mindmap")}
             />
           ) : (
             <Sidebar
@@ -1096,23 +1157,12 @@ export default function App() {
               libraryActive={view === "document" && activePageId === LIBRARY}
               onLibrary={() => {
                 setView("document");
-                navigate(LIBRARY);
+                setActiveTabId(HOME_TAB);
+                setLibraryOpen(true);
               }}
               onOpenTags={() => setTagsOpen(true)}
               onImport={(files) => void importNotes(files)}
-              onOpenSketch={() => {
-                setView("document");
-                setActiveTabId(lastSketchTab.current ?? SKETCH_HOME_TAB);
-              }}
-              onOpenDocs={() => {
-                setView("document");
-                setActiveTabId(lastDocsTab.current ?? DOCS_HOME_TAB);
-              }}
-              onOpenMindmaps={() => {
-                setView("document");
-                setActiveTabId(lastMindmapTab.current ?? MM_HOME_TAB);
-              }}
-              footer={sidebarFooter}
+              footer={footerFor("notes")}
               trashedPages={trashedPages}
               activePageId={activePageId}
               onOpenPage={openPage}
@@ -1120,7 +1170,7 @@ export default function App() {
               onCreatePage={createPage}
               onRenamePage={changeTitle}
               onDuplicatePage={duplicatePage}
-              onTrashPage={trashPage}
+              onTrashPage={askTrashPage}
               onRestorePage={restorePage}
               onDeleteForever={deleteForever}
               onRestoreAll={restoreAll}
@@ -1150,7 +1200,7 @@ export default function App() {
               }}
               onCreatePage={() => createPage(null)}
               onTogglePin={togglePin}
-              onTrashPage={trashPage}
+              onTrashPage={askTrashPage}
               workspaces={workspaces}
               onMoveToWorkspace={moveToWorkspace}
             />
@@ -1165,7 +1215,13 @@ export default function App() {
               }}
             />
           ) : activePageId === SKETCH ? (
-            <SketchHome onOpen={(p) => openPage(sketchEntry(p))} />
+            <SketchHome
+              key={homeKey}
+              onOpen={(p) => openPage(sketchEntry(p))}
+              openNow={openNow("sketch:", (p) => p.slice(7).split(/[\\/]/).pop()!.replace(/\.[^.]+$/, ""))}
+              onFocusTab={setActiveTabId}
+              onCloseTab={closeTab}
+            />
           ) : activePageId?.startsWith("sketch:") ? (
             <SketchEditor
               key={activePageId}
@@ -1176,7 +1232,7 @@ export default function App() {
               onClose={() => activeTabId && closeTab(activeTabId)}
             />
           ) : activePageId === DOCS ? (
-            <DocsHome onOpen={(p) => openPage(docEntry(p))} />
+            <DocsHome key={homeKey} onOpen={(p) => openPage(docEntry(p))} />
           ) : activePageId?.startsWith("doc:") ? (
             <DocEditor
               key={activePageId}
@@ -1191,13 +1247,20 @@ export default function App() {
               onCloseDoc={() => activeTabId && closeTab(activeTabId)}
             />
           ) : activePageId === MINDMAPS ? (
-            <MindmapGallery onOpen={(id) => navigate(mindmapEntry(id))} />
+            <MindmapGallery
+              key={homeKey}
+              onOpen={(id) => navigate(mindmapEntry(id))}
+              openNow={openNow("mindmap:", (p) => mindmapTitles[p.slice(8)] ?? mindmaps.find((m) => m.id === p.slice(8))?.title ?? "")}
+              onFocusTab={setActiveTabId}
+              onCloseTab={closeTab}
+            />
           ) : activePageId?.startsWith("mindmap:") ? (
             <MindmapView
               mindmapId={activePageId.slice(8)}
               pages={allLivePages}
               onOpenPage={openPage}
               onTitle={(id, title) => setMindmapTitles((prev) => (prev[id] === title ? prev : { ...prev, [id]: title }))}
+              onHome={() => setActiveTabId(MM_HOME_TAB)}
             />
           ) : activePageId === LIBRARY ? (
             <LibraryView
@@ -1211,6 +1274,7 @@ export default function App() {
           ) : activePageId === HOME ? (
             settings.homeStyle === "student" ? (
             <StudyHome
+              key={homeKey}
               userName={settings.userName}
               pages={allLivePages}
               recent={recent}
@@ -1232,6 +1296,7 @@ export default function App() {
             />
             ) : (
             <HomeView
+              key={homeKey}
               userName={settings.userName}
               pages={allLivePages}
               recent={recent}
@@ -1257,7 +1322,7 @@ export default function App() {
                 onNavigate={navigate}
                 onTogglePin={togglePin}
                 onDuplicate={duplicatePage}
-                onTrash={trashPage}
+                onTrash={askTrashPage}
                 loadBlocks={async (id) => docsRef.current[id] ?? (await loadBlocks(id))}
               />
               <div className="min-h-0 flex-1 overflow-hidden">
@@ -1434,6 +1499,28 @@ export default function App() {
           onClose={() => setTagsOpen(false)}
         />
       )}
+      <Tooltip />
+      {importFailures && (
+        <Modal onClose={() => setImportFailures(null)} className="w-[440px] p-5">
+          <h2 className="text-[15px] font-semibold text-neutral-100">
+            {importFailures.count ? `Imported ${importFailures.count} page${importFailures.count === 1 ? "" : "s"}` : "Nothing was imported"}
+          </h2>
+          <p className="mt-1 text-[13px] text-neutral-400">Couldn't import:</p>
+          <ul className="scrollbar-thin mt-2 max-h-60 overflow-y-auto rounded-lg border border-white/[0.06] bg-white/[0.02]">
+            {importFailures.failed.map((f, i) => (
+              <li key={i} className="flex gap-2 border-b border-white/[0.04] px-3 py-2 text-[13px] last:border-b-0">
+                <span className="min-w-0 truncate font-medium text-neutral-200">{f.name}</span>
+                <span className="ml-auto shrink-0 text-neutral-500">{f.reason}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 flex justify-end">
+            <ModalButton variant="primary" onClick={() => setImportFailures(null)}>OK</ModalButton>
+          </div>
+        </Modal>
+      )}
+      {appLoading && <AppLoader app={appLoading} onLeave={() => setHomeKey((k) => k + 1)} onDone={() => setAppLoading(null)} />}
+      <DeleteConfirmHost />
       {settingsOpen && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} />
       )}

@@ -1,10 +1,11 @@
 import { HomeMotif } from "../components/HomeMotif";
 import type { ReactNode } from "react";
-import { Copy, ExternalLink, FilePlus, FileText, FolderOpen, FolderSearch, X } from "lucide-react";
+import { Copy, ExternalLink, FilePlus, FileText, FolderOpen, FolderSearch, Trash2, X } from "lucide-react";
 import type { JSONContent } from "@tiptap/core";
 import docsLogo from "../assets/docs-logo.png";
 import { openContextMenu, type MenuItem } from "../components/ContextMenu";
-import { docTitle, duplicateDoc, newUntitled, pickDocx, pickFolder, refreshFiles, replaceRecent, revealDoc, useDocs } from "./store";
+import { requestDelete } from "../lib/confirmDelete";
+import { docTitle, duplicateDoc, newUntitled, pickDocx, pickFolder, refreshFiles, replaceRecent, revealDoc, trashDoc, useDocs } from "./store";
 
 const h = (level: number, text: string): JSONContent => ({ type: "heading", attrs: { level }, content: [{ type: "text", text }] });
 const p = (text = ""): JSONContent => ({ type: "paragraph", content: text ? [{ type: "text", text }] : undefined });
@@ -20,21 +21,26 @@ const TEMPLATES: { name: string; desc: string; tint: string; preview: string; do
 /** Oceanic Docs' Home: animated brand, templates, folder + recent documents. */
 export function DocsHome({ onOpen }: { onOpen: (path: string) => void }) {
   const { folder, files, recent } = useDocs();
+  /** Remove (imported: list only) or Delete (Oceanic folder file → Recycle Bin), per Settings → Deleting. */
+  const setConfirm = ({ path, kind }: { path: string; kind: "remove" | "delete" }) =>
+    kind === "delete"
+      ? requestDelete({ app: "docs", kind: "recycle", title: docTitle(path), entry: `doc:${path}`, run: async () => (await trashDoc(path), replaceRecent(path, null), await refreshFiles()) })
+      : requestDelete({ app: "docs", kind: "remove", title: docTitle(path), entry: `doc:${path}`, run: () => replaceRecent(path, null) });
   // Like Word: opens unsaved; the first save asks where to put it.
   const create = (t: (typeof TEMPLATES)[number]) => onOpen(newUntitled(t.name === "Blank" ? undefined : t.name, { type: "doc", content: t.doc }));
   const recentElsewhere = recent.filter((r) => !files.some((f) => f.path === r)).slice(0, 6);
 
   /** Right-click on a document card: Open / Show in File Explorer, plus
-      Remove from list for recents opened elsewhere (duplicate for folder files). */
+      Duplicate for folder files, then Remove from list (imported) or Delete (Oceanic's own). */
   const cardMenu = (e: React.MouseEvent, path: string, fromRecents: boolean) => {
     e.stopPropagation();
     const items: MenuItem[] = [
       { label: "Open", icon: <FileText className="size-4" />, onSelect: () => onOpen(path) },
       { label: "Show in File Explorer", icon: <ExternalLink className="size-4" />, onSelect: () => void revealDoc(path).catch(() => {}) },
       "divider",
-      fromRecents
-        ? { label: "Remove from list", icon: <X className="size-4" />, danger: true, onSelect: () => replaceRecent(path, null) }
-        : {
+      ...(fromRecents
+        ? []
+        : [{
             label: "Duplicate",
             icon: <Copy className="size-4" />,
             onSelect: async () => {
@@ -43,7 +49,10 @@ export function DocsHome({ onOpen }: { onOpen: (path: string) => void }) {
                 await refreshFiles();
               } catch {}
             },
-          },
+          }]),
+      fromRecents
+        ? { label: "Remove from list", icon: <X className="size-4" />, danger: true, onSelect: () => setConfirm({ path, kind: "remove" }) }
+        : { label: "Delete", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => setConfirm({ path, kind: "delete" }) },
     ];
     openContextMenu(e, items);
   };
@@ -101,7 +110,7 @@ export function DocsHome({ onOpen }: { onOpen: (path: string) => void }) {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
               {files.map((f) => (
-                <DocCard key={f.path} path={f.path} sub={new Date(f.modified).toLocaleDateString(undefined, { month: "short", day: "numeric" })} onOpen={onOpen} onMenu={(e) => cardMenu(e, f.path, false)} />
+                <DocCard key={f.path} path={f.path} sub={new Date(f.modified).toLocaleDateString(undefined, { month: "short", day: "numeric" })} onOpen={onOpen} onMenu={(e) => cardMenu(e, f.path, false)} onRemove={() => setConfirm({ path: f.path, kind: "delete" })} />
               ))}
             </div>
           )}
@@ -110,7 +119,7 @@ export function DocsHome({ onOpen }: { onOpen: (path: string) => void }) {
               <p className="mb-2 mt-6 text-[12px] font-medium text-neutral-500">Opened from elsewhere</p>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
                 {recentElsewhere.map((r) => (
-                  <DocCard key={r} path={r} sub={r} onOpen={onOpen} onMenu={(e) => cardMenu(e, r, true)} />
+                  <DocCard key={r} path={r} sub={r} onOpen={onOpen} onMenu={(e) => cardMenu(e, r, true)} onRemove={() => setConfirm({ path: r, kind: "remove" })} />
                 ))}
               </div>
             </>
@@ -159,20 +168,31 @@ function TemplateCard({ t, onClick }: { t: (typeof TEMPLATES)[number]; onClick: 
   );
 }
 
-function DocCard({ path, sub, onOpen, onMenu }: { path: string; sub: string; onOpen: (p: string) => void; onMenu?: (e: React.MouseEvent) => void }) {
+function DocCard({ path, sub, onOpen, onMenu, onRemove }: { path: string; sub: string; onOpen: (p: string) => void; onMenu?: (e: React.MouseEvent) => void; onRemove: () => void }) {
   return (
-    <button type="button" onClick={() => onOpen(path)} onContextMenu={onMenu} title={path} className="group flex cursor-pointer flex-col gap-2 text-left">
-      {/* Page-shaped thumbnail */}
-      <span className="relative block aspect-[210/297] w-full overflow-hidden rounded-md border border-white/[0.08] bg-white p-3 shadow-md transition-all group-hover:-translate-y-1 group-hover:border-[color:var(--oc-docs)]">
-        <span className="mb-2 block h-2 w-2/3 rounded bg-neutral-300" />
-        {Array.from({ length: 9 }, (_, i) => (
-          <span key={i} className="mb-1.5 block h-1 rounded bg-neutral-200" style={{ width: `${70 + ((i * 37) % 30)}%` }} />
-        ))}
-        <FileText className="absolute bottom-2 right-2 size-4 text-[color:var(--oc-docs)]" />
-      </span>
-      <span className="truncate text-[13px] font-medium text-neutral-200">{docTitle(path)}</span>
-      <span className="-mt-1.5 truncate text-[11px] text-neutral-500">{sub}</span>
-    </button>
+    <div className="group relative">
+      <button type="button" onClick={() => onOpen(path)} onContextMenu={onMenu} title={path} className="flex w-full cursor-pointer flex-col gap-2 text-left">
+        {/* Page-shaped thumbnail */}
+        <span className="relative block aspect-[210/297] w-full overflow-hidden rounded-md border border-white/[0.08] bg-white p-3 shadow-md transition-all group-hover:-translate-y-1 group-hover:border-[color:var(--oc-docs)]">
+          <span className="mb-2 block h-2 w-2/3 rounded bg-neutral-300" />
+          {Array.from({ length: 9 }, (_, i) => (
+            <span key={i} className="mb-1.5 block h-1 rounded bg-neutral-200" style={{ width: `${70 + ((i * 37) % 30)}%` }} />
+          ))}
+          <FileText className="absolute bottom-2 right-2 size-4 text-[color:var(--oc-docs)]" />
+        </span>
+        <span className="truncate text-[13px] font-medium text-neutral-200">{docTitle(path)}</span>
+        <span className="-mt-1.5 truncate text-[11px] text-neutral-500">{sub}</span>
+      </button>
+      {/* Hover action: Remove (imported) / Delete (Oceanic's own); both confirm first. */}
+      <button
+        type="button"
+        data-tip={sub === path ? "Remove from list" : "Delete"}
+        onClick={onRemove}
+        className="absolute right-1.5 top-1.5 grid size-7 cursor-pointer place-items-center rounded-md bg-neutral-900/80 text-neutral-300 opacity-0 shadow-md backdrop-blur transition-all hover:bg-red-500/90 hover:text-white group-hover:-translate-y-1 group-hover:opacity-100"
+      >
+        {sub === path ? <X className="size-3.5" /> : <Trash2 className="size-3.5" />}
+      </button>
+    </div>
   );
 }
 

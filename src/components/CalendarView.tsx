@@ -1,3 +1,4 @@
+import { startOfWeek } from "../lib/prefs";
 import { studyKind } from "../lib/study";
 import { useMemo, useState } from "react";
 import { CalendarCheck2, ChevronLeft, ChevronRight, Plus } from "lucide-react";
@@ -16,7 +17,6 @@ type CalendarViewProps = {
   onReschedule: (id: string, date: string) => void;
 };
 
-const startOfWeek = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const pillColor = (p: PageMeta) =>
   studyKind(p) === "exam" ? COLORS.red : studyKind(p) === "assignment" ? COLORS.blue : (p.tags?.length ? tagColor(p.tags[0]) : p.status ? STATUSES[p.status].color : COLORS.gray);
