@@ -1,0 +1,30 @@
+name: Update README pills
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Redraw pills with live numbers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh release view --json tagName -q .tagName 2>/dev/null || echo "v1.0.0")
+          stars=$(gh api "repos/${{ github.repository }}" -q .stargazers_count)
+          bash .github/scripts/pills.sh "$version" "$stars"
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add branding/pill-*.svg
+          git diff --cached --quiet || (git commit -m "Update README pills" && git push)

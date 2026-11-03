@@ -6,9 +6,14 @@
 <p align="center"><b>Your calm, all-in-one study space.</b><br/>Free, offline-first, and made for students.</p>
 
 <p align="center">
-  <a href="https://github.com/MystiTheDev/oceanic/releases/latest"><img src="https://img.shields.io/github/v/release/MystiTheDev/oceanic?label=download&style=for-the-badge&color=1e88e5" alt="Download" /></a>
-  <a href="https://github.com/MystiTheDev/oceanic/stargazers"><img src="https://img.shields.io/github/stars/MystiTheDev/oceanic?style=for-the-badge&color=f5c518" alt="Star on GitHub" /></a>
-  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-555?style=for-the-badge" alt="Platforms" />
+  <a href="https://github.com/MystiTheDev/oceanic/releases/latest"><img src="branding/pill-version.svg" alt="Latest version" height="28" /></a>
+  <a href="https://github.com/MystiTheDev/oceanic/stargazers"><img src="branding/pill-stars.svg" alt="Star on GitHub" height="28" /></a>
+  <img src="branding/pill-platforms.svg" alt="Windows, macOS and Linux" height="28" />
+  <img src="branding/pill-free.svg" alt="Free, no account needed" height="28" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/MystiTheDev/oceanic/releases/latest"><img src="branding/download-button.svg" alt="Download Oceanic" height="44" /></a>
 </p>
 
 ---
@@ -31,6 +36,19 @@ Oceanic brings your notes, writing, mind maps, sketches and calendar into one ap
   &nbsp;&nbsp;
   <img src="branding/oceanic-sketch-logo-transparent.png" alt="Oceanic Sketch" height="60" />
 </p>
+
+## 🖼️ A peek inside
+
+<table>
+  <tr>
+    <td align="center"><img src="branding/screenshots/home.jpg" alt="Oceanic home screen" /><br/><sub><b>🏠 Study Home:</b> pick up right where you left off</sub></td>
+    <td align="center"><img src="branding/screenshots/notes.jpg" alt="Notes editor" /><br/><sub><b>📝 Notes:</b> headings, lists, quotes and checklists</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="branding/screenshots/mindmap.jpg" alt="Oceanic Mindmap" /><br/><sub><b>🧠 Mind maps:</b> break big topics into small ideas</sub></td>
+    <td align="center"><img src="branding/screenshots/canvas.jpg" alt="Spatial canvas" /><br/><sub><b>🗺️ Spatial canvas:</b> see how your topics connect</sub></td>
+  </tr>
+</table>
 
 ## 🌟 Why Oceanic
 
