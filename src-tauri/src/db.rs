@@ -221,6 +221,44 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;"
         ))?;
     }
+
+    if version < 8 {
+        // PDFs in notes: the imported file, its annotations (geometry in PDF
+        // points, per page) and per-page text for search.
+        conn.execute_batch(&format!(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS pdf_docs (
+               id          TEXT PRIMARY KEY,
+               asset_path  TEXT NOT NULL,
+               name        TEXT NOT NULL DEFAULT '',
+               page_count  INTEGER NOT NULL DEFAULT 0,
+               last_page   INTEGER NOT NULL DEFAULT 1,
+               zoom        TEXT NOT NULL DEFAULT 'width',
+               thumb_path  TEXT,
+               created_at  DATETIME NOT NULL DEFAULT ({NOW}),
+               updated_at  DATETIME NOT NULL DEFAULT ({NOW})
+             );
+             CREATE TABLE IF NOT EXISTS pdf_annotations (
+               id          TEXT PRIMARY KEY,
+               doc_id      TEXT NOT NULL,
+               page        INTEGER NOT NULL,
+               kind        TEXT NOT NULL,
+               color       TEXT NOT NULL DEFAULT '',
+               data_json   TEXT NOT NULL DEFAULT '{{}}',
+               created_at  DATETIME NOT NULL DEFAULT ({NOW}),
+               updated_at  DATETIME NOT NULL DEFAULT ({NOW})
+             );
+             CREATE INDEX IF NOT EXISTS idx_pdf_ann_doc ON pdf_annotations(doc_id, page);
+             CREATE TABLE IF NOT EXISTS pdf_text (
+               doc_id TEXT NOT NULL,
+               page   INTEGER NOT NULL,
+               text   TEXT NOT NULL DEFAULT '',
+               PRIMARY KEY (doc_id, page)
+             );
+             PRAGMA user_version = 8;
+             COMMIT;"
+        ))?;
+    }
     Ok(())
 }
 
@@ -634,13 +672,14 @@ pub fn delete_page_forever(db: State<Db>, id: String) -> CmdResult<()> {
         "DELETE FROM page_links WHERE source_id NOT IN (SELECT id FROM pages)
                                    OR target_id NOT IN (SELECT id FROM pages);
          DELETE FROM canvas_positions WHERE page_id NOT IN (SELECT id FROM pages);
-         DELETE FROM page_search WHERE page_id NOT IN (SELECT id FROM pages);
+         DELETE FROM page_search WHERE page_id NOT IN (SELECT id FROM pages) AND page_id NOT LIKE 'pdf:%';
          DELETE FROM flashcards WHERE page_id NOT IN (SELECT id FROM pages);
          DELETE FROM assignments WHERE page_id NOT IN (SELECT id FROM pages);
          DELETE FROM canvas_edges WHERE source_id NOT IN (SELECT id FROM pages)
                                      OR target_id NOT IN (SELECT id FROM pages);",
     )
     .map_err(err)?;
+    pdf_gc(&conn).map_err(err)?;
     Ok(())
 }
 
@@ -1327,5 +1366,216 @@ pub fn delete_mindmap(db: State<Db>, id: String) -> CmdResult<()> {
     let conn = db.0.lock().unwrap();
     conn.execute("DELETE FROM mindmap_nodes WHERE mindmap_id = ?1", [&id]).map_err(err)?;
     conn.execute("DELETE FROM mindmaps WHERE id = ?1", [&id]).map_err(err)?;
+    Ok(())
+}
+
+/* -------------------------------------------------------------------- pdf */
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfDoc {
+    id: String,
+    asset_path: String,
+    name: String,
+    page_count: i64,
+    last_page: i64,
+    /// "width", "page" or a percentage like "125".
+    zoom: String,
+    thumb_path: Option<String>,
+    annotation_count: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfAnnotation {
+    id: String,
+    doc_id: String,
+    page: i64,
+    /// highlight | underline | strike | ink | text | sticky | rect | ellipse | line | arrow
+    kind: String,
+    color: String,
+    /// Geometry in PDF points of `page` (origin top-left), plus kind-specific fields.
+    data_json: String,
+    #[serde(default)]
+    created_at: String,
+    #[serde(default)]
+    updated_at: String,
+}
+
+const PDF_COLS: &str = "d.id, d.asset_path, d.name, d.page_count, d.last_page, d.zoom, d.thumb_path,
+     (SELECT COUNT(*) FROM pdf_annotations a WHERE a.doc_id = d.id), d.created_at, d.updated_at";
+
+fn pdf_row(r: &Row) -> rusqlite::Result<PdfDoc> {
+    Ok(PdfDoc {
+        id: r.get(0)?,
+        asset_path: r.get(1)?,
+        name: r.get(2)?,
+        page_count: r.get(3)?,
+        last_page: r.get(4)?,
+        zoom: r.get(5)?,
+        thumb_path: r.get(6)?,
+        annotation_count: r.get(7)?,
+        created_at: r.get(8)?,
+        updated_at: r.get(9)?,
+    })
+}
+
+fn pdf_by_id(conn: &Connection, id: &str) -> rusqlite::Result<Option<PdfDoc>> {
+    conn.query_row(&format!("SELECT {PDF_COLS} FROM pdf_docs d WHERE d.id = ?1"), [id], pdf_row).optional()
+}
+
+/// Records a PDF already copied into the assets folder (see `import_pdf` in lib.rs).
+pub fn insert_pdf(conn: &Connection, asset_path: &str, name: &str) -> rusqlite::Result<PdfDoc> {
+    let id = new_id();
+    conn.execute("INSERT INTO pdf_docs (id, asset_path, name) VALUES (?1, ?2, ?3)", params![id, asset_path, name])?;
+    pdf_by_id(conn, &id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+}
+
+/// Drops PDFs no note references any more (trashed notes still count), with
+/// their annotations, text, search rows and files. Fresh imports get a few
+/// minutes of grace, since their note may not be saved yet.
+fn pdf_gc(conn: &Connection) -> rusqlite::Result<()> {
+    let docs: Vec<(String, String, Option<String>)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, asset_path, thumb_path FROM pdf_docs
+             WHERE created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-5 minutes')",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for (id, asset, thumb) in docs {
+        let used: i64 = conn.query_row("SELECT COUNT(*) FROM pages WHERE instr(content, ?1) > 0", [&id], |r| r.get(0))?;
+        if used > 0 {
+            continue;
+        }
+        conn.execute("DELETE FROM pdf_annotations WHERE doc_id = ?1", [&id])?;
+        conn.execute("DELETE FROM pdf_text WHERE doc_id = ?1", [&id])?;
+        conn.execute("DELETE FROM page_search WHERE page_id LIKE ?1", [format!("pdf:{id}:%")])?;
+        conn.execute("DELETE FROM pdf_docs WHERE id = ?1", [&id])?;
+        let _ = std::fs::remove_file(asset);
+        if let Some(t) = thumb {
+            let _ = std::fs::remove_file(t);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_pdf_doc(db: State<Db>, id: String) -> CmdResult<Option<PdfDoc>> {
+    let conn = db.0.lock().unwrap();
+    pdf_by_id(&conn, &id).map_err(err)
+}
+
+/// Reader state: page count (known once pdf.js opened it), last page, zoom.
+#[tauri::command]
+pub fn save_pdf_doc_state(db: State<Db>, id: String, page_count: i64, last_page: i64, zoom: String) -> CmdResult<()> {
+    let conn = db.0.lock().unwrap();
+    conn.execute(
+        &format!("UPDATE pdf_docs SET page_count = ?2, last_page = ?3, zoom = ?4, updated_at = {NOW} WHERE id = ?1"),
+        params![id, page_count, last_page, zoom],
+    )
+    .map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_pdf_annotations(db: State<Db>, doc_id: String) -> CmdResult<Vec<PdfAnnotation>> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, doc_id, page, kind, color, data_json, created_at, updated_at
+             FROM pdf_annotations WHERE doc_id = ?1 ORDER BY created_at",
+        )
+        .map_err(err)?;
+    let rows = stmt
+        .query_map([&doc_id], |r| {
+            Ok(PdfAnnotation {
+                id: r.get(0)?,
+                doc_id: r.get(1)?,
+                page: r.get(2)?,
+                kind: r.get(3)?,
+                color: r.get(4)?,
+                data_json: r.get(5)?,
+                created_at: r.get(6)?,
+                updated_at: r.get(7)?,
+            })
+        })
+        .map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+fn upsert_annotation(conn: &Connection, a: &PdfAnnotation) -> rusqlite::Result<()> {
+    conn.execute(
+        &format!(
+            "INSERT INTO pdf_annotations (id, doc_id, page, kind, color, data_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET page = ?3, kind = ?4, color = ?5, data_json = ?6, updated_at = {NOW}"
+        ),
+        params![a.id, a.doc_id, a.page, a.kind, a.color, a.data_json],
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_pdf_annotation(db: State<Db>, annotation: PdfAnnotation) -> CmdResult<()> {
+    let conn = db.0.lock().unwrap();
+    upsert_annotation(&conn, &annotation).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_pdf_annotation(db: State<Db>, id: String) -> CmdResult<()> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("DELETE FROM pdf_annotations WHERE id = ?1", [&id]).map_err(err)?;
+    Ok(())
+}
+
+/// The reader's debounced autosave: every changed and removed annotation in one transaction.
+#[tauri::command]
+pub fn batch_pdf_annotations(db: State<Db>, upserts: Vec<PdfAnnotation>, deletes: Vec<String>) -> CmdResult<()> {
+    let mut conn = db.0.lock().unwrap();
+    let tx = conn.transaction().map_err(err)?;
+    for a in &upserts {
+        upsert_annotation(&tx, a).map_err(err)?;
+    }
+    for id in &deletes {
+        tx.execute("DELETE FROM pdf_annotations WHERE id = ?1", [id]).map_err(err)?;
+    }
+    tx.commit().map_err(err)
+}
+
+/// Extracted text, one entry per page (index 0 = page 1). Also indexed for
+/// global search as `pdf:<doc>:<page>` rows.
+#[tauri::command]
+pub fn save_pdf_text(db: State<Db>, doc_id: String, pages: Vec<String>) -> CmdResult<()> {
+    let mut conn = db.0.lock().unwrap();
+    let tx = conn.transaction().map_err(err)?;
+    tx.execute("DELETE FROM pdf_text WHERE doc_id = ?1", [&doc_id]).map_err(err)?;
+    tx.execute("DELETE FROM page_search WHERE page_id LIKE ?1", [format!("pdf:{doc_id}:%")]).map_err(err)?;
+    for (i, text) in pages.iter().enumerate() {
+        let page = i as i64 + 1;
+        tx.execute("INSERT INTO pdf_text (doc_id, page, text) VALUES (?1, ?2, ?3)", params![doc_id, page, text])
+            .map_err(err)?;
+        if !text.trim().is_empty() {
+            tx.execute(
+                "INSERT INTO page_search (page_id, title, body) VALUES (?1, '', ?2)",
+                params![format!("pdf:{doc_id}:{page}"), text],
+            )
+            .map_err(err)?;
+        }
+    }
+    tx.commit().map_err(err)
+}
+
+#[tauri::command]
+pub fn get_pdf_text(db: State<Db>, doc_id: String) -> CmdResult<Vec<String>> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare("SELECT text FROM pdf_text WHERE doc_id = ?1 ORDER BY page").map_err(err)?;
+    let rows = stmt.query_map([&doc_id], |r| r.get(0)).map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+pub fn set_pdf_thumb(conn: &Connection, id: &str, path: &str) -> rusqlite::Result<()> {
+    conn.execute("UPDATE pdf_docs SET thumb_path = ?2 WHERE id = ?1", params![id, path])?;
     Ok(())
 }

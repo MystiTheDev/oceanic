@@ -64,14 +64,15 @@ export const APP_LOADER_MS = 3000;
 export function AppLoader({ app, onLeave, onDone }: { app: AppId; onLeave?: () => void; onDone: () => void }) {
   const [leaving, setLeaving] = useState(false);
   useEffect(() => {
-    const out = window.setTimeout(() => (setLeaving(true), onLeave?.()), APP_LOADER_MS - 350);
+    const out = window.setTimeout(() => (setLeaving(true), onLeave?.()), APP_LOADER_MS - 500);
     const done = window.setTimeout(onDone, APP_LOADER_MS);
     return () => (window.clearTimeout(out), window.clearTimeout(done));
   }, [app]);
   const a = APPS[app];
   return (
     <div
-      className={`fixed inset-0 z-[90] grid place-items-center transition-opacity duration-300 ${leaving ? "opacity-0" : "oc-fade-in opacity-100"}`}
+      data-app-loader
+      className={`fixed inset-0 z-[90] grid place-items-center transition-[opacity,transform,filter] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${leaving ? "pointer-events-none scale-[1.04] opacity-0 blur-[6px]" : "oc-fade-in opacity-100"}`}
       style={{ "--tone": a.tone, background: `radial-gradient(ellipse at 50% 40%, color-mix(in srgb, ${a.tone} 18%, transparent), transparent 60%), var(--color-neutral-900)` } as React.CSSProperties}
     >
       <div className="flex flex-col items-center gap-4">

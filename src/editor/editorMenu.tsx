@@ -1,9 +1,11 @@
+import { spellMenuItems } from "../lib/spell/plugin";
 /* ---------------------------------------------------------------------------
  * Right-click menu inside the document editor: clipboard, inline styles for
  * a selection, and block actions (Turn into / Duplicate / Delete).
  * ------------------------------------------------------------------------ */
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Block, PartialBlock } from "@blocknote/core";
+import { copyImageToClipboard } from "../lib/clipboard";
 import { AllSelection, TextSelection } from "prosemirror-state";
 import {
   Bold,
@@ -74,8 +76,10 @@ export function editorContextMenu(editor: OceanicEditor, e: ReactMouseEvent): Me
   const block = id ? (editor.getBlock(id) as Block | undefined) : undefined;
   if (!block) return null;
 
-  // Like a native menu: right-clicking outside the selection moves the caret there.
   const view = editor.prosemirrorView;
+  // A misspelled word: its fixes come first (read before the caret moves).
+  const spell = spellMenuItems(view, e) as MenuItem[];
+  // Like a native menu: right-clicking outside the selection moves the caret there.
   const { from, to } = view.state.selection;
   const at = view.posAtCoords({ left: e.clientX, top: e.clientY });
   if (at && (at.pos < from || at.pos > to)) {
@@ -91,6 +95,7 @@ export function editorContextMenu(editor: OceanicEditor, e: ReactMouseEvent): Me
 
   const media = ["image", "video", "file"].includes(block.type);
   return [
+    ...spell,
     ...(media
       ? ([
           {
@@ -101,6 +106,20 @@ export function editorContextMenu(editor: OceanicEditor, e: ReactMouseEvent): Me
               if (caption !== null) editor.updateBlock(block, { props: { caption } } as never);
             },
           },
+          ...(block.type === "image" && (block.props as { url?: string }).url
+            ? [
+                {
+                  label: "Copy image",
+                  icon: <Copy className="size-4" />,
+                  onSelect: () => void copyImageToClipboard((block.props as { url: string }).url).catch(() => {}),
+                },
+                {
+                  label: "Annotate…",
+                  icon: <Type className="size-4" />,
+                  onSelect: () => window.dispatchEvent(new CustomEvent("oc-annotate", { detail: { id: block.id, url: (block.props as { url: string }).url } })),
+                },
+              ]
+            : []),
           "divider",
         ] as MenuItem[])
       : []),

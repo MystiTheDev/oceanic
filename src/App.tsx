@@ -3,6 +3,8 @@ import { parseImports, pickImportFiles, type ImportedPage, type ImportFailure } 
 import { importOmap } from "./lib/omapFile";
 import { StudyHome } from "./components/StudyHome";
 import { UpdateUI } from "./components/UpdateUI";
+import { SpellUI } from "./components/SpellUI";
+import { loadSpell } from "./lib/spell/engine";
 import { checkForUpdates, startUpdates } from "./lib/updates";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PartialBlock } from "@blocknote/core";
@@ -36,6 +38,8 @@ import { Tooltip } from "./components/Tooltip";
 import { prefs } from "./lib/prefs";
 import { readFileBytes } from "./lib/fileIO";
 import { AppLoader, AppSwitcher, type AppId } from "./components/AppSwitcher";
+import { ImportMetaDialog, type MetaChoice } from "./components/ImportMetaDialog";
+import { setBanner } from "./lib/banners";
 import { DeleteConfirmHost, loadConfirmDeleteSettings, requestDelete, setOpenProbe } from "./lib/confirmDelete";
 import type { OpenItem } from "./components/OpenNowRow";
 import { WorkspaceDialog } from "./components/WorkspaceDialog";
@@ -64,6 +68,10 @@ import { MindmapSidebar } from "./mindmap/MindmapSidebar";
 import { createMindmap } from "./mindmap/MindmapGallery";
 import type { MindmapRecord } from "./data/api";
 import { OPEN_MINDMAP } from "./editor/mindmapBlock";
+import { PdfReader } from "./pdf/PdfReader";
+import { OPEN_PDF, type PdfTarget } from "./pdf/importPdf";
+import { PDF_CHANGED } from "./pdf/pdfjs";
+import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
 const HOME_TAB = "home-tab";
@@ -86,7 +94,9 @@ const isDocEntry = (id: string) => id === DOCS || id.startsWith("doc:");
 const MINDMAPS = "mindmaps";
 const mindmapEntry = (id: string) => `mindmap:${id}`;
 const LIBRARY = "library";
-const isAppEntry = (id: string) => id === HOME || id === LIBRARY || id === MINDMAPS || id.startsWith("mindmap:") || isDocEntry(id) || isSketchEntry(id);
+/** The PDF reader: `pdf:<docId>`, opened from a note's PDF card (back returns to it). */
+const pdfEntry = (docId: string) => `pdf:${docId}`;
+const isAppEntry = (id: string) => id === HOME || id === LIBRARY || id === MINDMAPS || id.startsWith("mindmap:") || id.startsWith("pdf:") || isDocEntry(id) || isSketchEntry(id);
 const mmHomeTab = (): Tab => ({ id: MM_HOME_TAB, history: [MINDMAPS], index: 0 });
 const docsHomeTab = (): Tab => ({ id: DOCS_HOME_TAB, history: [DOCS], index: 0 });
 const sketchHomeTab = (): Tab => ({ id: SKETCH_HOME_TAB, history: [SKETCH], index: 0 });
@@ -192,6 +202,7 @@ export default function App() {
   const [tagsOpen, setTagsOpen] = useState(false);
   const [savePrompt, setSavePrompt] = useState<{ path: string; proceed: () => void } | null>(null);
   const [tagLibrary, setTagLibrary] = useState<string[]>([]);
+  const [metaAsk, setMetaAsk] = useState<{ titles: string[]; existingTags: string[]; newTags: string[]; resolve: (c: MetaChoice) => void } | null>(null);
   const [mindmapTitles, setMindmapTitles] = useState<Record<string, string>>({});
   const [mindmaps, setMindmaps] = useState<MindmapRecord[]>([]);
   /** Mindmap ids by last opened, for Home's "Maps". */
@@ -213,7 +224,7 @@ export default function App() {
     window.addEventListener(MINDMAP_SAVED, reload);
     return () => window.removeEventListener(MINDMAP_SAVED, reload);
   }, []);
-  const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
+  const [notice, setNotice] = useState<{ text: string; key: number; action?: { label: string; run: () => void } } | null>(null);
   /** Files an import couldn't read, listed in a small dialog. */
   const [importFailures, setImportFailures] = useState<{ count: number; failed: ImportFailure[] } | null>(null);
   const [prefersDark, setPrefersDark] = useState(systemDark);
@@ -269,6 +280,7 @@ export default function App() {
       loadDocsSettings(stored);
       loadSketchSettings(stored);
       loadStudy(stored);
+      void loadSpell(stored);
       void startUpdates(stored);
       setTagLibrary(JSON.parse(stored.tagLibrary ?? "[]"));
       setPageFonts(JSON.parse(stored.pageFonts ?? "{}"));
@@ -588,13 +600,37 @@ export default function App() {
   };
 
   /** Import notes (picker or dropped files); Notion exports keep their page tree. */
-  const importNotes = async (dropped?: File[]) => {
+  const allLivePagesRef = useRef<PageMeta[]>([]);
+  /** `fromExplorer`: a double-clicked .ocean — an existing page with that title just opens. */
+  const importNotes = async (dropped?: File[], fromExplorer = false) => {
     try {
       const files = dropped
         ? await Promise.all(dropped.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
         : await pickImportFiles();
       if (!files.length) return;
       const { pages: parsed, failed } = await parseImports(files);
+      // .ocean notes with date/status/tags: always ask what to bring in.
+      const tags = new Set<string>();
+      let hasMeta = false;
+      const scan = (p: ImportedPage) => {
+        if (p.props && (p.props.dueDate || p.props.status || p.props.tags.length)) hasMeta = true;
+        p.props?.tags.forEach((t) => tags.add(t));
+        p.children.forEach(scan);
+      };
+      parsed.forEach(scan);
+      let keep: Set<string> | null = null; // tags allowed onto pages; null = no properties
+      if (hasMeta) {
+        const existing = [...tags].filter((t) => tagLibrary.includes(t));
+        const fresh = [...tags].filter((t) => !tagLibrary.includes(t));
+        const choice = await new Promise<MetaChoice>((resolve) => setMetaAsk({ titles: parsed.map((p) => p.title), existingTags: existing, newTags: fresh, resolve }));
+        setMetaAsk(null);
+        if (!choice) return;
+        if (choice.meta) {
+          const colors = Object.assign({}, ...parsed.map((p) => p.tagColors ?? {})) as Record<string, string>;
+          choice.newTags.forEach((t) => createTag(t, colors[t] ?? "gray"));
+          keep = new Set([...existing, ...choice.newTags]);
+        }
+      }
       let count = 0;
       const create = async (p: ImportedPage, parentId: string | null): Promise<string> => {
         const rec = await api.createPage(parentId, activeWorkspaceId, null);
@@ -603,20 +639,38 @@ export default function App() {
         // (and the normal save path re-saves it).
         setDocs((prev) => ({ ...prev, [rec.id]: p.blocks.length ? p.blocks : getSeedBlocks(rec.id) }));
         if (p.icon) api.setPageIcon(rec.id, p.icon).catch(() => {});
-        if (p.props) api.setPageProperties(rec.id, p.props as PageProps).catch(() => {});
+        if (p.props && keep) api.setPageProperties(rec.id, { ...p.props, tags: p.props.tags.filter((t) => keep!.has(t)) } as PageProps).catch(() => {});
+        if (p.banner) setBanner(rec.id, p.banner);
         count++;
         for (const c of p.children) await create(c, rec.id);
         return rec.id;
       };
       let first: string | null = null;
+      // A page with the same title already exists: skip it (no duplicates).
+      const norm = (t: string) => t.trim().toLowerCase();
+      const dupes: PageMeta[] = [];
       for (const p of parsed) {
+        const existing = allLivePagesRef.current.find((x) => norm(x.title) === norm(p.title));
+        if (existing) {
+          dupes.push(existing);
+          continue;
+        }
         const id = await create(p, null);
         first ??= id;
+      }
+      if (dupes.length) {
+        if (fromExplorer && !first) return openPage(dupes[0].id);
+        const names = dupes.map((d) => `“${d.title || "Untitled"}”`).join(", ");
+        setNotice({
+          text: `${names} already ${dupes.length === 1 ? "exists" : "exist"} in Oceanic, so ${dupes.length === 1 ? "it wasn't" : "they weren't"} imported`,
+          key: Date.now() + 1,
+          action: { label: "Open existing", run: () => openPage(dupes[0].id) },
+        });
       }
       const list = await api.getPages();
       setPages(list.map(toMeta));
       if (first) openPage(first);
-      if (count) setNotice({ text: `Imported ${count} page${count === 1 ? "" : "s"}`, key: Date.now() });
+      if (count && !dupes.length) setNotice({ text: `Imported ${count} page${count === 1 ? "" : "s"}`, key: Date.now() });
       if (failed.length) setImportFailures({ count, failed });
     } catch (e) {
       report("Import")(e);
@@ -889,8 +943,59 @@ export default function App() {
     );
     if (gone.size) pruneTabs(gone);
   };
-  const keys = useRef({ importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps });
-  keys.current = { importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps };
+  const keys = useRef({ importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId });
+  keys.current = { importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId };
+
+  // PDF cards, `p. N` chips and search hits open the reader in the current tab.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const { docId } = (e as CustomEvent<PdfTarget>).detail;
+      setView("document");
+      if (keys.current.activePageId !== pdfEntry(docId)) keys.current.navigate(pdfEntry(docId));
+    };
+    window.addEventListener(OPEN_PDF, onOpen);
+    return () => window.removeEventListener(OPEN_PDF, onOpen);
+  }, []);
+  // Reader → "Send to note": a quote block with a `p. N` chip, appended to the
+  // note the reader was opened from (else any open note holding that PDF).
+  const sendQuote = useRef<(q: SendToNote) => void>(() => {});
+  sendQuote.current = (q) => {
+    const back = activeTab ? activeTab.history.slice(0, activeTab.index).reverse() : [];
+    const holds = (id: string) => JSON.stringify(docsRef.current[id] ?? "").includes(q.docId);
+    const isNote = (id: string) => !isAppEntry(id) && pages.some((p) => p.id === id);
+    const target = back.find((id) => isNote(id) && holds(id)) ?? back.find(isNote) ?? Object.keys(docsRef.current).find(holds);
+    const page = target && pages.find((p) => p.id === target);
+    if (!target || !page) return;
+    const quote = {
+      type: "quote",
+      content: [
+        { type: "text", text: `“${q.text}” `, styles: {} },
+        { type: "pdfRef", props: { docId: q.docId, page: q.page, annotationId: q.annotationId } },
+      ],
+    } as PartialBlock;
+    // The note may not be loaded yet (e.g. the app restarted on the reader tab).
+    void (async () => {
+      const blocks = docsRef.current[target] ?? (await loadBlocks(target));
+      changeDoc(target, [...blocks, quote]);
+    })().catch(report("Send to note"));
+    q.result = page.title || "Untitled";
+  };
+  useEffect(() => {
+    const on = (e: Event) => sendQuote.current((e as CustomEvent<SendToNote>).detail);
+    window.addEventListener(SEND_TO_NOTE, on);
+    return () => window.removeEventListener(SEND_TO_NOTE, on);
+  }, []);
+  /** PDF names for reader tabs. */
+  const [pdfTitles, setPdfTitles] = useState<Record<string, string>>({});
+  const pdfIds = tabs.flatMap((t) => t.history).filter((id) => id.startsWith("pdf:")).map((id) => id.slice(4));
+  const loadPdfTitle = (id: string) =>
+    void api.getPdfDoc(id).then((d) => d && setPdfTitles((prev) => (prev[id] === d.name ? prev : { ...prev, [id]: d.name }))).catch(() => {});
+  useEffect(() => pdfIds.filter((id) => !(id in pdfTitles)).forEach(loadPdfTitle), [pdfIds.join()]);
+  useEffect(() => {
+    const on = (e: Event) => loadPdfTitle((e as CustomEvent<string>).detail);
+    window.addEventListener(PDF_CHANGED, on);
+    return () => window.removeEventListener(PDF_CHANGED, on);
+  }, []);
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -928,8 +1033,12 @@ export default function App() {
       const bytes = await readFileBytes(path);
       const name = path.split(/[\\/]/).pop()!;
       setView("document");
-      if (/\.omap$/i.test(path)) keys.current.openPage(mindmapEntry(await importOmap(bytes)));
-      else void keys.current.importNotes([new File([bytes as BlobPart], name)]);
+      if (/\.omap$/i.test(path)) {
+        const r = await importOmap(bytes);
+        keys.current.openPage(mindmapEntry(r.id));
+        if (r.existing) setNotice({ text: `“${r.title}” is already in Oceanic, so the existing map was opened`, key: Date.now() });
+      }
+      else void keys.current.importNotes([new File([bytes as BlobPart], name)], true);
     };
     void invoke<string | null>("launch_file").then((p) => { if (p) void openFile(p); }).catch(() => {});
     const offFile = listen<string>("open-file", ({ payload }) => void openFile(payload));
@@ -974,6 +1083,7 @@ export default function App() {
   /* ------------------------------------------------------------- Derived */
   const allLivePages = pages.filter((p) => !isInTrash(pages, p));
   /** The sidebar tree and the canvas only show the active workspace. */
+  allLivePagesRef.current = allLivePages;
   const livePages = allLivePages.filter((p) => p.workspaceId === activeWorkspaceId);
   const trashedPages = pages
     .filter((p) => p.trashedAt)
@@ -1009,6 +1119,7 @@ export default function App() {
       return [{ tabId: t.id, icon: "mindmap-logo", title: "Mindmap Home", pinned: t.id === MM_HOME_TAB }];
     if (currentPage(t).startsWith("mindmap:"))
       return [{ tabId: t.id, icon: "mindmap-logo", title: mindmapTitles[currentPage(t).slice(8)] || mindmaps.find((m) => m.id === currentPage(t).slice(8))?.title || "Mindmap" }];
+    if (currentPage(t).startsWith("pdf:")) return [{ tabId: t.id, icon: "📕", title: pdfTitles[currentPage(t).slice(4)] || "PDF" }];
     const page = pages.find((p) => p.id === currentPage(t));
     return page ? [{ tabId: t.id, icon: page.icon, title: page.title || "Untitled" }] : [];
   });
@@ -1035,6 +1146,7 @@ export default function App() {
   const [appLoading, setAppLoading] = useState<AppId | null>(null);
   /** Bumped as the loader fades: Homes remount so their intro plays where you can see it. */
   const [homeKey, setHomeKey] = useState(0);
+  const appRoot = useRef<HTMLDivElement>(null);
   const switchApp = (app: AppId) => {
     const doc = activePageId?.startsWith("doc:") ? activePageId.slice(4) : null;
     if (doc && isDirtyUntitled(doc)) return setSavePrompt({ path: doc, proceed: () => go(app) });
@@ -1084,7 +1196,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100">
+    <div ref={appRoot} className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100">
       {!inDocEditor && (
       <TitleBar
         tabs={tabInfos}
@@ -1218,7 +1330,7 @@ export default function App() {
             <SketchHome
               key={homeKey}
               onOpen={(p) => openPage(sketchEntry(p))}
-              openNow={openNow("sketch:", (p) => p.slice(7).split(/[\\/]/).pop()!.replace(/\.[^.]+$/, ""))}
+              openNow={openNow("sketch:", (p) => sketchTitle(p.slice(7)))}
               onFocusTab={setActiveTabId}
               onCloseTab={closeTab}
             />
@@ -1261,6 +1373,12 @@ export default function App() {
               onOpenPage={openPage}
               onTitle={(id, title) => setMindmapTitles((prev) => (prev[id] === title ? prev : { ...prev, [id]: title }))}
               onHome={() => setActiveTabId(MM_HOME_TAB)}
+            />
+          ) : activePageId?.startsWith("pdf:") ? (
+            <PdfReader
+              key={`${activeTabId}:${activePageId}`}
+              docId={activePageId.slice(4)}
+              onBack={() => (activeTab && activeTab.index > 0 ? step(-1) : setActiveTabId(HOME_TAB))}
             />
           ) : activePageId === LIBRARY ? (
             <LibraryView
@@ -1390,6 +1508,7 @@ export default function App() {
       </div>
 
       <UpdateUI />
+      <SpellUI />
       {savePrompt && (
         <SavePrompt
           path={savePrompt.path}
@@ -1500,6 +1619,7 @@ export default function App() {
         />
       )}
       <Tooltip />
+      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} />}
       {importFailures && (
         <Modal onClose={() => setImportFailures(null)} className="w-[440px] p-5">
           <h2 className="text-[15px] font-semibold text-neutral-100">
@@ -1519,7 +1639,16 @@ export default function App() {
           </div>
         </Modal>
       )}
-      {appLoading && <AppLoader app={appLoading} onLeave={() => setHomeKey((k) => k + 1)} onDone={() => setAppLoading(null)} />}
+      {appLoading && <AppLoader app={appLoading} onLeave={() => {
+        setHomeKey((k) => k + 1);
+        // Ease the app in under the fading splash instead of a hard cut.
+        appRoot.current?.querySelectorAll<HTMLElement>(":scope > :not([data-app-loader])").forEach((el) =>
+          el.animate(
+            [{ opacity: 0, transform: "scale(0.98)", filter: "blur(4px)" }, { opacity: 1, transform: "none", filter: "none" }],
+            { duration: 480, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+          ),
+        );
+      }} onDone={() => setAppLoading(null)} />}
       <DeleteConfirmHost />
       {settingsOpen && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} />
@@ -1533,7 +1662,7 @@ export default function App() {
         />
       )}
       {notice && (
-        <Toast key={notice.key} message={notice.text} onDismiss={() => setNotice(null)} />
+        <Toast key={notice.key} message={notice.text} actionLabel={notice.action?.label} onAction={() => (notice.action?.run(), setNotice(null))} onDismiss={() => setNotice(null)} duration={notice.action ? 8000 : 5000} />
       )}
 
       {trashToast && (

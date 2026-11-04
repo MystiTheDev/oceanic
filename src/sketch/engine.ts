@@ -288,3 +288,40 @@ export function drawShape(
   if (opts.mode !== "fill") g.stroke();
   g.restore();
 }
+
+/* ---------------------------------------------------------------- smoothing */
+export type StrokePt = { x: number; y: number; p: number };
+
+/**
+ * Freehand smoothing: drop jitter closer than `minDist`, then a few rounds of
+ * neighbour averaging (endpoints stay put). Pressure is smoothed the same way.
+ */
+export function smoothPoints(pts: StrokePt[], minDist = 0.8, rounds = 2): StrokePt[] {
+  let out = pts.filter((q, i) => i === 0 || i === pts.length - 1 || Math.hypot(q.x - pts[i - 1].x, q.y - pts[i - 1].y) >= minDist);
+  for (let r = 0; r < rounds && out.length > 2; r++) {
+    out = out.map((q, i) =>
+      i === 0 || i === out.length - 1
+        ? q
+        : {
+            x: (out[i - 1].x + q.x * 2 + out[i + 1].x) / 4,
+            y: (out[i - 1].y + q.y * 2 + out[i + 1].y) / 4,
+            p: (out[i - 1].p + q.p * 2 + out[i + 1].p) / 4,
+          },
+    );
+  }
+  return out;
+}
+
+/** SVG path through the points as quadratic curves between midpoints. */
+export function strokePath(pts: { x: number; y: number }[]): string {
+  if (!pts.length) return "";
+  if (pts.length < 3) return `M${pts[0].x} ${pts[0].y}` + pts.slice(1).map((q) => ` L${q.x} ${q.y}`).join("") + (pts.length === 1 ? ` l0.01 0` : "");
+  let d = `M${pts[0].x} ${pts[0].y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i].x + pts[i + 1].x) / 2;
+    const my = (pts[i].y + pts[i + 1].y) / 2;
+    d += ` Q${pts[i].x} ${pts[i].y} ${mx} ${my}`;
+  }
+  const last = pts[pts.length - 1];
+  return `${d} L${last.x} ${last.y}`;
+}

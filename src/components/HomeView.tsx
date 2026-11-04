@@ -7,6 +7,7 @@ import type { PageMeta } from "../data/workspace";
 import { isoDate, parseIsoDate } from "../lib/colors";
 import { getSeedBlocks } from "../data/workspace";
 import { ScrollRow } from "./ScrollRow";
+import { bannerBg, useBanner } from "../lib/banners";
 import { TagChip } from "./PageProperties";
 import type { AppView } from "./ViewSwitcher";
 
@@ -212,14 +213,15 @@ function useSnippet(id: string, updatedAt?: string) {
 export function RecentCard({ page, delay, onOpen }: { page: PageMeta; delay: number; onOpen: () => void }) {
   const snippet = useSnippet(page.id, page.updatedAt);
   const tint = tagColor(page.tags?.[0] ?? page.id).solid;
+  const banner = useBanner(page.id);
   return (
     <button
       type="button"
       onClick={onOpen}
       style={{ animationDelay: `${delay}ms` }}
-      className="oc-home-card group flex h-[176px] w-[212px] shrink-0 cursor-pointer flex-col overflow-hidden oc-glass oc-glass-hover text-left"
+      className="oc-home-card group flex h-[214px] w-[260px] shrink-0 cursor-pointer flex-col overflow-hidden oc-glass oc-glass-hover text-left"
     >
-      <div className="h-12 shrink-0" style={{ background: `linear-gradient(135deg, ${tint}55, ${tint}14 70%, transparent)` }} />
+      <div className="h-[84px] shrink-0" style={{ background: banner ? bannerBg(banner) : `linear-gradient(135deg, ${tint}55, ${tint}14 70%, transparent)` }} />
       <span className="-mt-[18px] ml-3.5 inline-block origin-bottom-left text-[28px] leading-none transition-transform duration-200 ease-[cubic-bezier(0.3,1.6,0.5,1)] group-hover:scale-[1.15]">
         {page.icon}
       </span>

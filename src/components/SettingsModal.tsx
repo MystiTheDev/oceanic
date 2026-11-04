@@ -1,3 +1,5 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { PACKS, addToDictionary, forgetLearned, removeFromDictionary, setPacks, setReplacements, setSpellSettings, useSpell } from "../lib/spell/engine";
 import { DELETE_APPS, setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
 import { checkForUpdates } from "../lib/updates";
 import { pickSketchFolder, setSketchLayout, useSketch, type SketchLayout } from "../sketch/store";
@@ -7,7 +9,7 @@ import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  AppWindow, Brush, Check, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smile, Trash2, Upload, User, X,
+  AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smile, Trash2, Upload, User, X,
 } from "lucide-react";
 import { api } from "../data/api";
 import { APP_VERSION } from "./SidebarFooter";
@@ -42,12 +44,12 @@ export type AppSettings = {
 type Ctx = { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void };
 type Row = { title: string; description?: ReactNode; keywords?: string; control: (c: Ctx) => ReactNode; wide?: boolean };
 type Group = { heading?: string; rows: Row[] };
-type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study";
+type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling";
 type Page = { id: PageId; label: string; icon: ReactNode; groups?: Group[]; custom?: (c: Ctx) => ReactNode };
 
 const NAV: { heading: string; pages: PageId[] }[] = [
   { heading: "Account", pages: ["account", "preferences"] },
-  { heading: "Oceanic", pages: ["general", "storage", "deleting", "shortcuts", "about"] },
+  { heading: "Oceanic", pages: ["general", "spelling", "storage", "deleting", "shortcuts", "about"] },
   { heading: "Apps", pages: ["docs", "sketch", "mindmap", "study"] },
 ];
 
@@ -211,6 +213,7 @@ const PAGES: Page[] = [
       { heading: "Oceanic Mindmap", rows: [sc("Add child topic", "Tab"), sc("Add sibling topic", "Enter"), sc("Edit topic", "F2"), sc("Delete topic", "Del")] },
     ],
   },
+  { id: "spelling", label: "Spelling", icon: <SpellCheck />, custom: () => <SpellingPage /> },
   { id: "about", label: "About", icon: <Info />, custom: () => <AboutPage /> },
   {
     id: "docs",
@@ -617,6 +620,22 @@ function AboutPage() {
       <div className="mt-2 flex gap-2">
         <Btn onClick={() => void checkForUpdates(true)}>Check for updates</Btn>
       </div>
+      {/* Creator */}
+      <div className="mt-4 flex w-full max-w-md items-center gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-br from-sky-500/10 to-transparent p-3.5 text-left">
+        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-sky-400 to-blue-700 text-[17px] font-bold text-white shadow-md">M</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-500">Made by</p>
+          <p className="text-[15px] font-semibold text-neutral-100">MystiTheDev</p>
+          <p className="text-[12px] text-neutral-400">a.k.a. Ishan Kumar</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void openUrl("https://github.com/MystiTheDev").catch(() => window.open("https://github.com/MystiTheDev", "_blank"))}
+          className="h-8 cursor-pointer rounded-md border border-white/[0.1] px-3 text-[12.5px] text-neutral-200 transition-colors hover:bg-white/[0.06]"
+        >
+          GitHub ↗
+        </button>
+      </div>
       <div className="mt-6 grid w-full max-w-md grid-cols-2 gap-2 text-left">
         {[
           [<AppWindow key="a" className="size-4" />, "Runs offline", "Your data stays on this PC."],
@@ -628,6 +647,81 @@ function AboutPage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Settings → Spelling: switches, my dictionary (+ learned words), replacements, subject packs. */
+function SpellingPage() {
+  const sp = useSpell();
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [word, setWord] = useState("");
+  const learned = Object.entries(sp.learned).filter(([, n]) => n >= 3).map(([w]) => w);
+  const chip = "flex items-center gap-1 rounded-full border border-white/[0.1] bg-white/[0.04] py-0.5 pl-2.5 pr-1 text-[12px] text-neutral-200";
+  const input = "h-8 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 text-[13px] text-neutral-100 outline-none focus:border-sky-500/60";
+  const Row = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => (
+    <div className="flex items-center gap-4 border-b border-white/[0.05] py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] text-neutral-100">{title}</p>
+        <p className="text-[12px] text-neutral-500">{desc}</p>
+      </div>
+      {children}
+    </div>
+  );
+  const toggle = (k: "autocorrect" | "underline" | "complete") => (
+    <input type="checkbox" checked={sp.settings[k]} onChange={(e) => setSpellSettings({ [k]: e.target.checked })} className="size-4 cursor-pointer accent-sky-500" />
+  );
+  const x = (onClick: () => void) => <button type="button" onClick={onClick} className="cursor-pointer px-1 text-neutral-500 hover:text-red-400">✕</button>;
+  return (
+    <div>
+      <p className="mb-2 text-[12px] text-neutral-500">Works offline · English (UK + US){sp.ready ? "" : " · loading word list…"}</p>
+      <Row title="Autocorrect" desc="Fix common typos as you finish a word (teh → the). Backspace right after undoes it.">{toggle("autocorrect")}</Row>
+      <Row title="Underline misspellings" desc="Click an underlined word for suggestions.">{toggle("underline")}</Row>
+      <Row title="Word completion" desc="Grey suggestion while typing; press Tab to accept.">{toggle("complete")}</Row>
+      <Row title="My dictionary" desc="Words that are never flagged. ✨ = learned automatically after you used it 3 times.">
+        <form onSubmit={(e) => (e.preventDefault(), word.trim() && (addToDictionary(word.trim()), setWord("")))}>
+          <input value={word} onChange={(e) => setWord(e.target.value)} data-no-spell placeholder="Add a word" className={`${input} w-36`} />
+        </form>
+      </Row>
+      <div className="flex flex-wrap gap-1.5 py-2">
+        {sp.user.map((w) => <span key={w} className={chip}>{w}{x(() => removeFromDictionary(w))}</span>)}
+        {learned.map((w) => <span key={w} className={chip}>✨ {w}{x(() => forgetLearned(w))}</span>)}
+        {!sp.user.length && !learned.length && <span className="text-[12px] text-neutral-600">No words yet.</span>}
+      </div>
+      <Row title="Custom replacements" desc="Type the left side and it becomes the right side.">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (from.trim() && to.trim()) setReplacements({ ...sp.replacements, [from.trim().toLowerCase()]: to.trim() });
+            setFrom("");
+            setTo("");
+          }}
+          className="flex items-center gap-1.5"
+        >
+          <input value={from} onChange={(e) => setFrom(e.target.value)} data-no-spell placeholder="pls" className={`${input} w-20`} />
+          <span className="text-neutral-500">→</span>
+          <input value={to} onChange={(e) => setTo(e.target.value)} data-no-spell placeholder="please" className={`${input} w-28`} />
+          <button type="submit" className="h-8 cursor-pointer rounded-md border border-white/[0.08] px-2.5 text-[13px] text-neutral-200 hover:bg-white/[0.06]">Add</button>
+        </form>
+      </Row>
+      <div className="flex flex-wrap gap-1.5 py-2">
+        {Object.entries(sp.replacements).map(([a, b]) => (
+          <span key={a} className={chip}>{a} → {b}{x(() => { const r = { ...sp.replacements }; delete r[a]; setReplacements(r); })}</span>
+        ))}
+      </div>
+      <Row title="Subject word packs" desc="Extra subject terms that are never flagged.">
+        <div className="flex gap-1.5">
+          {Object.entries(PACKS).map(([id, p]) => {
+            const on = sp.packs.includes(id);
+            return (
+              <button key={id} type="button" onClick={() => setPacks(on ? sp.packs.filter((v) => v !== id) : [...sp.packs, id])} className={`h-7 cursor-pointer rounded-full border px-3 text-[12px] ${on ? "border-sky-500/60 bg-sky-500/15 text-sky-300" : "border-white/[0.1] text-neutral-400"}`}>
+                {on ? "✓ " : ""}{p.label}
+              </button>
+            );
+          })}
+        </div>
+      </Row>
     </div>
   );
 }

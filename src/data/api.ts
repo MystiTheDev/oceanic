@@ -4,6 +4,7 @@
  * calls are served from localStorage so the UI keeps working.
  * ------------------------------------------------------------------------ */
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { deletePdfBytes, putPdfBytes } from "../pdf/bytes";
 
 /** Mirrors `PageSummary` in db.rs (camelCase over the wire). */
 export type PageRecord = {
@@ -44,6 +45,33 @@ export type MindmapNodeRecord = {
   styleJson: string;
 };
 export type MindmapWithNodes = MindmapRecord & { nodes: MindmapNodeRecord[] };
+
+/** An imported PDF (mirrors `PdfDoc` in db.rs). `zoom` is "width", "page" or a percentage. */
+export type PdfDocRecord = {
+  id: string;
+  assetPath: string;
+  name: string;
+  pageCount: number;
+  lastPage: number;
+  zoom: string;
+  thumbPath: string | null;
+  annotationCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type PdfAnnotationKind =
+  | "highlight" | "underline" | "strike" | "ink" | "text" | "sticky" | "rect" | "ellipse" | "line" | "arrow";
+/** One annotation; `dataJson` holds its geometry in PDF points of `page` (see pdf/annotations.ts). */
+export type PdfAnnotationRecord = {
+  id: string;
+  docId: string;
+  page: number;
+  kind: PdfAnnotationKind;
+  color: string;
+  dataJson: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type PageStatus = "not_started" | "in_progress" | "done";
 export type PageProperties = Pick<PageRecord, "dueDate" | "status" | "tags">;
@@ -113,6 +141,20 @@ export type Api = {
   createMindmap(title: string, subjectTag: string): Promise<MindmapWithNodes>;
   saveMindmap(id: string, title: string, subjectTag: string, nodes: MindmapNodeRecord[]): Promise<string>;
   deleteMindmap(id: string): Promise<void>;
+  /** Copy a PDF (picked path, or dropped bytes as base64) into the assets folder. */
+  importPdf(src: string): Promise<PdfDocRecord>;
+  importPdfBytes(name: string, base64: string): Promise<PdfDocRecord>;
+  getPdfDoc(id: string): Promise<PdfDocRecord | null>;
+  savePdfDocState(id: string, pageCount: number, lastPage: number, zoom: string): Promise<void>;
+  /** Page-1 PNG (base64); returns where it was stored. */
+  savePdfThumb(id: string, base64: string): Promise<string>;
+  getPdfAnnotations(docId: string): Promise<PdfAnnotationRecord[]>;
+  savePdfAnnotation(annotation: PdfAnnotationRecord): Promise<void>;
+  deletePdfAnnotation(id: string): Promise<void>;
+  batchPdfAnnotations(upserts: PdfAnnotationRecord[], deletes: string[]): Promise<void>;
+  /** Per-page text (index 0 = page 1), indexed for global search as `pdf:<doc>:<page>`. */
+  savePdfText(docId: string, pages: string[]): Promise<void>;
+  getPdfText(docId: string): Promise<string[]>;
   getSettings(): Promise<Record<string, string>>;
   setSetting(key: string, value: string): Promise<void>;
   getStoragePath(): Promise<string>;
@@ -166,6 +208,17 @@ const tauriApi: Api = {
   createMindmap: (title, subjectTag) => invoke("create_mindmap", { title, subjectTag }),
   saveMindmap: (id, title, subjectTag, nodes) => invoke("save_mindmap", { id, title, subjectTag, nodes }),
   deleteMindmap: (id) => invoke("delete_mindmap", { id }),
+  importPdf: (src) => invoke("import_pdf", { src }),
+  importPdfBytes: (name, base64) => invoke("import_pdf_bytes", { name, data: base64 }),
+  getPdfDoc: (id) => invoke("get_pdf_doc", { id }),
+  savePdfDocState: (id, pageCount, lastPage, zoom) => invoke("save_pdf_doc_state", { id, pageCount, lastPage, zoom }),
+  savePdfThumb: (id, base64) => invoke("save_pdf_thumb", { id, data: base64 }),
+  getPdfAnnotations: (docId) => invoke("get_pdf_annotations", { docId }),
+  savePdfAnnotation: (annotation) => invoke("save_pdf_annotation", { annotation }),
+  deletePdfAnnotation: (id) => invoke("delete_pdf_annotation", { id }),
+  batchPdfAnnotations: (upserts, deletes) => invoke("batch_pdf_annotations", { upserts, deletes }),
+  savePdfText: (docId, pages) => invoke("save_pdf_text", { docId, pages }),
+  getPdfText: (docId) => invoke("get_pdf_text", { docId }),
   getSettings: () => invoke("get_settings"),
   setSetting: (key, value) => invoke("set_setting", { key, value }),
   getStoragePath: () => invoke("get_storage_path"),
@@ -204,6 +257,10 @@ type Store = {
   workspaces?: (WorkspaceRecord & { sortOrder: number })[];
   settings?: Record<string, string>;
   mindmaps?: MindmapWithNodes[];
+  /** PDF metadata only; the files live in IndexedDB (see pdf/bytes.ts). */
+  pdfDocs?: Omit<PdfDocRecord, "annotationCount">[];
+  pdfAnnotations?: PdfAnnotationRecord[];
+  pdfText?: Record<string, string[]>;
 };
 
 const KEY = "oceanic.db";
@@ -357,6 +414,17 @@ const localApi: Api = {
       s.links = s.links!.filter((l) => !gone.has(l.sourceId) && !gone.has(l.targetId));
       s.positions = s.positions!.filter((p) => !gone.has(p.pageId));
       s.edges = s.edges!.filter((e) => !gone.has(e.sourceId) && !gone.has(e.targetId));
+      // PDFs no page references any more (trashed pages still count), like `pdf_gc` in db.rs.
+      const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+      const orphans = new Set(
+        (s.pdfDocs ?? []).filter((d) => d.createdAt < cutoff && !s.pages.some((p) => p.content?.includes(d.id))).map((d) => d.id),
+      );
+      if (orphans.size) {
+        s.pdfDocs = s.pdfDocs!.filter((d) => !orphans.has(d.id));
+        s.pdfAnnotations = (s.pdfAnnotations ?? []).filter((a) => !orphans.has(a.docId));
+        orphans.forEach((id) => delete s.pdfText?.[id]);
+        orphans.forEach((id) => void deletePdfBytes(id));
+      }
     }),
   duplicatePage: (id, content, links) =>
     tx((s) => {
@@ -520,7 +588,21 @@ const localApi: Api = {
               body.slice(at + terms[0].length, at + 80) + "…";
         const rank = terms.every((t) => title.includes(t)) ? -10 : -1;
         return [{ pageId: p.id, snippet, rank }];
-      });
+      }).concat(
+        titleOnly
+          ? []
+          : Object.entries(s.pdfText ?? {}).flatMap(([docId, pages]) =>
+              pages.flatMap((body, i) => {
+                const lower = body.toLowerCase();
+                if (!terms.length || !terms.every((t) => lower.includes(t))) return [];
+                const at = lower.indexOf(terms[0]);
+                const snippet =
+                  (at > 40 ? "…" : "") + body.slice(Math.max(0, at - 40), at) +
+                  "\u0001" + body.slice(at, at + terms[0].length) + "\u0002" + body.slice(at + terms[0].length, at + 80) + "…";
+                return [{ pageId: `pdf:${docId}:${i + 1}`, snippet, rank: 0 }];
+              }),
+            ),
+      );
     }),
   getAllMindmaps: () =>
     tx((s) =>
@@ -553,6 +635,48 @@ const localApi: Api = {
     tx((s) => {
       s.mindmaps = (s.mindmaps ?? []).filter((m) => m.id !== id);
     }),
+  importPdf: () => Promise.reject(new Error("Picking files by path needs the desktop app")),
+  importPdfBytes: async (name, base64) => {
+    const id = crypto.randomUUID();
+    await putPdfBytes(id, base64);
+    return tx((s) => {
+      const d = { id, assetPath: `idb:${id}`, name, pageCount: 0, lastPage: 1, zoom: "width", thumbPath: null, createdAt: now(), updatedAt: now() };
+      (s.pdfDocs ??= []).push(d);
+      return { ...d, annotationCount: 0 };
+    });
+  },
+  getPdfDoc: (id) =>
+    tx((s) => {
+      const d = (s.pdfDocs ?? []).find((x) => x.id === id);
+      return d ? { ...d, annotationCount: (s.pdfAnnotations ?? []).filter((a) => a.docId === id).length } : null;
+    }),
+  savePdfDocState: (id, pageCount, lastPage, zoom) =>
+    tx((s) => {
+      const d = (s.pdfDocs ?? []).find((x) => x.id === id);
+      if (d) Object.assign(d, { pageCount, lastPage, zoom, updatedAt: now() });
+    }),
+  savePdfThumb: (id, base64) =>
+    tx((s) => {
+      const d = (s.pdfDocs ?? []).find((x) => x.id === id);
+      const url = `data:image/png;base64,${base64}`;
+      if (d) d.thumbPath = url;
+      return url;
+    }),
+  getPdfAnnotations: (docId) => tx((s) => (s.pdfAnnotations ?? []).filter((a) => a.docId === docId)),
+  savePdfAnnotation: (a) => localApi.batchPdfAnnotations([a], []),
+  deletePdfAnnotation: (id) => localApi.batchPdfAnnotations([], [id]),
+  batchPdfAnnotations: (upserts, deletes) =>
+    tx((s) => {
+      const gone = new Set([...deletes, ...upserts.map((a) => a.id)]);
+      const old = new Map((s.pdfAnnotations ?? []).map((a) => [a.id, a]));
+      s.pdfAnnotations = (s.pdfAnnotations ?? []).filter((a) => !gone.has(a.id));
+      for (const a of upserts) s.pdfAnnotations.push({ ...a, createdAt: old.get(a.id)?.createdAt ?? now(), updatedAt: now() });
+    }),
+  savePdfText: (docId, pages) =>
+    tx((s) => {
+      (s.pdfText ??= {})[docId] = pages;
+    }),
+  getPdfText: (docId) => tx((s) => s.pdfText?.[docId] ?? []),
   getSettings: () => tx((s) => ({ ...s.settings! })),
   setSetting: (key, value) =>
     tx((s) => {

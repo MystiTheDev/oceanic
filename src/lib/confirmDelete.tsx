@@ -14,7 +14,7 @@ export const DELETE_APPS: { id: DeleteApp; label: string }[] = [
 const key = (app: DeleteApp) => `confirmDelete.${app}`;
 
 /** How the item goes away; picks the dialog's wording. */
-export type DeleteKind = "trash" | "recycle" | "remove" | "permanent";
+export type DeleteKind = "trash" | "recycle" | "remove" | "permanent" | "undoable";
 export type DeleteRequest = {
   app: DeleteApp;
   title: string;
@@ -57,6 +57,7 @@ const COPY: Record<DeleteKind, { title: string; verb: string; body: string }> = 
   recycle: { title: "Delete file?", verb: "Delete", body: "will be moved to the Recycle Bin. You can restore it from there." },
   remove: { title: "Remove from list?", verb: "Remove", body: "will be removed from your recent files. The file itself stays where it is." },
   permanent: { title: "Delete permanently?", verb: "Delete", body: "will be deleted. This can't be undone." },
+  undoable: { title: "Delete?", verb: "Delete", body: "will be deleted. Press Ctrl+Z to bring it back." },
 };
 
 /** The one confirmation dialog every app's Delete goes through. */

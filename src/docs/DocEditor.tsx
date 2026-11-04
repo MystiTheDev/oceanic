@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
-import { Node, mergeAttributes, type JSONContent } from "@tiptap/core";
+import { Extension, Node, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Color, FontFamily, FontSize, LineHeight, TextStyle } from "@tiptap/extension-text-style";
 import TextAlign from "@tiptap/extension-text-align";
@@ -18,6 +18,7 @@ import { flushSync } from "react-dom";
 import { Pagination, paginate, type Bridge } from "./pagination";
 import { ParagraphFormat } from "./paragraphFormat";
 import { WordFeel, alignTo } from "./wordFeel";
+import { spellMenuItems, spellPlugin } from "../lib/spell/plugin";
 import { WindowControls } from "../components/TitleBar";
 import { Modal, ModalButton } from "../components/Modal";
 import { isOceanicDoc, type PageBorder, DEFAULT_PAGE, PAGE_MM, exportDocx, importDocx, resetImageCache, type PageSetup } from "./docxIO";
@@ -149,10 +150,24 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
       Pagination,
       ParagraphFormat,
       WordFeel,
+      Extension.create({ name: "spellAssist", addProseMirrorPlugins: () => [spellPlugin()] }),
     ],
     // Word opens with the caret blinking at the start of the document.
     autofocus: "start",
-    editorProps: { attributes: { class: "oc-doc-body", spellcheck: "true" } },
+    editorProps: {
+      attributes: { class: "oc-doc-body", spellcheck: "false" },
+      // Pictures copied from any app paste in as images.
+      handlePaste: (view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+        if (!files.length) return false;
+        files.forEach((f) => {
+          const r = new FileReader();
+          r.onload = () => view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.nodes.image.create({ src: r.result as string })));
+          r.readAsDataURL(f);
+        });
+        return true;
+      },
+    },
     onUpdate: () => scheduleSave(),
   });
 
@@ -411,50 +426,42 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
       )}
       {/* ---- Ribbon / toolbar ---- */}
       {uiStyle === "ribbon" ? (
-        <div className="oc-docs-chrome oc-docs-enter relative z-20 shrink-0">
-          {/* Title strip: quick access · document name + status · search */}
-          <div data-tauri-drag-region className="flex h-10 items-center gap-1 pl-2">
-            <QBtn title="Save (Ctrl+S)" onClick={save}><Save /></QBtn>
-            <QBtn title="Undo (Ctrl+Z)" onClick={() => editor.chain().focus().undo().run()}><Undo2 /></QBtn>
-            <QBtn title="Redo (Ctrl+Y)" onClick={() => editor.chain().focus().redo().run()}><Redo2 /></QBtn>
-            <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center gap-2 text-[13px]">
-              <span className="truncate font-semibold text-neutral-100">{docTitle(path)}</span>
-              <span className="text-neutral-500">·</span>
-              <SaveStatus status={status} />
+        <div className="oc-docs-enter relative z-20 shrink-0">
+          {/* Word-style accent band (follows the Accent Color setting): quick access · centred name · window controls */}
+          <div className="oc-docs-titlebar">
+            <div data-tauri-drag-region className="relative flex h-8 items-center gap-0.5 pl-1.5">
+              <QBtn title="Save (Ctrl+S)" onClick={save}><Save /></QBtn>
+              <QBtn title="Undo (Ctrl+Z)" onClick={() => editor.chain().focus().undo().run()}><Undo2 /></QBtn>
+              <QBtn title="Redo (Ctrl+Y)" onClick={() => editor.chain().focus().redo().run()}><Redo2 /></QBtn>
+              <div data-tauri-drag-region className="pointer-events-none absolute inset-x-40 flex min-w-0 items-center justify-center gap-2 text-[12.5px]">
+                <span className="truncate">{docTitle(path)} - Oceanic Docs</span>
+                <span className="oc-docs-titlebar-status shrink-0"><SaveStatus status={status} /></span>
+              </div>
+              <span data-tauri-drag-region className="flex-1 self-stretch" />
+              <WindowControls />
             </div>
-            <button
-              type="button"
-              onClick={() => setFind("")}
-              className="flex h-7 w-56 cursor-pointer items-center gap-2 rounded-md border border-white/[0.1] bg-black/20 px-2.5 text-[12px] text-neutral-400 hover:border-[color:var(--oc-docs)]/60"
-            >
-              <Search className="size-3.5" /> Search
-              <span className="ml-auto text-[10px] text-neutral-500">Ctrl+F</span>
-            </button>
-            <span className="w-2" />
-            <WindowControls />
-          </div>
-          {/* Tabs: File opens the backstage */}
-          <div className="flex items-end gap-0.5 px-2">
-            <button type="button" onClick={() => setBackstage(true)} className="mb-1 h-7 cursor-pointer rounded-md bg-[var(--oc-docs)] px-3.5 text-[13px] font-semibold text-[#04262a] hover:brightness-110">
-              File
-            </button>
-            {(["home", "insert", "layout", "review"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => (setTab(t), ribbonCollapsed && setPeekRibbon((v) => !v || tab !== t))}
-                onDoubleClick={() => (setRibbonCollapsed((v) => !v), setPeekRibbon(false))}
-                className={`relative h-8 cursor-pointer px-3.5 text-[13px] capitalize ${tab === t ? "font-semibold text-[color:var(--oc-docs-light)]" : "text-neutral-300 hover:text-neutral-100"}`}
-              >
-                {t}
-                {tab === t && !ribbonCollapsed && <span className="absolute inset-x-2.5 bottom-0 h-[3px] rounded-full bg-[var(--oc-docs)]" />}
+            {/* Tabs: File opens the backstage; the selected tab merges into the ribbon like Word */}
+            <div data-tauri-drag-region className="flex h-[30px] items-end gap-0.5 px-1.5">
+              <button type="button" onClick={() => setBackstage(true)} className="oc-docs-tab h-[26px] cursor-pointer rounded-t px-4 text-[13px]">
+                File
               </button>
-            ))}
+              {(["home", "insert", "layout", "review"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => (setTab(t), ribbonCollapsed && setPeekRibbon((v) => !v || tab !== t))}
+                  onDoubleClick={() => (setRibbonCollapsed((v) => !v), setPeekRibbon(false))}
+                  className={`oc-docs-tab h-[26px] cursor-pointer rounded-t px-4 text-[13px] capitalize ${tab === t && (!ribbonCollapsed || peekRibbon) ? "is-on" : ""}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
           {(!ribbonCollapsed || peekRibbon) && (
             <div className={ribbonCollapsed ? "absolute inset-x-0 z-30" : "relative"}>
               {ribbonCollapsed && <div className="fixed inset-0" onMouseDown={() => setPeekRibbon(false)} />}
-              <div key={tab} className={`oc-docs-ribbon oc-ribbon-swap relative mx-2 mb-2 flex min-h-[96px] items-stretch gap-1 overflow-x-auto rounded-lg px-2 py-1.5 pr-9 ${ribbonCollapsed ? "shadow-[0_12px_30px_rgba(0,0,0,0.45)]" : ""}`}>
+              <div key={tab} className={`oc-docs-ribbon oc-ribbon-swap relative flex min-h-[96px] items-stretch gap-1 overflow-x-auto px-2 py-1.5 pr-9 ${ribbonCollapsed ? "shadow-[0_12px_30px_rgba(0,0,0,0.45)]" : ""}`}>
                 {tab === "home" ? <HomeRibbon editor={editor} /> : groups[tab === "file" ? "home" : tab]}
                 {/* Word's collapse/pin control, bottom-right of the ribbon (also Ctrl+F1, double-click a tab) */}
                 <button
@@ -600,6 +607,7 @@ function docMenu(e: React.MouseEvent, editor: Editor, openDialog: (d: "font" | "
   const hasSel = !editor.state.selection.empty;
   const img = editor.isActive("image") ? (editor.getAttributes("image").float as string | null) : undefined;
   openContextMenu(e, [
+    ...(spellMenuItems(editor.view, e) as Parameters<typeof openContextMenu>[1]),
     ...(img !== undefined
       ? ([
           { label: "Wrap: In line with text", checked: !img, onSelect: () => c().updateAttributes("image", { float: null }).run() },

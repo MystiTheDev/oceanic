@@ -9,6 +9,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { strToU8, zipSync } from "fflate";
 import type { PageMeta } from "../data/workspace";
+import { api } from "../data/api";
+import { pdfNames } from "../pdf/PdfRef";
 
 export type ExportFormat = "markdown" | "html";
 
@@ -55,6 +57,15 @@ const escapeHtml = (s: string) =>
 const linkPath = (dir: string, name: string, ext: string) =>
   [dir, `${name}.${ext}`].map(encodeURIComponent).join("/");
 
+/** PDF blocks and `p. N` chips export as the PDF's name: make sure the names are known. */
+async function loadPdfNames(blocks: PartialBlock[]) {
+  const ids = [...JSON.stringify(blocks).matchAll(/"docId":"([^"]+)"/g)].map((m) => m[1]).filter((id) => !pdfNames.has(id));
+  for (const id of new Set(ids)) {
+    const doc = await api.getPdfDoc(id).catch(() => null);
+    if (doc) pdfNames.set(id, doc.name);
+  }
+}
+
 async function renderPage(
   page: PageMeta,
   format: ExportFormat,
@@ -63,6 +74,7 @@ async function renderPage(
 ): Promise<string> {
   const editor = getConverter();
   const blocks = await loadBlocks(page.id);
+  await loadPdfNames(blocks);
   const title = page.title || "Untitled";
   const ext = EXT[format];
 
@@ -167,6 +179,12 @@ export function exportFilename(opts: Pick<ExportOptions, "rootId" | "pages" | "f
   return `${safeName(root?.title ?? "")}.${zipped ? "zip" : EXT[opts.format]}`;
 }
 
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
 /** Where the user chose to save: `label` is shown back to them afterwards. */
 export type SaveTarget = { label: string; write: (data: Uint8Array) => Promise<void> };
 
@@ -174,6 +192,7 @@ const MIME: Record<string, string> = {
   md: "text/markdown",
   html: "text/html",
   zip: "application/zip",
+  pdf: "application/pdf",
 };
 
 type SaveFilePicker = (opts: {
@@ -201,7 +220,9 @@ export async function pickSaveTarget(filename: string): Promise<SaveTarget | nul
     if (!path) return null;
     return {
       label: path,
-      write: (data) => invoke("write_export_file", { path, data: Array.from(data) }),
+      // PDFs can be large: base64 is ~4x smaller over IPC than a number array.
+      write: (data) =>
+        ext === "pdf" ? invoke("docs_write", { path, data: bytesToBase64(data) }) : invoke("write_export_file", { path, data: Array.from(data) }),
     };
   }
 

@@ -26,3 +26,6 @@ dist-ssr
 # Signing keys (never commit)
 /~/
 *.key
+
+# Private notes
+FUTURE_IDEAS.md

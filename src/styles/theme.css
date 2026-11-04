@@ -1185,7 +1185,21 @@
 
 /* Oceanic Docs chrome: neutral surfaces (brand colour only on accents). */
 .oc-docs-chrome { background: var(--oc-surface); border-bottom: 1px solid rgba(255,255,255,0.06); }
-.oc-docs-ribbon { background: var(--oc-raised); border: 1px solid rgba(255,255,255,0.06); }
+.oc-docs-ribbon { background: var(--oc-raised); border-bottom: 1px solid rgba(var(--oc-ink),0.08); }
+:root[data-theme="light"] .oc-docs-ribbon { background: #f3f3f3; }
+
+/* Word-style title band + tab row in the user's accent (Settings → Accent Color). */
+.oc-docs-titlebar { background: var(--color-sky-600); color: #fff; }
+.oc-docs-titlebar .oc-press { color: #fff; }
+.oc-docs-titlebar .oc-press:hover { background: rgba(255,255,255,0.16); }
+.oc-docs-titlebar button[title] { color: rgba(255,255,255,0.9); }
+.oc-docs-titlebar button[title]:not([title="Close"]):hover { background: rgba(255,255,255,0.16); color: #fff; }
+.oc-docs-titlebar-status span { color: rgba(255,255,255,0.7) !important; padding: 0; font-size: 11.5px; }
+.oc-docs-tab { color: #fff; transition: background-color 120ms ease, color 120ms ease; }
+.oc-docs-tab:hover:not(.is-on) { background: rgba(255,255,255,0.14); }
+.oc-docs-tab.is-on { background: var(--oc-raised); color: var(--color-sky-600); font-weight: 600; }
+:root[data-theme="light"] .oc-docs-tab.is-on { background: #f3f3f3; }
+:root:not([data-theme="light"]) .oc-docs-tab.is-on { color: var(--color-sky-400); }
 .oc-docs-status { background: var(--oc-surface); border-top: 1px solid rgba(255,255,255,0.06); }
 .oc-docs-backstage { background: var(--oc-raised); border-right: 1px solid rgba(255,255,255,0.06); }
 
@@ -1414,3 +1428,146 @@
 .oc-loader-logo { animation: oc-loader-logo 600ms cubic-bezier(0.2, 0, 0, 1) backwards, oc-loader-glow 2.2s 600ms ease-in-out infinite; }
 .oc-loader-text { animation: oc-loader-text 500ms 250ms cubic-bezier(0.2, 0, 0, 1) backwards; }
 .oc-loader-bar { width: 0; animation: oc-loader-bar linear forwards; animation-delay: 200ms; }
+
+/* ---------------------------------------------------------- PDF: card + reader */
+.oc-pdf-card {
+  position: relative; width: 100%; max-width: 360px; overflow: hidden; cursor: pointer; user-select: none;
+  border-radius: 12px; background: rgba(var(--oc-ink), 0.04); border: 1px solid rgba(var(--oc-ink), 0.08);
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.oc-pdf-card:hover { border-color: rgba(var(--oc-ink), 0.16); box-shadow: 0 6px 18px rgba(0, 0, 0, calc(0.25 * var(--oc-shadow-k))); }
+.oc-pdf-thumb { position: relative; height: 220px; display: grid; place-items: center; background: rgba(var(--oc-ink), 0.05); overflow: hidden; }
+.oc-pdf-thumb img { max-height: 204px; max-width: 92%; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); background: #fff; }
+.oc-pdf-thumb-wait { width: 140px; height: 190px; background: #fff; opacity: 0.6; animation: oc-pdf-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes oc-pdf-pulse { to { opacity: 0.25; } }
+.oc-pdf-peek {
+  position: absolute; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 999px; background: var(--oc-surface); color: var(--oc-text); opacity: 0; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); transition: opacity 120ms ease, transform 120ms ease;
+}
+.oc-pdf-peek:disabled { opacity: 0 !important; pointer-events: none; }
+.oc-pdf-peek:hover { transform: scale(1.08); }
+.oc-pdf-peek-l { left: 8px; }
+.oc-pdf-peek-r { right: 8px; }
+.oc-pdf-card:hover .oc-pdf-peek { opacity: 1; }
+.oc-pdf-peek-n {
+  position: absolute; bottom: 6px; right: 8px; padding: 1px 7px; border-radius: 999px; font-size: 11px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0; transition: opacity 120ms ease;
+}
+.oc-pdf-card:hover .oc-pdf-peek-n { opacity: 1; }
+.oc-pdf-info { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.oc-pdf-name { font-size: 14px; font-weight: 500; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-pdf-meta { font-size: 12px; color: var(--oc-text-2); }
+.oc-pdf-error { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: default; color: var(--color-amber-400); }
+.oc-pdf-progress { position: relative; padding: 0 12px 10px; font-size: 11px; color: var(--oc-text-2); }
+.oc-pdf-progress i { display: block; height: 3px; margin-top: 4px; border-radius: 999px; background: var(--color-sky-500); transition: width 200ms ease; }
+
+.oc-pdf-reader { background: var(--oc-canvas); }
+.oc-pdf-scroll { position: absolute; inset: 0; overflow: auto; }
+.oc-pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-left: 72px; padding-right: 32px; }
+.oc-pdf-page { position: relative; flex-shrink: 0; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.28); }
+.oc-pdf-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.oc-pdf-dark .oc-pdf-page { background: #111; }
+.oc-pdf-dark .oc-pdf-canvas { filter: invert(1) hue-rotate(180deg); }
+.oc-pdf-title {
+  position: absolute; top: 10px; right: 18px; max-width: 40%; padding: 3px 10px; border-radius: 999px; pointer-events: none;
+  font-size: 12px; color: var(--oc-text-2); background: var(--oc-surface); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
+}
+.oc-pdf-pill {
+  position: absolute; z-index: 5; left: 14px; top: 50%; translate: 0 -50%; max-height: calc(100% - 24px); overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 999px;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.08); scrollbar-width: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-tool {
+  display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 999px; color: var(--oc-text);
+  cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
+}
+.oc-pdf-tool:hover:not(:disabled) { background: rgba(var(--oc-ink), 0.08); }
+.oc-pdf-tool:disabled { opacity: 0.35; cursor: default; }
+.oc-pdf-tool-on { background: rgba(14, 165, 233, 0.18); color: var(--color-sky-400); }
+.oc-pdf-pill-sep { display: block; flex-shrink: 0; width: 20px; height: 1px; margin: 4px 0; background: rgba(var(--oc-ink), 0.1); }
+.oc-pdf-pagebox { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--oc-text-2); }
+.oc-pdf-pagebox input {
+  width: 34px; height: 24px; text-align: center; border-radius: 6px; font-size: 12px; color: var(--oc-text-strong);
+  background: rgba(var(--oc-ink), 0.06); outline: none;
+}
+.oc-pdf-pagebox input:focus { box-shadow: 0 0 0 1.5px var(--color-sky-500); }
+.oc-pdf-zoom { width: 38px; height: 22px; flex-shrink: 0; border-radius: 6px; font-size: 10.5px; font-weight: 600; color: var(--oc-text-2); cursor: pointer; }
+.oc-pdf-zoom:hover { background: rgba(var(--oc-ink), 0.08); }
+
+/* pdf.js text layer (selectable, transparent text over the canvas) */
+.textLayer { position: absolute; text-align: initial; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; z-index: 0; }
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; }
+.textLayer span.markedContent { top: 0; height: 0; }
+.textLayer ::selection { background: rgba(0, 110, 255, 0.28); }
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
+
+/* PDF annotations */
+.oc-pdf-ann { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: visible; }
+.oc-pdf-ann-item { pointer-events: visiblePainted; cursor: move; }
+.oc-pdf-ann-draw { pointer-events: all; cursor: crosshair; }
+.oc-pdf-ann-draw .oc-pdf-ann-item { pointer-events: none; }
+.oc-pdf-ann-erase { cursor: cell; }
+.oc-pdf-sel rect:first-child { stroke: var(--color-sky-500); pointer-events: none; }
+.oc-pdf-handle { fill: #fff; stroke: var(--color-sky-500); pointer-events: all; }
+.oc-pdf-handle-0, .oc-pdf-handle-2 { cursor: nwse-resize; }
+.oc-pdf-handle-1, .oc-pdf-handle-3 { cursor: nesw-resize; }
+@keyframes oc-pdf-flash { 0%, 100% { opacity: 1; } 25%, 75% { opacity: 0.15; } }
+.oc-pdf-flash { animation: oc-pdf-flash 0.6s ease-in-out 3; }
+.oc-pdf-textbox { width: 100%; height: 100%; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.25; font-family: Inter, "Segoe UI", sans-serif; }
+.oc-pdf-textedit {
+  position: absolute; z-index: 4; resize: none; padding: 0; line-height: 1.25; font-family: Inter, "Segoe UI", sans-serif;
+  background: rgba(255, 255, 255, 0.85); outline: 1.5px solid var(--color-sky-500); border-radius: 2px;
+}
+.oc-pdf-swatch { display: block; width: 18px; height: 18px; border-radius: 999px; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18); transition: transform 100ms ease; }
+.oc-pdf-swatch:hover { transform: scale(1.12); }
+.oc-pdf-swatch-on { box-shadow: 0 0 0 2px var(--oc-surface), 0 0 0 3.5px rgba(var(--oc-ink), 0.55); }
+.oc-pdf-bar {
+  position: absolute; z-index: 6; translate: -50% 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1); box-shadow: 0 6px 20px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-bar[style*="fixed"] { translate: -100% 0; z-index: 40; }
+.oc-pdf-bar-sep { width: 1px; height: 18px; background: rgba(var(--oc-ink), 0.12); }
+.oc-pdf-bar-btn { display: grid; place-items: center; height: 26px; min-width: 26px; padding: 0 6px; gap: 4px; border-radius: 999px; color: var(--oc-text); font-size: 12px; cursor: pointer; }
+.oc-pdf-bar-btn:hover { background: rgba(var(--oc-ink), 0.08); }
+.oc-pdf-sticky {
+  position: absolute; z-index: 6; width: 240px; overflow: hidden; border-radius: 10px; background: var(--oc-surface);
+  border: 1px solid rgba(var(--oc-ink), 0.1); box-shadow: 0 10px 30px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k)));
+}
+.oc-pdf-sticky-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px 5px 10px; font-size: 11px; font-weight: 600; color: rgba(0, 0, 0, 0.7); }
+.oc-pdf-sticky-head button { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; }
+.oc-pdf-sticky-head button:hover { background: rgba(0, 0, 0, 0.12); }
+.oc-pdf-sticky textarea { display: block; width: 100%; height: 120px; padding: 8px 10px; resize: none; outline: none; font-size: 13px; color: var(--oc-text-strong); background: transparent; }
+.oc-pdf-tool { position: relative; width: 32px; height: 32px; }
+.oc-pdf-more { position: absolute; right: 4px; bottom: 4px; width: 0; height: 0; border-left: 4px solid transparent; border-bottom: 4px solid currentColor; opacity: 0.5; }
+.oc-pdf-fly {
+  position: absolute; z-index: 6; left: 66px; translate: 0 -50%; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1); box-shadow: 0 6px 20px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-fly:has(> div) { border-radius: 14px; padding: 8px 10px; }
+.oc-pdf-fly .oc-pdf-bar-btn { display: flex; }
+.oc-pdf-find { position: absolute; z-index: 1; border-radius: 2px; background: rgba(250, 204, 21, 0.35); pointer-events: none; mix-blend-mode: multiply; }
+.oc-pdf-find-on { background: rgba(249, 115, 22, 0.55); box-shadow: 0 0 0 1.5px rgb(234, 88, 12); }
+.oc-pdf-findbar {
+  position: absolute; z-index: 7; top: 12px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 4px; width: 380px; max-width: calc(100% - 120px);
+  padding: 5px 6px 5px 12px; border-radius: 999px; background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-findbar input { flex: 1; min-width: 0; height: 26px; background: transparent; outline: none; font-size: 13px; color: var(--oc-text-strong); }
+.oc-pdf-findcount { font-size: 11.5px; color: var(--oc-text-2); white-space: nowrap; padding: 0 4px; }
+.oc-pdf-bar-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Offline spelling: wavy underline + grey completion. */
+.oc-misspell { text-decoration: underline wavy rgba(239, 68, 68, 0.85); text-decoration-skip-ink: none; text-underline-offset: 3px; cursor: pointer; }
+.oc-ghost { color: rgba(140, 140, 140, 0.7); pointer-events: none; }
+.oc-doc-body .oc-ghost { color: #a3a3a3; }
+
+/* Export window format cards. */
+.oc-export-card { animation: oc-rise-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-export-card.is-on { border-color: color-mix(in srgb, var(--tone) 70%, transparent); background: color-mix(in srgb, var(--tone) 9%, transparent); box-shadow: 0 6px 20px color-mix(in srgb, var(--tone) 14%, transparent); }
+@media (prefers-reduced-motion: reduce) { .oc-export-card { animation: none; } }

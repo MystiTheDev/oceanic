@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
-import { ExternalLink, House, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, House, ImagePlus, Plus, Trash2 } from "lucide-react";
+import { MapLogo, changeMapLogo } from "./MapDialogs";
+import { api } from "../data/api";
+import { fromRecord, logoOf } from "./model";
 import { openContextMenu } from "../components/ContextMenu";
 import { askDeleteMindmap } from "./MindmapGallery";
 import type { MindmapRecord } from "../data/api";
-import { subjectOf } from "./model";
 import mindmapLogo from "../assets/mindmap-logo.png";
 
 type Props = {
@@ -22,7 +24,7 @@ const ROW = "flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 t
 /** The sidebar while Oceanic Mindmap is open: its own header and map list. */
 export function MindmapSidebar({ maps, activeId, onOpen, onGallery, onOpenNewTab, onNew,  footer }: Props) {
   return (
-    <aside className="oc-fade-in flex h-full w-[264px] shrink-0 flex-col overflow-hidden rounded-r-2xl border-r border-white/[0.06] bg-[var(--oc-sidebar)] backdrop-blur">
+    <aside className="oc-fade-in oc-mm-float my-2 ml-2 flex h-[calc(100%-16px)] w-[256px] shrink-0 flex-col overflow-hidden rounded-2xl">
       <div className="flex h-16 items-center gap-2.5 px-3 pt-2">
         <img src={mindmapLogo} alt="Oceanic Mindmap logo" className="oc-brand-logo size-9 shrink-0 object-contain" />
         <div className="oc-mm-word min-w-0 flex-1 truncate text-[17px] font-extrabold tracking-[-0.02em]">Oceanic Mindmap</div>
@@ -57,13 +59,14 @@ export function MindmapSidebar({ maps, activeId, onOpen, onGallery, onOpenNewTab
               openContextMenu(e, [
                 { label: "Open", onSelect: () => onOpen(m.id) },
                 { label: "Open in new tab", icon: <ExternalLink className="size-4" />, onSelect: () => onOpenNewTab(m.id) },
+                { label: "Change logo", icon: <ImagePlus className="size-4" />, onSelect: async () => void changeMapLogo(m, logoOf((await api.getMindmapById(m.id))?.nodes.map(fromRecord), m.subjectTag)) },
                 "divider",
                 { label: "Delete", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => askDeleteMindmap(m) },
               ]);
             }}
             className={`${ROW} ${m.id === activeId ? "bg-white/10 font-medium text-neutral-100" : "text-neutral-300 hover:bg-white/5"}`}
           >
-            <span className="w-5 shrink-0 text-center leading-none">{subjectOf(m.subjectTag).icon}</span>
+            <span className="w-5 shrink-0 text-center leading-none"><MapLogo map={m} /></span>
             <span className="min-w-0 flex-1 truncate text-left">{m.title}</span>
           </button>
         ))}

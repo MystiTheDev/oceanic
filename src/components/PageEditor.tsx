@@ -1,8 +1,11 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ImageAnnotator } from "./ImageAnnotator";
+import { copyImageToClipboard } from "../lib/clipboard";
 import { CheckSquare, Network } from "lucide-react";
 import { api } from "../data/api";
 import { PageOutline } from "./PageOutline";
 import { importAudioFile, insertTimestamp, isAudioFile, uploadFile } from "../editor/audio";
+import { importPdfFile, isPdfFile } from "../pdf/importPdf";
 import {
   BasicTextStyleButton,
   BlockTypeSelect,
@@ -22,6 +25,8 @@ import { en } from "@blocknote/core/locales";
 import { ToolbarOverflow } from "./ToolbarOverflow";
 import { Backlinks } from "./Backlinks";
 import { EmojiPicker } from "./EmojiPicker";
+import { PageBanner } from "./PageBanner";
+import { useBanner } from "../lib/banners";
 import { FontButton } from "./FontButton";
 import { fontStack } from "../lib/fonts";
 import { BlockHandleMenu } from "./BlockHandleMenu";
@@ -84,6 +89,8 @@ function SelectionToolbar() {
 }
 
 
+const handledDrops = new WeakSet<DataTransfer>();
+
 export function PageEditor({
   page,
   doc,
@@ -104,9 +111,27 @@ export function PageEditor({
   });
 
   const [iconAnchor, setIconAnchor] = useState<HTMLElement | null>(null);
+  const hasBanner = !!useBanner(page.id);
   // Notion's "Get started with" bar shows while the body is empty.
   const [empty, setEmpty] = useState(() => isEmptyDoc(editor.document as Block[]));
   const scroller = useRef<HTMLDivElement>(null);
+
+  // Picture annotation: hover button (top-right of an image) or right-click → Annotate….
+  const [annotating, setAnnotating] = useState<{ id: string; url: string } | null>(null);
+  const [hoverImg, setHoverImg] = useState<{ id: string; url: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setAnnotating((e as CustomEvent).detail);
+    window.addEventListener("oc-annotate", on);
+    return () => window.removeEventListener("oc-annotate", on);
+  }, []);
+  const trackImage = (e: React.MouseEvent) => {
+    const img = (e.target as HTMLElement).closest?.("[data-content-type='image'] img") as HTMLImageElement | null;
+    const id = img?.closest("[data-id]")?.getAttribute("data-id");
+    if (!img || !id) return;
+    const r = img.getBoundingClientRect();
+    const block = editor.getBlock(id) as { props?: { url?: string } } | undefined;
+    if (block?.props?.url) setHoverImg({ id, url: block.props.url, x: r.right - 8, y: r.top + 8 });
+  };
 
   /** Pasted or dropped images become image blocks (resize by dragging its edges; caption via right-click). */
   const insertImages = async (files: File[]) => {
@@ -115,6 +140,17 @@ export function PageEditor({
       const url = await uploadFile(f).catch(() => null);
       if (!url) continue;
       const [inserted] = editor.insertBlocks([{ type: "image", props: { url, name: f.name, previewWidth: 512 } }] as never, after, "after");
+      after = inserted;
+    }
+  };
+
+  /** Pasted or dropped PDFs become preview cards (the import finishes in the background). */
+  const insertPdfs = async (files: File[]) => {
+    let after = editor.getTextCursorPosition().block;
+    for (const f of files) {
+      const doc = await importPdfFile(f).catch((e) => (console.error("PDF import failed", e), null));
+      if (!doc) continue;
+      const [inserted] = editor.insertBlocks([{ type: "pdf", props: { docId: doc.id, name: doc.name } }] as never, after, "after");
       after = inserted;
     }
   };
@@ -129,7 +165,24 @@ export function PageEditor({
           insertTimestamp(editor);
         }
       }}
+      onCopyCapture={(e) => {
+        // A selected picture copies as the image itself, not as a Markdown link.
+        const sel = editor.prosemirrorView?.state.selection as { node?: { type: { name: string }; attrs: { url?: string } } } | undefined;
+        const blocks = editor.getSelection()?.blocks;
+        const url = sel?.node?.type.name === "image" ? sel.node.attrs.url : blocks?.length === 1 && blocks[0].type === "image" ? (blocks[0].props as { url?: string }).url : undefined;
+        if (!url) return;
+        e.preventDefault();
+        e.stopPropagation();
+        void copyImageToClipboard(url).catch(() => {});
+      }}
       onPasteCapture={(e) => {
+        const pdfs = [...e.clipboardData.files].filter(isPdfFile);
+        if (pdfs.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          void insertPdfs(pdfs);
+          return;
+        }
         const images = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
         if (!images.length) return;
         e.preventDefault();
@@ -137,10 +190,25 @@ export function PageEditor({
         void insertImages(images);
       }}
       onDropCapture={async (e) => {
+        // BlockNote re-dispatches some drops with the same DataTransfer: handle each once.
+        if (handledDrops.has(e.dataTransfer)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        const pdfs = [...e.dataTransfer.files].filter(isPdfFile);
+        if (pdfs.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          handledDrops.add(e.dataTransfer);
+          void insertPdfs(pdfs);
+          return;
+        }
         const images = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
         if (images.length) {
           e.preventDefault();
           e.stopPropagation();
+          handledDrops.add(e.dataTransfer);
           void insertImages(images);
           return;
         }
@@ -148,6 +216,7 @@ export function PageEditor({
         if (!files.length) return;
         e.preventDefault();
         e.stopPropagation();
+        handledDrops.add(e.dataTransfer);
         const after = editor.getTextCursorPosition().block;
         for (const f of files) {
           const asset = await importAudioFile(f).catch(() => null);
@@ -157,10 +226,15 @@ export function PageEditor({
     >
     <div
       ref={scroller}
+      onMouseMove={trackImage}
+      onMouseLeave={(e) => !(e.relatedTarget as HTMLElement | null)?.closest?.("button") && setHoverImg(null)}
+      onScroll={() => setHoverImg(null)}
       className="oc-page-in oc-page-font scrollbar-thin h-full overflow-y-auto overflow-x-hidden"
       style={{ "--oc-page-font": fontStack(font) } as React.CSSProperties}
     >
-      <div className={`mx-auto flex w-full flex-col px-10 pt-12 max-w-3xl pb-32`}>
+      <div className="oc-banner-zone">
+      <PageBanner pageId={page.id} />
+      <div className={`mx-auto flex w-full flex-col px-10 max-w-3xl pb-32 ${hasBanner ? "-mt-9 relative" : "pt-4"}`}>
         {/* Page icon */}
         <button
           type="button"
@@ -234,8 +308,27 @@ export function PageEditor({
         </BlockNoteView>
         </div>
       </div>
+      </div>
     </div>
     <PageOutline editor={editor} scroller={scroller} />
+    {hoverImg && !annotating && (
+      <button
+        type="button"
+        onMouseEnter={() => setHoverImg(hoverImg)}
+        onClick={() => setAnnotating({ id: hoverImg.id, url: hoverImg.url })}
+        className="oc-fade-in fixed z-40 flex h-7 -translate-x-full cursor-pointer items-center gap-1.5 rounded-md bg-black/70 px-2.5 text-[12px] font-medium text-white shadow-lg backdrop-blur hover:bg-black/85"
+        style={{ left: hoverImg.x, top: hoverImg.y }}
+      >
+        ✎ Annotate
+      </button>
+    )}
+    {annotating && (
+      <ImageAnnotator
+        url={annotating.url}
+        onClose={() => setAnnotating(null)}
+        onSave={(url) => editor.updateBlock(annotating.id, { props: { url } } as never)}
+      />
+    )}
     {empty && (
       <div className="oc-fade-in pointer-events-none absolute inset-x-0 bottom-8 z-10 flex justify-center px-6">
         <div className="pointer-events-auto w-full max-w-[720px]">

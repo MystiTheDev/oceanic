@@ -1,7 +1,7 @@
 {
   "name": "oceanic",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -34,6 +34,7 @@
     "@tiptap/extension-text-style": "^3.32.2",
     "@tiptap/starter-kit": "^3.32.2",
     "@xyflow/react": "^12.12.0",
+    "an-array-of-english-words": "^2.0.0",
     "docx": "^9.0.2",
     "emojibase-data": "^16.0.3",
     "fflate": "^0.8.3",
@@ -41,6 +42,8 @@
     "katex": "^0.16.47",
     "lucide-react": "^1.65.0",
     "mammoth": "^1.8.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "prosemirror-state": "^1.4.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

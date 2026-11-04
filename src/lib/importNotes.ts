@@ -11,7 +11,7 @@ import { uploadFile } from "../editor/audio";
  * Import notes: Markdown, plain text, HTML, Word (.docx) and Notion export
  * zips. Each file becomes a page; a Notion export keeps its page tree.
  */
-export type ImportedPage = { title: string; blocks: PartialBlock[]; children: ImportedPage[]; icon?: string; props?: { dueDate: string | null; status: string | null; tags: string[] } };
+export type ImportedPage = { title: string; blocks: PartialBlock[]; children: ImportedPage[]; icon?: string; props?: { dueDate: string | null; status: string | null; tags: string[] }; banner?: import("./banners").Banner | null; tagColors?: Record<string, string> };
 export type InFile = { name: string; bytes: Uint8Array };
 
 let parser: BlockNoteEditor | null = null;
@@ -102,8 +102,9 @@ export async function parseImports(files: InFile[]): Promise<{ pages: ImportedPa
       if (!f.bytes.length) throw new Error("the file is empty");
       if (ext(f.name) === "zip") out.push(...(await fromZip(f.bytes)));
       else if (ext(f.name) === "ocean") {
-        const conv = (p: OceanPage): ImportedPage => ({ title: p.title, icon: p.icon, blocks: p.blocks, props: { dueDate: p.dueDate, status: p.status, tags: p.tags }, children: p.children.map(conv) });
-        out.push(conv(await readOceanFile(f.bytes)));
+        const conv = (p: OceanPage): ImportedPage => ({ title: p.title, icon: p.icon, blocks: p.blocks, banner: p.banner, props: { dueDate: p.dueDate, status: p.status, tags: p.tags }, children: p.children.map(conv) });
+        const root = await readOceanFile(f.bytes);
+        out.push({ ...conv(root), tagColors: root.tagColors });
       }
       else out.push({ title: cleanTitle(f.name), blocks: await toBlocks(f.name, f.bytes), children: [] });
     } catch (e) {

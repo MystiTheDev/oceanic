@@ -3,7 +3,8 @@
  * ------------------------------------------------------------------------ */
 import type { MindmapNodeRecord } from "../data/api";
 
-export type NodeStyle = { color?: string; shape?: "pill" | "rounded" | "rect"; arrow?: boolean; collapsed?: boolean };
+/** `logo` is only used on the root topic: the map's emoji logo. */
+export type NodeStyle = { color?: string; shape?: "pill" | "rounded" | "rect"; arrow?: boolean; collapsed?: boolean; logo?: string };
 
 export type MNode = {
   id: string;
@@ -110,6 +111,10 @@ export const SUBJECTS: { id: string; label: string; icon: string; branches: stri
   { id: "literature", label: "Literature", icon: "📚", branches: ["Themes", "Characters", "Plot", "Setting", "Quotes"] },
 ];
 export const subjectOf = (id: string) => SUBJECTS.find((s) => s.id === id) ?? SUBJECTS[0];
+
+/** A map's logo: the root topic's chosen emoji, else its subject's icon. */
+export const logoOf = (nodes: MNode[] | null | undefined, subjectTag: string) =>
+  nodes?.find((n) => n.id === ROOT)?.style.logo || subjectOf(subjectTag).icon;
 
 /* ---------------------------------------------------------------- mermaid */
 export function toMermaid(nodes: MNode[]): string {

@@ -6,13 +6,14 @@ import { readFileBytes } from "../lib/fileIO";
 import { HomeMotif } from "../components/HomeMotif";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollRow } from "../components/ScrollRow";
-import { Copy, LayoutGrid, List, MoreHorizontal, Network, PenLine, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, ImagePlus, LayoutGrid, List, MoreHorizontal, Network, PenLine, Plus, Search, Trash2 } from "lucide-react";
 import { api, type MindmapRecord } from "../data/api";
 import { openContextMenu } from "../components/ContextMenu";
 import { Modal, ModalButton } from "../components/Modal";
 import { Preview } from "../editor/mindmapBlock";
 import mindmapLogo from "../assets/mindmap-logo.png";
-import { ROOT, SUBJECTS, fromRecord, layout, subjectOf, toRecord, type MNode } from "./model";
+import { ROOT, SUBJECTS, fromRecord, layout, logoOf, subjectOf, toRecord, type MNode } from "./model";
+import { MapLogo, askNewMap, changeMapLogo } from "./MapDialogs";
 
 const SAVED = "oceanic:mindmap-saved";
 const announce = (id: string) => window.dispatchEvent(new CustomEvent(SAVED, { detail: id }));
@@ -20,12 +21,21 @@ const announce = (id: string) => window.dispatchEvent(new CustomEvent(SAVED, { d
 export const askDeleteMindmap = (m: { id: string; title: string }) =>
   requestDelete({ app: "mindmap", kind: "permanent", title: m.title, entry: `mindmap:${m.id}`, run: async () => (await api.deleteMindmap(m.id), announce(m.id)) });
 
-/** Creates a map from a subject preset (its branches pre-filled) and returns its id. */
+/**
+ * Asks for the new map's name and logo, then creates it from a subject preset
+ * (its branches pre-filled) and returns its id. Cancelling never resolves, so
+ * callers that `await` it simply do nothing.
+ */
 export async function createMindmap(subjectId: string): Promise<string> {
   const subj = subjectOf(subjectId);
-  const title = subjectId ? `${subj.label}` : "Untitled mindmap";
+  const answer = await askNewMap(subjectId ? subj.label : "Untitled mindmap", subjectId ? subj.icon : "🧠");
+  if (!answer) return new Promise<string>(() => {});
+  const { name: title, logo } = answer;
   const m = await api.createMindmap(title, subjectId);
-  if (subj.branches.length) await api.saveMindmap(m.id, title, subjectId, layout(presetNodes(subjectId)).map(toRecord));
+  const base = m.nodes?.length ? m.nodes.map(fromRecord) : presetNodes(subjectId).slice(0, 1);
+  const nodes = subj.branches.length ? layout(presetNodes(subjectId)) : base;
+  const named = nodes.map((n) => (n.id === ROOT ? { ...n, label: title, style: { ...n.style, logo } } : n));
+  await api.saveMindmap(m.id, title, subjectId, named.map(toRecord));
   queueMicrotask(() => announce(m.id));
   return m.id;
 }
@@ -116,6 +126,7 @@ export function MindmapGallery({ onOpen, openNow, onFocusTab, onCloseTab }: { on
     openContextMenu(e, [
       { label: "Open", onSelect: () => onOpen(m.id) },
       { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(m) },
+      { label: "Change logo", icon: <ImagePlus className="size-4" />, onSelect: async () => void changeMapLogo(m, logoOf((await api.getMindmapById(m.id))?.nodes.map(fromRecord), m.subjectTag)) },
       { label: "Duplicate", icon: <Copy className="size-4" />, onSelect: () => void duplicate(m) },
       "divider",
       { label: "Delete", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => askDeleteMindmap(m) },
@@ -202,7 +213,10 @@ export function MindmapGallery({ onOpen, openNow, onFocusTab, onCloseTab }: { on
                 const f = await openDialog({ title: "Open a mindmap", filters: [{ name: "Oceanic mindmap", extensions: ["omap"] }] });
                 if (typeof f !== "string") return;
                 try {
-                  onOpen(await importOmap(await readFileBytes(f)));
+                  const r = await importOmap(await readFileBytes(f));
+                  // Already in Oceanic: no duplicate, open the existing map.
+                  if (r.existing) window.alert(`“${r.title}” already exists in Oceanic, so it wasn't imported. Opening the existing map.`);
+                  onOpen(r.id);
                 } catch (e) {
                   window.alert(`Couldn't open this mindmap: ${e instanceof Error ? e.message : e}`);
                 }
@@ -341,7 +355,7 @@ function GridCard({ map, delay, onOpen, onMenu }: { map: MindmapRecord; delay: n
     >
       <div className="pointer-events-none h-[104px] shrink-0 bg-[var(--oc-canvas)] p-1.5">{nodes && <Preview nodes={nodes} />}</div>
       <div className="flex min-w-0 items-center gap-1.5 px-3 pt-2 text-[13px] font-medium text-neutral-100">
-        <span className="shrink-0">{subjectOf(map.subjectTag).icon}</span>
+        <span className="shrink-0">{logoOf(nodes, map.subjectTag)}</span>
         <span className="truncate">{map.title}</span>
       </div>
       <span className="px-3 pt-0.5 text-[11px] text-neutral-500">
@@ -365,7 +379,12 @@ function ListRow({ map, onOpen, onMenu }: { map: MindmapRecord; onOpen: () => vo
       className="group grid cursor-pointer grid-cols-[64px_minmax(0,1fr)_140px_80px_90px_36px] items-center gap-3 border-b border-white/[0.04] px-3 py-2 text-[13px] transition-colors last:border-0 hover:bg-white/[0.04]"
     >
       <div className="pointer-events-none h-10 overflow-hidden rounded-md bg-[var(--oc-canvas)] p-0.5">{nodes && <Preview nodes={nodes} />}</div>
-      <span className="truncate font-medium text-neutral-100">{map.title}</span>
+      <span className="flex min-w-0 items-center gap-1.5 font-medium text-neutral-100">
+        <span className="shrink-0">
+          <MapLogo map={map} />
+        </span>
+        <span className="truncate">{map.title}</span>
+      </span>
       <span className="truncate text-neutral-400">
         {subj.icon} {map.subjectTag ? subj.label : "General"}
       </span>

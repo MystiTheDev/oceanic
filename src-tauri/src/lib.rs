@@ -159,6 +159,46 @@ fn import_file_bytes(app: AppHandle, name: String, data: Vec<u8>) -> Result<Audi
     Ok(AudioAsset { path: target.to_string_lossy().into_owned(), name })
 }
 
+/* -------------------------------------------------------------------- pdf */
+
+fn pdf_target(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(assets_dir(app)?.join(format!("{}.pdf", uuid::Uuid::new_v4())))
+}
+
+/// Copies a PDF picked in the file dialog into the assets folder and records it.
+#[tauri::command]
+fn import_pdf(app: AppHandle, db: State<db::Db>, src: String) -> Result<db::PdfDoc, String> {
+    let name = PathBuf::from(&src).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let target = pdf_target(&app)?;
+    std::fs::copy(&src, &target).map_err(|e| e.to_string())?;
+    let conn = db.0.lock().unwrap();
+    db::insert_pdf(&conn, &target.to_string_lossy(), &name).map_err(db::err)
+}
+
+/// Same, for a dropped or pasted PDF (base64: PDFs are often large).
+#[tauri::command]
+fn import_pdf_bytes(app: AppHandle, db: State<db::Db>, name: String, data: String) -> Result<db::PdfDoc, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = STANDARD.decode(data).map_err(|e| e.to_string())?;
+    let target = pdf_target(&app)?;
+    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+    let conn = db.0.lock().unwrap();
+    db::insert_pdf(&conn, &target.to_string_lossy(), &name).map_err(db::err)
+}
+
+/// The card's page-1 preview (PNG as base64), stored next to the PDF.
+#[tauri::command]
+fn save_pdf_thumb(app: AppHandle, db: State<db::Db>, id: String, data: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = STANDARD.decode(data).map_err(|e| e.to_string())?;
+    let target = assets_dir(&app)?.join(format!("{id}.thumb.png"));
+    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+    let path = target.to_string_lossy().into_owned();
+    let conn = db.0.lock().unwrap();
+    db::set_pdf_thumb(&conn, &id, &path).map_err(db::err)?;
+    Ok(path)
+}
+
 /* ------------------------------------------------------------------- docs */
 
 #[derive(serde::Serialize)]
@@ -634,6 +674,17 @@ pub fn run() {
             set_tray_recent,
             import_audio_bytes,
             import_file_bytes,
+            import_pdf,
+            import_pdf_bytes,
+            save_pdf_thumb,
+            db::get_pdf_doc,
+            db::save_pdf_doc_state,
+            db::get_pdf_annotations,
+            db::save_pdf_annotation,
+            db::delete_pdf_annotation,
+            db::batch_pdf_annotations,
+            db::save_pdf_text,
+            db::get_pdf_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

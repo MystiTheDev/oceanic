@@ -3,6 +3,7 @@
  *   • pageLink   — inline `[[page]]` / `@page` reference chip
  *   • inlineMath — inline KaTeX, typed as `$E = mc^2$`
  *   • math       — standalone equation block (`/equation`)
+ *   • pdf        — PDF preview card that opens the reader (`/pdf`)
  * ------------------------------------------------------------------------ */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -25,12 +26,15 @@ import {
 import { Plugin } from "prosemirror-state";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { Music, Network, Sigma, SquareFunction } from "lucide-react";
+import { FileText, Music, Network, Sigma, SquareFunction } from "lucide-react";
 import { usePageDirectory, pageDirectory } from "./pageDirectory";
 import { fontStack } from "../lib/fonts";
 import { LectureAudio, Timestamp } from "./audio";
 import { MindmapEmbed } from "./mindmapBlock";
+import { spellPlugin } from "../lib/spell/plugin";
 import { DatabaseBlock } from "./databaseBlock";
+import { PdfBlock } from "../pdf/PdfBlock";
+import { PdfRef } from "../pdf/PdfRef";
 
 /* ------------------------------------------------------------------ KaTeX */
 function renderTex(latex: string, displayMode: boolean) {
@@ -248,13 +252,15 @@ const FontStyle = createReactStyleSpec(
 
 /* ------------------------------------------------------------------ schema */
 export const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, math: MathBlock(), lectureAudio: LectureAudio(), mindmapEmbed: MindmapEmbed(), database: DatabaseBlock() },
-  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink: PageLink, inlineMath: InlineMath, timestamp: Timestamp },
+  blockSpecs: { ...defaultBlockSpecs, math: MathBlock(), lectureAudio: LectureAudio(), mindmapEmbed: MindmapEmbed(), database: DatabaseBlock(), pdf: PdfBlock() },
+  inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink: PageLink, inlineMath: InlineMath, timestamp: Timestamp, pdfRef: PdfRef },
   styleSpecs: { ...defaultStyleSpecs, font: FontStyle },
 });
 
 export type OceanicEditor = typeof schema.BlockNoteEditor;
-export const editorExtensions = [inlineMathInput];
+/** Offline spelling: underline + suggestions, autocorrect, completion. */
+const spellAssist = createExtension({ key: "spellAssist", prosemirrorPlugins: [spellPlugin()] });
+export const editorExtensions = [inlineMathInput, spellAssist];
 
 /* -------------------------------------------------------------- menus */
 /** Slash menu: BlockNote's defaults plus Equation and Inline equation. */
@@ -276,6 +282,14 @@ export function getSlashItems(editor: OceanicEditor, query: string) {
       group: "Media",
       icon: <Music size={18} />,
       onItemClick: () => insertOrUpdateBlockForSlashMenu(editor, { type: "lectureAudio" } as never),
+    },
+    {
+      title: "PDF",
+      subtext: "Read and annotate a PDF · or drop one onto the page",
+      aliases: ["pdf", "document", "paper", "annotate", "reader"],
+      group: "Media",
+      icon: <FileText size={18} />,
+      onItemClick: () => insertOrUpdateBlockForSlashMenu(editor, { type: "pdf" } as never),
     },
     {
       title: "Equation",

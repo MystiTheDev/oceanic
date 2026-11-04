@@ -18,3 +18,19 @@ export async function readClipboardText(): Promise<string> {
     return "";
   }
 }
+
+/** Put a picture on the system clipboard as a real image (PNG), so it pastes into any app. */
+export async function copyImageToClipboard(url: string) {
+  const blob = await fetch(url).then((r) => r.blob());
+  // The clipboard only takes PNG: re-encode anything else through a canvas.
+  let png = blob;
+  if (blob.type !== "image/png") {
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement("canvas");
+    c.width = bmp.width;
+    c.height = bmp.height;
+    c.getContext("2d")!.drawImage(bmp, 0, 0);
+    png = await new Promise<Blob>((r, f) => c.toBlob((b) => (b ? r(b) : f(new Error("encode failed"))), "image/png"));
+  }
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}

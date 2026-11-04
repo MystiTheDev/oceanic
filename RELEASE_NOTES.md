@@ -1,3 +1,19 @@
+# 🌊 Oceanic v1.0.3: PDFs, spellcheck and page banners
+
+- 📄 Import PDFs into your notes. Each one shows as a preview card that opens a full PDF reader.
+- 🖍️ Annotate PDFs with highlights, underlines, pens, shapes, text boxes and sticky notes, with undo and redo.
+- 🔖 Quote from a PDF straight into your note. A "p. N" chip jumps back to that exact page.
+- 📤 Export a PDF with all your annotations drawn on, and search now finds text inside your PDFs.
+- ✍️ Offline spellcheck in Notes and Docs: click an underlined word for suggestions, with autocorrect as you type.
+- 📚 Add your own words, custom replacements and subject word packs in Settings → Spelling.
+- 🖼️ Page banners: add a cover image or gradient to any page, then reposition or change it.
+- ✏️ Draw on pictures in your notes. The marks stay editable, and copied pictures paste into any app.
+- 🧠 Mindmap: name and pick a logo for new maps, zoom controls, topic search, and smoother undo.
+- 🎨 Sketch: smoother freehand lines.
+- 📦 A redesigned Export window. Exported .ocean files now carry their banners, PDFs, tags and dates.
+- 📥 Importing .ocean notes asks whether to keep their dates, status and tags.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v1.0.2: Smoother updates
 
 - Fixed a bug where checking for updates could get stuck on "Checking for updates…" forever.

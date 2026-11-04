@@ -1,0 +1,51 @@
+/* Oceanic Mindmap: floating chrome (topbar cards, tool rail, zoom pill). */
+.oc-mm-float {
+  background: var(--oc-surface);
+  border: 1px solid color-mix(in srgb, var(--oc-text-strong, #fff) 9%, transparent);
+  box-shadow: 0 6px 24px -8px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.2);
+  border-radius: 14px;
+}
+.oc-mm-card {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 48px;
+  padding: 0 6px;
+}
+.oc-mm-ibtn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  color: var(--color-neutral-300);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.oc-mm-ibtn:hover { background: var(--oc-raised-hover, rgb(255 255 255 / 0.07)); color: var(--color-neutral-100); }
+.oc-mm-ibtn:disabled { opacity: 0.35; cursor: default; background: none; }
+.oc-mm-ibtn.is-on {
+  color: var(--oc-mm-violet-light);
+  background: color-mix(in srgb, var(--oc-mm-violet) 22%, transparent);
+}
+.oc-mm-vsep { width: 1px; height: 24px; margin: 0 6px; background: color-mix(in srgb, var(--oc-text-strong, #fff) 10%, transparent); }
+.oc-mm-hsep { height: 1px; width: 24px; margin: 6px auto; background: color-mix(in srgb, var(--oc-text-strong, #fff) 10%, transparent); }
+.oc-mm-rail { display: flex; flex-direction: column; align-items: center; padding: 6px; gap: 2px; }
+.oc-mm-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--oc-mm-violet);
+  cursor: pointer;
+}
+.oc-mm-primary:hover { filter: brightness(1.1); }
+.oc-mm-search-pop { position: absolute; top: 56px; left: 0; width: 300px; padding: 6px; z-index: 30; }
+.oc-mm-search-pop button { display: flex; width: 100%; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; font-size: 13px; text-align: left; color: var(--color-neutral-300); cursor: pointer; }
+.oc-mm-search-pop button:hover, .oc-mm-search-pop button.is-on { background: var(--oc-raised-hover, rgb(255 255 255 / 0.07)); color: var(--color-neutral-100); }
+.oc-mm-float:empty { display: none; }

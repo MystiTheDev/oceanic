@@ -6,6 +6,13 @@ import { getSeedBlocks, type PageMeta } from "../data/workspace";
 import { STATUSES } from "../lib/colors";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { StatusBadge, TagChip } from "./PageProperties";
+import { openPdfReader } from "../pdf/importPdf";
+
+/** PDF text hits come back as `pdf:<docId>:<page>`. */
+const pdfHit = (id: string) => {
+  const m = /^pdf:(.+):(\d+)$/.exec(id);
+  return m ? { docId: m[1], page: Number(m[2]) } : null;
+};
 
 type SearchModalProps = {
   /** Live pages of every workspace. */
@@ -84,7 +91,27 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
     return () => window.clearTimeout(t);
   }, [q, titleOnly]);
 
-  const byId = useMemo(() => new Map(pages.map((p) => [p.id, p])), [pages]);
+  // Names of the PDFs that matched, to title their hits "📄 name · p. N".
+  const [pdfNames, setPdfNames] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    const ids = [...new Set((hits ?? []).map((h) => pdfHit(h.pageId)?.docId).filter((id): id is string => !!id && !(id in pdfNames)))];
+    ids.forEach((id) =>
+      api
+        .getPdfDoc(id)
+        .then((d) => setPdfNames((prev) => ({ ...prev, [id]: d?.name ?? null })))
+        .catch(() => {}),
+    );
+  }, [hits]);
+
+  const byId = useMemo(() => {
+    const map = new Map(pages.map((p) => [p.id, p]));
+    for (const h of hits ?? []) {
+      const pdf = pdfHit(h.pageId);
+      const name = pdf && pdfNames[pdf.docId];
+      if (pdf && name) map.set(h.pageId, { id: h.pageId, icon: "📄", title: `${name} · p. ${pdf.page}`, pinned: false, parentId: null, workspaceId: "" });
+    }
+    return map;
+  }, [pages, hits, pdfNames]);
   const allTags = useMemo(() => [...new Set(pages.flatMap((p) => p.tags ?? []))].sort(), [pages]);
 
   const results = useMemo(() => {
@@ -134,7 +161,9 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
   };
   const open = (id: string, newTab = false) => {
     rememberSearch();
-    if (newTab) onOpenInNewTab(id);
+    const pdf = pdfHit(id);
+    if (pdf) openPdfReader(pdf);
+    else if (newTab) onOpenInNewTab(id);
     else onOpenPage(id);
     onClose();
   };
@@ -360,7 +389,16 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
           </div>
 
           <div className="min-w-0 flex-1">
-            {selected ? (
+            {selected && pdfHit(selected.id) ? (
+              <div className="p-6">
+                <p className="text-[15px] font-semibold text-neutral-100">
+                  {selected.icon} {selected.title}
+                </p>
+                <p className="mt-3 text-[13px] leading-5 text-neutral-400">
+                  <Highlight text={flat[cursor]?.hit?.snippet ?? ""} />
+                </p>
+              </div>
+            ) : selected ? (
               <Preview key={selected.id} page={selected} crumb={breadcrumb(selected)} query={q} />
             ) : (
               <div className="grid h-full place-items-center text-[13px] text-neutral-600">Nothing selected</div>
