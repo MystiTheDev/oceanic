@@ -37,6 +37,9 @@ import {
   Undo2,
   ZoomIn,
   ZoomOut,
+  MessageSquareText,
+  ScrollText,
+  Layers,
 } from "lucide-react";
 import { api, type PdfDocRecord } from "../data/api";
 import { notifyPdfChanged, openPdf, pageText, pdfErrorMessage, pdfjs } from "./pdfjs";
@@ -46,6 +49,11 @@ import { HIGHLIGHT_COLORS, INK_COLORS, MARKUP, bbox, rangeText, selectionRects, 
 import { AnnotationLayer, DRAW_TOOLS, type Tool } from "./AnnotationLayer";
 import { AnnBar, SelectionBar, StickyPopover, Swatches, TextBoxEditor } from "./Overlays";
 import { useAnnotations } from "./useAnnotations";
+import { NeridaMark } from "../components/NeridaOrb";
+import { openNeridaCards } from "../components/NeridaCards";
+import { nerida } from "../lib/nerida";
+import { askNerida } from "../lib/neridaPdf";
+import { PdfSummaryDialog } from "./PdfNerida";
 import { requestDelete } from "../lib/confirmDelete";
 import { openContextMenu } from "../components/ContextMenu";
 import { Toast } from "../components/Toast";
@@ -277,7 +285,8 @@ export function PdfReader({ docId, onBack }: { docId: string; onBack: () => void
   const [matchIdx, setMatchIdx] = useState(0);
   const findInput = useRef<HTMLInputElement>(null);
   /** A pill flyout (zoom menu, markup styles, shapes, colour), at the y of its button. */
-  const [fly, setFly] = useState<{ kind: "zoom" | "markup" | "shapes" | "color" | "export"; top: number } | null>(null);
+  const [fly, setFly] = useState<{ kind: "zoom" | "markup" | "shapes" | "color" | "export" | "nerida"; top: number } | null>(null);
+  const [summary, setSummary] = useState(false);
   const flyRef = useRef<HTMLDivElement>(null);
   const [lastMarkup, setLastMarkup] = useState<keyof typeof MARKUP_TOOLS>("highlight");
   const [lastShape, setLastShape] = useState<keyof typeof SHAPE_TOOLS>("rect");
@@ -700,6 +709,9 @@ export function PdfReader({ docId, onBack }: { docId: string; onBack: () => void
         <PillButton tip="Export" active={fly?.kind === "export"} onClick={openFly("export")}>
           <Download size={17} />
         </PillButton>
+        <PillButton tip="Nerida" active={fly?.kind === "nerida"} onClick={openFly("nerida")}>
+          <NeridaMark size={17} />
+        </PillButton>
         <i className="oc-pdf-pill-sep" />
         <PillButton tip="Select (Esc)" active={tool === "select"} onClick={() => setTool("select")}>
           <MousePointer2 size={17} />
@@ -737,6 +749,19 @@ export function PdfReader({ docId, onBack }: { docId: string; onBack: () => void
       </div>
       {fly && (
         <div ref={flyRef} className="oc-pdf-fly oc-pop-in" style={{ top: fly.top }} onMouseDown={(e) => e.preventDefault()}>
+          {fly.kind === "nerida" && (
+            <>
+              <button type="button" className="oc-pdf-bar-btn" onClick={() => (setFly(null), nerida.set({ open: !nerida.get().open }))}>
+                <MessageSquareText size={14} /> Ask Nerida (Ctrl J)
+              </button>
+              <button type="button" className="oc-pdf-bar-btn" onClick={() => (setFly(null), setSummary(true))}>
+                <ScrollText size={14} /> Summarize into a note
+              </button>
+              <button type="button" className="oc-pdf-bar-btn" onClick={() => (setFly(null), doc && openNeridaCards({ pageId: "", pdf: { docId, name: doc.name } }))}>
+                <Layers size={14} /> Make flashcards
+              </button>
+            </>
+          )}
           {fly.kind === "export" && (
             <>
               <button type="button" className="oc-pdf-bar-btn" onClick={() => void exportPdf(true)}>
@@ -824,7 +849,20 @@ export function PdfReader({ docId, onBack }: { docId: string; onBack: () => void
           </button>
         </div>
       )}
-      {selBar && <SelectionBar x={selBar.x} y={selBar.y} color={markColor} onColor={setMarkColor} onMark={markSelection} />}
+      {selBar && (
+        <SelectionBar x={selBar.x} y={selBar.y} color={markColor} onColor={setMarkColor} onMark={markSelection}
+          onNerida={(action) => {
+            const text = (window.getSelection()?.toString() ?? "").replace(/-\n(?=[a-z])/g, "").replace(/\s*\n\s*/g, " ").trim();
+            if (!text) return;
+            setSelBar(null);
+            const quote = `"${text.slice(0, 3000)}"`;
+            if (action === "cards") openNeridaCards({ pageId: "", selection: text, pdf: { docId, name: doc?.name ?? "PDF" } });
+            else if (action === "explain") askNerida({ text: `Explain this simply: ${quote}`, send: true });
+            else if (action === "summarize") askNerida({ text: `Summarize this in a few bullet points: ${quote}`, send: true });
+            else askNerida({ text: `About ${quote}: `, send: false });
+          }} />
+      )}
+      {summary && doc && <PdfSummaryDialog docId={docId} name={doc.name} pageCount={sizes.length || 1} onClose={() => setSummary(false)} />}
 
       <div ref={scroller} className={`oc-pdf-scroll scrollbar-thin ${dark ? "oc-pdf-dark" : ""}`}>
         {pdf && (

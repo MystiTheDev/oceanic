@@ -5,6 +5,9 @@ import type { PageMeta } from "../data/workspace";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
 import { ExportDialog } from "./ExportDialog";
 import { Toast } from "./Toast";
+import { NeridaMark } from "./NeridaOrb";
+import { openNeridaCards } from "./NeridaCards";
+import { nerida, useNerida } from "../lib/nerida";
 
 type PageHeaderProps = {
   page: PageMeta;
@@ -38,6 +41,7 @@ export function PageHeader({
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<{ message: string; key: number } | null>(null);
   const now = useNow(30_000);
+  const neridaOpen = useNerida().open;
 
   // Root → … → current page.
   const byId = new Map(pages.map((p) => [p.id, p]));
@@ -51,6 +55,7 @@ export function PageHeader({
     else if (action === "duplicate") onDuplicate(page.id);
     else if (action === "trash") onTrash(page.id);
     else if (action === "export") setExportOpen(true);
+    else if (action === "flashcards") openNeridaCards({ pageId: page.id });
     else if (action === "rename") {
       const title = document.querySelector<HTMLInputElement>("input[data-page-title]");
       title?.focus();
@@ -89,6 +94,10 @@ export function PageHeader({
             Edited {relativeTime(editedAt, now)}
           </span>
         )}
+
+        <IconButton title="Ask Nerida (Ctrl+J)" active={neridaOpen} onClick={() => nerida.toggle()}>
+          <NeridaMark size={16} />
+        </IconButton>
 
         <IconButton
           title={page.pinned ? "Remove from Favorites" : "Add to Favorites"}

@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { PACKS, addToDictionary, forgetLearned, removeFromDictionary, setPacks, setReplacements, setSpellSettings, useSpell } from "../lib/spell/engine";
+import { set as setSrs, useSrs } from "../lib/srs";
+import { PACKS, addToDictionary, forgetLearned, removeFromDictionary, setPacks, setReplacements, setSpellSettings, useSpell, type Dialect } from "../lib/spell/engine";
 import { DELETE_APPS, setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
 import { checkForUpdates } from "../lib/updates";
 import { pickSketchFolder, setSketchLayout, useSketch, type SketchLayout } from "../sketch/store";
@@ -13,6 +14,8 @@ import {
 } from "lucide-react";
 import { api } from "../data/api";
 import { APP_VERSION } from "./SidebarFooter";
+import { NeridaSettings } from "./NeridaSettings";
+import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { Modal, ModalButton } from "./Modal";
 import { EmojiPicker } from "./EmojiPicker";
 import logo from "../assets/logo-raw.png";
@@ -37,6 +40,21 @@ export type AppSettings = {
   studyChime: boolean;
   /** Short splash when switching apps from the sidebar. */
   appLoader: boolean;
+  /** Sidebar nav icon colours; `sidebarColors` is JSON of item → hex, used when "custom". */
+  sidebarIcons: "subtle" | "richer" | "custom";
+  sidebarColors: string;
+};
+
+export const SIDEBAR_ITEMS = [["home", "Home"], ["library", "Library"], ["tags", "Tags"], ["trash", "Trash"], ["import", "Import"]] as const;
+const RICHER: Record<string, string> = { home: "#5aa2e9", library: "#a78bfa", tags: "#4ade80", trash: "#f87171", import: "#fbbf24" };
+export const sidebarPalette = (s: AppSettings): Record<string, string> | null => {
+  if (s.sidebarIcons === "subtle") return null;
+  if (s.sidebarIcons === "richer") return RICHER;
+  try {
+    return { ...RICHER, ...JSON.parse(s.sidebarColors || "{}") };
+  } catch {
+    return RICHER;
+  }
 };
 
 /* ------------------------------------------------------------------ registry
@@ -44,12 +62,12 @@ export type AppSettings = {
 type Ctx = { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void };
 type Row = { title: string; description?: ReactNode; keywords?: string; control: (c: Ctx) => ReactNode; wide?: boolean };
 type Group = { heading?: string; rows: Row[] };
-type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling";
+type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling" | "nerida";
 type Page = { id: PageId; label: string; icon: ReactNode; groups?: Group[]; custom?: (c: Ctx) => ReactNode };
 
 const NAV: { heading: string; pages: PageId[] }[] = [
   { heading: "Account", pages: ["account", "preferences"] },
-  { heading: "Oceanic", pages: ["general", "spelling", "storage", "deleting", "shortcuts", "about"] },
+  { heading: "Oceanic", pages: ["general", "spelling", "nerida", "storage", "deleting", "shortcuts", "about"] },
   { heading: "Apps", pages: ["docs", "sketch", "mindmap", "study"] },
 ];
 
@@ -96,6 +114,7 @@ const PAGES: Page[] = [
             ),
           },
           { title: "Accent color", description: "Selections, focus rings, links and primary buttons.", keywords: "colour", control: (c) => <AccentPicker {...c} /> },
+          { title: "Sidebar icons", description: "Subtle grey, Richer colours, or pick your own colour for each item.", keywords: "colour sidebar icons", control: (c) => <SidebarIconsPicker {...c} /> },
           {
             title: "Editor text size",
             description: "Text size in notes. Headings scale with it.",
@@ -126,19 +145,6 @@ const PAGES: Page[] = [
     label: "General",
     icon: <Settings2 />,
     groups: [
-      {
-        heading: "Home",
-        rows: [
-          {
-            title: "Home style",
-            description: "Classic Oceanic Home, or a student dashboard with timetable, assignments, exams and a focus timer.",
-            keywords: "dashboard student",
-            control: ({ settings, onChange }) => (
-              <Select value={settings.homeStyle} onChange={(homeStyle) => onChange({ homeStyle })} options={[["classic", "Classic"], ["student", "Student dashboard"]]} />
-            ),
-          },
-        ],
-      },
       {
         heading: "Window",
         rows: [
@@ -197,9 +203,9 @@ const PAGES: Page[] = [
     icon: <Keyboard />,
     groups: [
       {
-        heading: "Oceanic",
+        heading: "All apps",
         rows: [
-          sc("Search", "Ctrl", "K"), sc("New page", "Ctrl", "N"), sc("New tab", "Ctrl", "T"), sc("Close tab", "Ctrl", "W"),
+          sc("Search", "Ctrl", "K"), sc("Settings", "Ctrl", ","), sc("New item in this app", "Ctrl", "N"), sc("Embed in a note (Docs, Sketch, Mindmap)", "Ctrl", "Shift", "M"), sc("New tab", "Ctrl", "T"), sc("Close tab", "Ctrl", "W"),
           sc("Next tab", "Ctrl", "Tab"), sc("Previous tab", "Ctrl", "Shift", "Tab"), sc("Go to tab 1–8 / last", "Ctrl", "1–9"),
           sc("Show / hide sidebar", "Ctrl", "\\"), sc("Back", "Alt", "←"), sc("Forward", "Alt", "→"),
         ],
@@ -208,12 +214,13 @@ const PAGES: Page[] = [
       { heading: "Oceanic Docs", rows: [sc("Save", "Ctrl", "S"), sc("Collapse / pin the ribbon", "Ctrl", "F1")] },
       {
         heading: "Oceanic Sketch",
-        rows: [sc("New canvas", "Ctrl", "N"), sc("Open image", "Ctrl", "O"), sc("Save", "Ctrl", "S"), sc("Undo", "Ctrl", "Z"), sc("Redo", "Ctrl", "Y"), sc("Zoom in", "Ctrl", "+"), sc("Zoom out", "Ctrl", "−"), sc("Fit to window", "Ctrl", "0")],
+        rows: [sc("Open image", "Ctrl", "O"), sc("Save", "Ctrl", "S"), sc("Undo", "Ctrl", "Z"), sc("Redo", "Ctrl", "Y"), sc("Zoom in", "Ctrl", "+"), sc("Zoom out", "Ctrl", "−"), sc("Fit to window", "Ctrl", "0")],
       },
       { heading: "Oceanic Mindmap", rows: [sc("Add child topic", "Tab"), sc("Add sibling topic", "Enter"), sc("Edit topic", "F2"), sc("Delete topic", "Del")] },
     ],
   },
   { id: "spelling", label: "Spelling", icon: <SpellCheck />, custom: () => <SpellingPage /> },
+  { id: "nerida", label: "Nerida AI", icon: <NeridaMark size={16} />, custom: () => <NeridaSettings /> },
   { id: "about", label: "About", icon: <Info />, custom: () => <AboutPage /> },
   {
     id: "docs",
@@ -268,14 +275,18 @@ const PAGES: Page[] = [
         heading: "Focus timer",
         rows: [{ title: "Play a chime", description: "A soft two-note chime when a focus session or break ends.", keywords: "sound timer pomodoro", control: ({ settings, onChange }) => <Switch on={settings.studyChime} onChange={(studyChime) => onChange({ studyChime })} /> }],
       },
+      {
+        heading: "Flashcards",
+        rows: [{ title: "New cards per day", description: "How many never-reviewed cards join your reviews each day.", keywords: "flashcards srs spaced repetition limit", control: () => <NewPerDay /> }],
+      },
     ],
   },
 ];
 const pageOf = (id: PageId) => PAGES.find((p) => p.id === id)!;
 
 /** Notion-style settings: profile + search + grouped pages on the left, rows on the right. */
-export function SettingsModal({ settings, onChange, onClose }: { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void; onClose: () => void }) {
-  const [page, setPage] = useState<PageId>("account");
+export function SettingsModal({ settings, onChange, onClose, initialPage = "account" }: { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void; onClose: () => void; initialPage?: string }) {
+  const [page, setPage] = useState<PageId>(initialPage as PageId);
   const [query, setQuery] = useState("");
   const ctx = { settings, onChange };
   const q = query.trim().toLowerCase();
@@ -322,7 +333,7 @@ export function SettingsModal({ settings, onChange, onClose }: { settings: AppSe
                   className={`flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13.5px] transition-colors [&_svg]:size-4 ${on ? "bg-white/[0.08] font-medium text-neutral-100" : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"}`}
                 >
                   <span className={on ? "text-neutral-200" : "text-neutral-500"}>{p.icon}</span>
-                  <span className="truncate">{p.label}</span>
+                  <span className="truncate">{p.label}</span>{p.id === "nerida" && <BetaPill />}
                 </button>
               );
             })}
@@ -342,7 +353,7 @@ export function SettingsModal({ settings, onChange, onClose }: { settings: AppSe
               {results.map(({ page: p, rows }) => (
                 <section key={p.id}>
                   <button type="button" onClick={() => (setQuery(""), setPage(p.id))} className="mt-7 flex cursor-pointer items-center gap-1.5 border-b border-white/[0.06] pb-2 text-[13px] font-semibold text-neutral-300 hover:text-neutral-100 [&_svg]:size-3.5">
-                    {p.icon} {p.label}
+                    {p.icon} {p.label}{p.id === "nerida" && <BetaPill />}
                   </button>
                   {rows.map((r) => <SettingRow key={r.title} row={r} ctx={ctx} />)}
                 </section>
@@ -459,6 +470,24 @@ function AccentPicker({ settings, onChange }: Ctx) {
       <label data-tip="Custom color" className="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-white/20" style={{ background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }}>
         <input type="color" value={settings.accent} onChange={(e) => onChange({ accent: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" />
       </label>
+    </div>
+  );
+}
+
+function SidebarIconsPicker({ settings, onChange }: Ctx) {
+  const pal = sidebarPalette({ ...settings, sidebarIcons: "custom" })!;
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <Select value={settings.sidebarIcons} onChange={(sidebarIcons) => onChange({ sidebarIcons })} options={[["subtle", "Subtle"], ["richer", "Richer"], ["custom", "Custom"]]} />
+      {settings.sidebarIcons === "custom" && (
+        <div className="flex items-center gap-1.5">
+          {SIDEBAR_ITEMS.map(([k, label]) => (
+            <label key={k} data-tip={label} className="relative size-6 cursor-pointer overflow-hidden rounded-full border border-white/20" style={{ background: pal[k] }}>
+              <input type="color" value={pal[k]} onChange={(e) => onChange({ sidebarColors: JSON.stringify({ ...pal, [k]: e.target.value }) })} className="absolute inset-0 cursor-pointer opacity-0" />
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -675,7 +704,15 @@ function SpellingPage() {
   const x = (onClick: () => void) => <button type="button" onClick={onClick} className="cursor-pointer px-1 text-neutral-500 hover:text-red-400">✕</button>;
   return (
     <div>
-      <p className="mb-2 text-[12px] text-neutral-500">Works offline · English (UK + US){sp.ready ? "" : " · loading word list…"}</p>
+      <p className="mb-2 text-[12px] text-neutral-500">Works offline{sp.ready ? "" : " · loading word list…"}</p>
+      <Row title="English spelling" desc="UK or US: the other spelling is underlined and autocorrected (colour ↔ color).">
+        <select value={sp.settings.dialect} onChange={(e) => setSpellSettings({ dialect: e.target.value as Dialect })}
+          className="cursor-pointer rounded-md border border-white/10 bg-neutral-900 px-2 py-1 text-[13px] text-neutral-200 [color-scheme:dark] [&>option]:bg-neutral-900 [&>option]:text-neutral-100">
+          <option value="both">UK + US</option>
+          <option value="uk">UK English</option>
+          <option value="us">US English</option>
+        </select>
+      </Row>
       <Row title="Autocorrect" desc="Fix common typos as you finish a word (teh → the). Backspace right after undoes it.">{toggle("autocorrect")}</Row>
       <Row title="Underline misspellings" desc="Click an underlined word for suggestions.">{toggle("underline")}</Row>
       <Row title="Word completion" desc="Grey suggestion while typing; press Tab to accept.">{toggle("complete")}</Row>
@@ -723,5 +760,20 @@ function SpellingPage() {
         </div>
       </Row>
     </div>
+  );
+}
+
+/** Lives in the flashcard store, not AppSettings. */
+function NewPerDay() {
+  const { newPerDay } = useSrs();
+  return (
+    <input
+      type="number"
+      min={0}
+      max={999}
+      value={newPerDay}
+      onChange={(e) => setSrs("newPerDay", Math.max(0, Math.min(999, Number(e.target.value) || 0)))}
+      className="w-20 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-right text-[13px] tabular-nums text-neutral-200 outline-none focus:border-white/20"
+    />
   );
 }

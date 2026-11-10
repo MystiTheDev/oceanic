@@ -26,7 +26,8 @@ function scan(state: EditorState, skipCursorWord = false): DecorationSet {
     if (!node.isText || node.marks.some((m) => m.type.name === "code" || m.type.name === "link")) return;
     for (const m of node.text!.matchAll(WORD)) {
       const from = pos + m.index!, to = from + m[0].length;
-      if (cursor >= from && cursor <= to) continue; // still being typed
+      // Still being typed: only when the caret is at the word's end (an edit inside a word, like deleting a letter, is checked at once).
+      if (cursor === to) continue;
       if (!isKnown(m[0].replace(/[’']+$/, ""))) decos.push(Decoration.inline(from, to, { class: "oc-misspell" }));
     }
   });

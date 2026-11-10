@@ -117,7 +117,34 @@ export type CanvasEdge = {
   color: EdgeColor;
   style: EdgeStyle;
   manual: boolean;
+  /** Atlas relationship type; `label` is its optional explanation. */
+  relType: RelType;
 };
+
+/** Atlas relationship types (see `REL_TYPES` in db.rs). */
+export const REL_TYPES = [
+  "depends_on", "explains", "part_of", "example_of", "applied_in",
+  "contrasts", "causes", "extends", "related",
+] as const;
+export type RelType = (typeof REL_TYPES)[number];
+
+/** Learning states a student sets on a concept. */
+export const CONCEPT_STATES = ["unexplored", "learning", "understood", "mastered", "review"] as const;
+export type ConceptState = (typeof CONCEPT_STATES)[number];
+
+/** An Atlas concept: an idea, separate from the pages that explain it. Ids start with `concept:`. */
+export type Concept = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  description: string;
+  tags: string[];
+  state: ConceptState;
+  createdAt: string;
+  updatedAt: string;
+};
+/** A concept's link to an existing resource by its app entry id (page id, `doc:…`, `sketch:…`, `mindmap:…`, `pdf:…`). */
+export type ConceptResource = { conceptId: string; entryId: string; createdAt: string };
 export type LinkEdge = { sourceId: string; targetId: string };
 export type CanvasPosition = { pageId: string; x: number; y: number };
 
@@ -176,13 +203,23 @@ export type Api = {
   getCanvasPositions(): Promise<CanvasPosition[]>;
   saveCanvasPositions(positions: CanvasPosition[]): Promise<void>;
   getCanvasEdges(): Promise<CanvasEdge[]>;
-  connectPages(sourceId: string, targetId: string): Promise<CanvasEdge>;
+  /** Nodes are pages or concepts. `relType` defaults to "related". */
+  connectPages(sourceId: string, targetId: string, relType?: RelType): Promise<CanvasEdge>;
+  /** `relType` omitted keeps the current type. */
   updateCanvasEdge(
     sourceId: string,
     targetId: string,
-    edge: Pick<CanvasEdge, "label" | "color" | "style">,
+    edge: Pick<CanvasEdge, "label" | "color" | "style"> & { relType?: RelType },
   ): Promise<CanvasEdge>;
   deleteCanvasEdge(sourceId: string, targetId: string): Promise<void>;
+  listConcepts(workspaceId: string): Promise<Concept[]>;
+  createConcept(workspaceId: string, title: string): Promise<Concept>;
+  updateConcept(id: string, patch: Pick<Concept, "title" | "description" | "tags" | "state">): Promise<Concept>;
+  /** Also removes its edges, position and resource links; the resources stay. */
+  deleteConcept(id: string): Promise<void>;
+  listConceptResources(workspaceId: string): Promise<ConceptResource[]>;
+  attachResource(conceptId: string, entryId: string): Promise<void>;
+  detachResource(conceptId: string, entryId: string): Promise<void>;
   getTabs(): Promise<TabRecord[]>;
   saveTabs(tabs: TabRecord[]): Promise<void>;
 };
@@ -238,10 +275,17 @@ const tauriApi: Api = {
   getCanvasPositions: () => invoke("get_canvas_positions"),
   saveCanvasPositions: (positions) => invoke("save_canvas_positions", { positions }),
   getCanvasEdges: () => invoke("get_canvas_edges"),
-  connectPages: (sourceId, targetId) => invoke("connect_pages", { sourceId, targetId }),
+  connectPages: (sourceId, targetId, relType) => invoke("connect_pages", { sourceId, targetId, relType }),
   updateCanvasEdge: (sourceId, targetId, edge) =>
     invoke("update_canvas_edge", { sourceId, targetId, ...edge }),
   deleteCanvasEdge: (sourceId, targetId) => invoke("delete_canvas_edge", { sourceId, targetId }),
+  listConcepts: (workspaceId) => invoke("list_concepts", { workspaceId }),
+  createConcept: (workspaceId, title) => invoke("create_concept", { workspaceId, title }),
+  updateConcept: (id, patch) => invoke("update_concept", { id, ...patch }),
+  deleteConcept: (id) => invoke("delete_concept", { id }),
+  listConceptResources: (workspaceId) => invoke("list_concept_resources", { workspaceId }),
+  attachResource: (conceptId, entryId) => invoke("attach_resource", { conceptId, entryId }),
+  detachResource: (conceptId, entryId) => invoke("detach_resource", { conceptId, entryId }),
   getTabs: () => invoke("get_tabs"),
   saveTabs: (tabs) => invoke("save_tabs", { tabs }),
 };
@@ -254,6 +298,8 @@ type Store = {
   links?: (LinkEdge & { snippet: string })[];
   positions?: CanvasPosition[];
   edges?: CanvasEdge[];
+  concepts?: Concept[];
+  conceptResources?: ConceptResource[];
   workspaces?: (WorkspaceRecord & { sortOrder: number })[];
   settings?: Record<string, string>;
   mindmaps?: MindmapWithNodes[];
@@ -294,6 +340,9 @@ function load(): Store {
       store.links ??= [];
       store.positions ??= [];
       store.edges ??= [];
+      for (const e of store.edges) e.relType ??= "related";
+      store.concepts ??= [];
+      store.conceptResources ??= [];
       store.workspaces ??= [GENERAL];
       store.settings ??= {};
       // Rows saved before workspaces / properties existed.
@@ -308,7 +357,7 @@ function load(): Store {
   } catch {
     /* corrupt or blocked storage: start fresh */
   }
-  return { pages: [starter()], tabs: [], links: [], positions: [], edges: [], workspaces: [GENERAL], settings: {} };
+  return { pages: [starter()], tabs: [], links: [], positions: [], edges: [], concepts: [], conceptResources: [], workspaces: [GENERAL], settings: {} };
 }
 
 function save(store: Store) {
@@ -342,6 +391,20 @@ const writeLinks = (s: Store, sourceId: string, links: PageLink[]) => {
   for (const l of links) {
     if (l.targetId !== sourceId) s.links.push({ sourceId, targetId: l.targetId, snippet: l.snippet });
   }
+};
+/** Mirrors `check_edge` in db.rs. */
+const checkEdge = (s: Store, sourceId: string, targetId: string, relType?: RelType) => {
+  if (sourceId === targetId) throw new Error("A card can't connect to itself");
+  if (relType && !REL_TYPES.includes(relType)) throw new Error(`Unknown relationship type: ${relType}`);
+  for (const id of [sourceId, targetId]) {
+    if (!s.pages.some((p) => p.id === id) && !s.concepts!.some((c) => c.id === id))
+      throw new Error(`No page or concept with id ${id}`);
+  }
+};
+const findConcept = (s: Store, id: string) => {
+  const c = s.concepts!.find((c) => c.id === id);
+  if (!c) throw new Error(`No concept with id ${id}`);
+  return c;
 };
 const bySort = (a: Row, b: Row) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt);
 
@@ -488,30 +551,74 @@ const localApi: Api = {
       s.positions = [...next.values()];
     }),
   getCanvasEdges: () => tx((s) => s.edges!),
-  connectPages: (sourceId, targetId) =>
+  connectPages: (sourceId, targetId, relType) =>
     tx((s) => {
-      if (sourceId === targetId) throw new Error("A page can't connect to itself");
+      checkEdge(s, sourceId, targetId, relType);
       let edge = s.edges!.find((e) => e.sourceId === sourceId && e.targetId === targetId);
       if (!edge) {
-        edge = { sourceId, targetId, label: "", color: "default", style: "solid", manual: true };
+        edge = { sourceId, targetId, label: "", color: "default", style: "solid", manual: true, relType: "related" };
         s.edges!.push(edge);
       }
       edge.manual = true;
+      if (relType) edge.relType = relType;
       return { ...edge };
     }),
-  updateCanvasEdge: (sourceId, targetId, patch) =>
+  updateCanvasEdge: (sourceId, targetId, { relType, ...patch }) =>
     tx((s) => {
+      checkEdge(s, sourceId, targetId, relType);
       let edge = s.edges!.find((e) => e.sourceId === sourceId && e.targetId === targetId);
       if (!edge) {
-        edge = { sourceId, targetId, label: "", color: "default", style: "solid", manual: false };
+        edge = { sourceId, targetId, label: "", color: "default", style: "solid", manual: false, relType: "related" };
         s.edges!.push(edge);
       }
       Object.assign(edge, patch);
+      if (relType) edge.relType = relType;
       return { ...edge };
     }),
   deleteCanvasEdge: (sourceId, targetId) =>
     tx((s) => {
       s.edges = s.edges!.filter((e) => !(e.sourceId === sourceId && e.targetId === targetId));
+    }),
+  listConcepts: (workspaceId) => tx((s) => s.concepts!.filter((c) => c.workspaceId === workspaceId)),
+  createConcept: (workspaceId, title) =>
+    tx((s) => {
+      if (!title.trim()) throw new Error("A concept needs a title");
+      const t = now();
+      const c: Concept = {
+        id: `concept:${crypto.randomUUID()}`, workspaceId, title: title.trim(), description: "",
+        tags: [], state: "unexplored", createdAt: t, updatedAt: t,
+      };
+      s.concepts!.push(c);
+      return { ...c };
+    }),
+  updateConcept: (id, patch) =>
+    tx((s) => {
+      if (!patch.title.trim()) throw new Error("A concept needs a title");
+      if (!CONCEPT_STATES.includes(patch.state)) throw new Error(`Unknown learning state: ${patch.state}`);
+      return { ...Object.assign(findConcept(s, id), patch, { title: patch.title.trim(), updatedAt: now() }) };
+    }),
+  deleteConcept: (id) =>
+    tx((s) => {
+      s.concepts = s.concepts!.filter((c) => c.id !== id);
+      s.edges = s.edges!.filter((e) => e.sourceId !== id && e.targetId !== id);
+      s.positions = s.positions!.filter((p) => p.pageId !== id);
+      s.conceptResources = s.conceptResources!.filter((r) => r.conceptId !== id);
+    }),
+  listConceptResources: (workspaceId) =>
+    tx((s) => {
+      const ids = new Set(s.concepts!.filter((c) => c.workspaceId === workspaceId).map((c) => c.id));
+      return s.conceptResources!.filter((r) => ids.has(r.conceptId));
+    }),
+  attachResource: (conceptId, entryId) =>
+    tx((s) => {
+      findConcept(s, conceptId);
+      if (!entryId.trim()) throw new Error("Missing resource id");
+      if (!s.conceptResources!.some((r) => r.conceptId === conceptId && r.entryId === entryId))
+        s.conceptResources!.push({ conceptId, entryId, createdAt: now() });
+    }),
+  detachResource: (conceptId, entryId) =>
+    tx((s) => {
+      s.conceptResources = s.conceptResources!.filter((r) => !(r.conceptId === conceptId && r.entryId === entryId));
     }),
   setPageProperties: (id, props) =>
     tx((s) => Object.assign(find(s, id), props, { updatedAt: now() }).updatedAt),
@@ -546,6 +653,7 @@ const localApi: Api = {
         if (!p.isArchived && !(p.parentId && inWs.has(p.parentId))) Object.assign(p, { isArchived: true, archivedAt: now() });
         p.workspaceId = fallbackId;
       }
+      for (const c of s.concepts!) if (c.workspaceId === id) c.workspaceId = fallbackId;
       s.workspaces = s.workspaces!.filter((w) => w.id !== id);
     }),
   movePageToWorkspace: (id, workspaceId) =>

@@ -14,8 +14,10 @@ import {
   ASSIGNMENT, DEFAULT_LAYOUT, EXAM, type GridCard, pauseTimer, resumeTimer, clock, durationLabel, setStudy, startPreset, stopTimer, streak, uid, useStudy, type ClassSlot, type QuickLink, type TimerPreset,
 } from "../lib/study";
 import { Modal, ModalButton } from "./Modal";
-import { ActionPill, Empty, RecentCard, SectionTitle, StatusPill } from "./HomeView";
+import { Empty, RecentCard, SectionTitle, StatusPill } from "./HomeView";
 import { ScrollRow } from "./ScrollRow";
+import { TestSetup } from "./TestSetup";
+import { useTestHistory } from "../lib/quiz";
 
 type Block = { id?: string; type?: string; props?: Record<string, unknown>; content?: unknown; children?: Block[] };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -45,6 +47,14 @@ export function StudyHome(props: {
   const overdue = pending.filter((p) => p.dueDate! < today);
   const dueToday = pending.filter((p) => p.dueDate === today);
   const h = new Date().getHours();
+  const { timetable } = useStudy();
+  const [editing, setEditing] = useState(false);
+  const now =new Date().toTimeString().slice(0, 5);
+  const nextClass = timetable.filter((c) => c.day === new Date().getDay() && c.end > now).sort((a, b) => a.start.localeCompare(b.start))[0];
+  const nextDue = [...pending].filter((p) => p.dueDate! >= today).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!))[0];
+  const next = nextClass
+    ? `${nextClass.subject || "Class"} ${nextClass.start}${nextClass.room ? ` · ${nextClass.room}` : ""}`
+    : nextDue ? `${nextDue.title || "Untitled"} (${due(nextDue.dueDate!, today)})` : "";
   const hello = h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 
   return (
@@ -58,20 +68,21 @@ export function StudyHome(props: {
               {hello}
               {props.userName ? `, ${props.userName}` : ""}
             </h1>
-            <p className="text-[13px] text-neutral-400">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+            <p className="flex flex-wrap items-center gap-2 text-[13px] text-neutral-400">
+              {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+              {next && <span className="text-neutral-200"> · Next: {next}</span>}
+              <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
+            </p>
           </div>
-          <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <ActionPill tone="#5aa2e9" icon={<Plus className="size-3.5" />} label="New page" onClick={props.onNewPage} />
-          <ActionPill tone="#a78bfa" icon={<Sparkles className="size-3.5" />} label="New mindmap" onClick={props.onNewMindmap} />
-          <ActionPill tone="#0fb5ba" icon={<FileText className="size-3.5" />} label="Docs" onClick={() => props.onOpenApp("docs")} />
-          <ActionPill tone="#ff7a59" icon={<Pencil className="size-3.5" />} label="Sketch" onClick={() => props.onOpenApp("sketch")} />
-          <ActionPill tone="#fbbf24" icon={<CalendarDays className="size-3.5" />} label="Calendar" onClick={() => props.onOpenApp("calendar")} />
-          <ActionPill tone="#94a3b8" icon={<Upload className="size-3.5" />} label="Import" onClick={props.onImport} />
+          <button type="button" title={editing ? "Done customizing" : "Customize dashboard"} onClick={() => setEditing((v) => !v)} className={`grid size-9 cursor-pointer place-items-center rounded-xl border transition-colors ${editing ? "border-sky-500 bg-sky-600 text-white" : "border-white/[0.12] text-neutral-300 hover:bg-white/[0.07] hover:text-white"}`}>
+            {editing ? <Check className="size-4" /> : <LayoutGrid className="size-4" />}
+          </button>
+          <CreateMenu {...props} />
         </div>
 
         <DashboardGrid
+          editing={editing}
+          onDone={() => setEditing(false)}
           cards={{
             quick: <LeftColumn {...props} part="quick" />,
             nav: <LeftColumn {...props} part="nav" />,
@@ -80,6 +91,7 @@ export function StudyHome(props: {
             planner: <PlannerTabs pages={pages} today={today} onOpen={onOpenPage} onSetStatus={props.onSetStatus} />,
             today: <TodayWidget pages={pages} today={today} onOpen={onOpenPage} />,
             focus: <FocusWidget />,
+            tests: <TestsWidget pages={pages} />,
             exams: <ExamsWidget pages={pages} today={today} onOpen={onOpenPage} onCreate={props.onCreate} />,
             todo: <TodoWidget pages={pages} getDoc={props.getDoc} setDoc={props.setDoc} onOpen={onOpenPage} />,
             timetable: <TimetableWidget />,
@@ -99,6 +111,53 @@ export function StudyHome(props: {
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ hero pieces */
+/** One "+ Create" button whose dropdown holds every create/open action. */
+function CreateMenu(props: HomeProps) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState<null | "assignment" | "exam" | "test">(null);
+  const items: [string, string, ReactNode, () => void][] = [
+    ["New page", "#5aa2e9", <Plus />, props.onNewPage],
+    ["New assignment", "#38bdf8", <ListTodo />, () => setAdding("assignment")],
+    ["New exam", "#f87171", <GraduationCap />, () => setAdding("exam")],
+    ["Take a test", "#34d399", <FileText />, () => setAdding("test")],
+    ["New mindmap", "#a78bfa", <Sparkles />, props.onNewMindmap],
+    ["Docs", "#0fb5ba", <FileText />, () => props.onOpenApp("docs")],
+    ["Sketch", "#ff7a59", <Pencil />, () => props.onOpenApp("sketch")],
+    ["Calendar", "#fbbf24", <CalendarDays />, () => props.onOpenApp("calendar")],
+    ["Import", "#94a3b8", <Upload />, props.onImport],
+  ];
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-4 text-[13.5px] font-semibold text-white shadow-lg hover:brightness-110">
+        <Plus className="size-4" /> Create
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
+          <div className="oc-docs-pop absolute right-0 top-full z-50 mt-2 w-60 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-2 shadow-xl">
+            {items.map(([label, tone, icon, run], i) => (
+              <div key={label}>
+                {(i === 4 || i === 5) &&<hr className="mx-2 my-2 border-white/[0.07]" />}
+                <button
+                  type="button" onClick={() => (setOpen(false), run())}
+                  className="oc-row-in group mb-1 flex h-10 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-[13.5px] text-neutral-200 transition-all duration-200 hover:translate-x-1 hover:brightness-150"
+                  style={{ background: `linear-gradient(90deg, color-mix(in srgb, ${tone} 16%, transparent), transparent 75%)`, animationDelay: `${i * 30}ms` }}
+                >
+                  <span className="grid size-7 place-items-center rounded-md transition-transform duration-200 group-hover:scale-110 [&_svg]:size-4" style={{ background: `color-mix(in srgb, ${tone} 25%, transparent)`, color: tone }}>{icon}</span>
+                  {label}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {adding === "test" && <TestSetup pages={props.pages} onClose={() => setAdding(null)} />}
+      {adding && adding !== "test" && <NewItemDialog kind={adding} onCreate={props.onCreate} onOpen={props.onOpenPage} onClose={() => setAdding(null)} />}
     </div>
   );
 }
@@ -370,6 +429,29 @@ function ExamsWidget({ pages, today, onOpen, onCreate }: { pages: PageMeta[]; to
           );
         })}
       </div>
+    </Card>
+  );
+}
+
+
+/* ------------------------------------------------------------ Tests */
+function TestsWidget({ pages }: { pages: PageMeta[] }) {
+  const history = useTestHistory();
+  const [open, setOpen] = useState(false);
+  return (
+    <Card title="Tests" icon={<FileText className="size-4" />} tone="#34d399" action={<IconBtn tip="Take a test" onClick={() => setOpen(true)}><Plus /></IconBtn>}>
+      {open && <TestSetup pages={pages} onClose={() => setOpen(false)} />}
+      {!history.length && <Small>Test yourself on your flashcards. Scores show up here.</Small>}
+      {history.slice(0, 6).map((t) => {
+        const pct = Math.round((t.score / t.total) * 100);
+        return (
+          <div key={t.id} className="oc-row-in flex items-center gap-3 rounded-lg px-2 py-1.5 text-[13px]">
+            <span className={`w-11 shrink-0 font-semibold tabular-nums ${pct >= 80 ? "text-emerald-400" : pct >= 50 ? "text-amber-300" : "text-red-400"}`}>{pct}%</span>
+            <span className="min-w-0 flex-1 truncate text-neutral-200">{t.title}</span>
+            <span className="text-[11px] text-neutral-500">{new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+          </div>
+        );
+      })}
     </Card>
   );
 }
@@ -911,7 +993,7 @@ function PlannerTabs({ pages, today, onOpen, onSetStatus }: { pages: PageMeta[];
 /* ------------------------------------------------------------ customisable grid */
 const CARD_NAMES: Record<string, string> = {
   quick: "Quick capture", nav: "Navigation", links: "Quick links", classes: "Classes", planner: "Assignments & Exams", today: "Today",
-  focus: "Focus timer", exams: "Exam countdown", todo: "To-do", timetable: "Weekly timetable", stats: "Study streak", recent: "Recently visited",
+  focus: "Focus timer", exams: "Exam countdown", todo: "To-do", timetable: "Weekly timetable", stats: "Study streak", tests: "Tests", recent: "Recently visited",
 };
 const ROW = 36; // px per grid row (24px + 12px gap)
 const GAP = 12;
@@ -932,9 +1014,8 @@ function settle(cards: GridCard[], moved: GridCard): GridCard[] {
 }
 
 /** Free 12-column grid like phone widgets: in Customize, drag cards anywhere and resize from the corner. */
-function DashboardGrid({ cards }: { cards: Record<string, ReactNode> }) {
+function DashboardGrid({ cards, editing, onDone }: { cards: Record<string, ReactNode>; editing: boolean; onDone: () => void }) {
   const { layout } = useStudy();
-  const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [live, setLive] = useState<GridCard[] | null>(null); // layout while dragging
   const gridRef = useRef<HTMLDivElement>(null);
@@ -1006,11 +1087,11 @@ function DashboardGrid({ cards }: { cards: Record<string, ReactNode> }) {
                 </>
               )}
             </div>
+            <button type="button" onClick={() => (onDone(), setAdding(false))} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12.5px] text-white hover:bg-sky-500">
+              <Check className="size-3.5" /> Done
+            </button>
           </>
         )}
-        <button type="button" onClick={() => (setEditing((v) => !v), setAdding(false))} className={`flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[12.5px] ${editing ? "bg-sky-600 text-white hover:bg-sky-500" : "text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"}`}>
-          {editing ? <Check className="size-3.5" /> : <LayoutGrid className="size-3.5" />} {editing ? "Done" : "Customize"}
-        </button>
       </div>
       <div
         ref={gridRef}

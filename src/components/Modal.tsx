@@ -20,6 +20,7 @@ export function Modal({
 
   return createPortal(
     <div
+      data-oc-modal
       className="oc-fade-in fixed inset-0 z-[60] grid place-items-center bg-black/50"
       onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
     >

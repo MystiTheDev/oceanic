@@ -6,6 +6,7 @@ import { spellMenuItems } from "../lib/spell/plugin";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Block, PartialBlock } from "@blocknote/core";
 import { copyImageToClipboard } from "../lib/clipboard";
+import { isMarked, syncPage, toggleMarked } from "../lib/srs";
 import { AllSelection, TextSelection } from "prosemirror-state";
 import {
   Bold,
@@ -17,6 +18,7 @@ import {
   Heading2,
   Heading3,
   Italic,
+  Layers,
   List,
   ListChecks,
   ListCollapse,
@@ -68,7 +70,7 @@ function withoutIds(block: PartialBlock): PartialBlock {
  * Builds the menu for a right-click at `e`, or null when the click isn't on a
  * block (the global menu then takes over).
  */
-export function editorContextMenu(editor: OceanicEditor, e: ReactMouseEvent): MenuItem[] | null {
+export function editorContextMenu(editor: OceanicEditor, e: ReactMouseEvent, pageId?: string): MenuItem[] | null {
   // Inputs inside blocks (e.g. the TeX editor) get the plain text-field menu.
   if (isTextField(e.target)) return null;
   const blockEl = (e.target as Element).closest("[data-node-type='blockContainer']");
@@ -191,6 +193,19 @@ export function editorContextMenu(editor: OceanicEditor, e: ReactMouseEvent): Me
                 onSelect: () => editor.updateBlock(block, { type: t.type, props: t.props ?? {} } as never),
               }),
             ),
+          } satisfies MenuItem,
+        ]
+      : []),
+    ...(hasText && pageId
+      ? [
+          {
+            label: isMarked(block.id) ? "Remove flashcard" : "Make flashcard",
+            icon: <Layers className="size-4" />,
+            checked: isMarked(block.id),
+            onSelect: () => {
+              toggleMarked(block.id);
+              syncPage(pageId, editor.document as never);
+            },
           } satisfies MenuItem,
         ]
       : []),

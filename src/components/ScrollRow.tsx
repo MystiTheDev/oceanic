@@ -22,7 +22,7 @@ export function ScrollRow({ children, deps }: { children: ReactNode; deps?: unkn
       <div
         ref={row}
         onScroll={measure}
-        className="-mx-2 -mt-2 flex gap-3 overflow-x-auto px-2 pb-3 pt-2 [scrollbar-width:none]"
+        className="-mx-2 -mt-2 flex gap-3 overflow-x-auto px-2 pb-3 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         style={{
           // Soft fade on whichever side has more cards, so a cut-off card reads as "scroll for more".
           maskImage: `linear-gradient(to right, ${edges.left ? "transparent, black 48px" : "black, black"}, ${edges.right ? "black calc(100% - 64px), transparent" : "black, black"})`,

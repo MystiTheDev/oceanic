@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FONT_IDS, FONTS, type FontId } from "../lib/fonts";
 import { createPortal } from "react-dom";
+import { NeridaMark } from "./NeridaOrb";
 import { Copy, Download, PenLine, Star, Trash2 } from "lucide-react";
 
-export type PageMenuAction = "favorite" | "rename" | "duplicate" | "export" | "trash";
+export type PageMenuAction = "favorite" | "rename" | "duplicate" | "export" | "flashcards" | "trash";
 
 type PageMenuProps = {
   /** Button the menu hangs from. */
@@ -52,7 +53,10 @@ export function PageMenu({
     { id: "rename", label: "Rename", icon: <PenLine className="size-4" /> },
     { id: "duplicate", label: "Duplicate", icon: <Copy className="size-4" /> },
     ...(showExport
-      ? [{ id: "export" as const, label: "Export", icon: <Download className="size-4" /> }]
+      ? [
+          { id: "export" as const, label: "Export", icon: <Download className="size-4" /> },
+          { id: "flashcards" as const, label: "Make flashcards with Nerida", icon: <NeridaMark size={16} /> },
+        ]
       : []),
     { id: "trash", label: "Move to Trash", icon: <Trash2 className="size-4" />, danger: true },
   ];

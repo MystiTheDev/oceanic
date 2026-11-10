@@ -7,7 +7,7 @@ import { colorOf } from "../lib/colors";
 import { openContextMenu } from "./ContextMenu";
 import { setDragGhost } from "../lib/dragGhost";
 
-export const APP_VERSION = "1.0.3";
+export const APP_VERSION = "2.0.0";
 
 type SidebarFooterProps = {
   workspaces: WorkspaceRecord[];
@@ -33,7 +33,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
   const active = workspaces.find((w) => w.id === activeWorkspaceId);
 
   return (
-    <div className="flex flex-col gap-px border-t border-white/[0.05] p-2">
+    <div className="oc-sidebar-foot m-2 mt-1 flex flex-col gap-px rounded-xl border border-white/[0.07] bg-white/[0.03] p-1">
       <button
         ref={wsRef}
         type="button"

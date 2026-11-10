@@ -206,6 +206,7 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
 
   return createPortal(
     <div
+      data-oc-modal
       className="oc-fade-in fixed inset-0 z-50 flex justify-center bg-black/50 pt-[10vh]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >

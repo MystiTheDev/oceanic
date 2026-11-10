@@ -26,11 +26,14 @@ import {
 import { Plugin } from "prosemirror-state";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { FileText, Music, Network, Sigma, SquareFunction } from "lucide-react";
+import { FileText, Layers, ListTree, Music, Network, Sigma, SquareFunction } from "lucide-react";
+import { openNeridaOutline } from "../components/NeridaOutlineUI";
+import { isMarked, toggleMarked } from "../lib/srs";
 import { usePageDirectory, pageDirectory } from "./pageDirectory";
 import { fontStack } from "../lib/fonts";
 import { LectureAudio, Timestamp } from "./audio";
 import { MindmapEmbed } from "./mindmapBlock";
+import { FileEmbed } from "./fileEmbedBlock";
 import { spellPlugin } from "../lib/spell/plugin";
 import { DatabaseBlock } from "./databaseBlock";
 import { PdfBlock } from "../pdf/PdfBlock";
@@ -252,7 +255,7 @@ const FontStyle = createReactStyleSpec(
 
 /* ------------------------------------------------------------------ schema */
 export const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, math: MathBlock(), lectureAudio: LectureAudio(), mindmapEmbed: MindmapEmbed(), database: DatabaseBlock(), pdf: PdfBlock() },
+  blockSpecs: { ...defaultBlockSpecs, math: MathBlock(), lectureAudio: LectureAudio(), mindmapEmbed: MindmapEmbed(), fileEmbed: FileEmbed(), database: DatabaseBlock(), pdf: PdfBlock() },
   inlineContentSpecs: { ...defaultInlineContentSpecs, pageLink: PageLink, inlineMath: InlineMath, timestamp: Timestamp, pdfRef: PdfRef },
   styleSpecs: { ...defaultStyleSpecs, font: FontStyle },
 });
@@ -267,6 +270,43 @@ export const editorExtensions = [inlineMathInput, spellAssist];
 export function getSlashItems(editor: OceanicEditor, query: string) {
   const items: DefaultReactSuggestionItem[] = [
     ...getDefaultReactSlashMenuItems(editor as unknown as BlockNoteEditor),
+    {
+      title: "Flashcard",
+      subtext: "Make this block a card · first line = question, rest or nested = answer",
+      aliases: ["flashcard", "card", "srs", "quiz", "study", "recall"],
+      group: "Study",
+      icon: <Layers size={18} />,
+      // Cards sync on the next edit, so marking is all that's needed.
+      onItemClick: () => {
+        const block = editor.getTextCursorPosition().block;
+        if (!isMarked(block.id)) toggleMarked(block.id);
+        // Empty line: ` :: ` template, caret on the question side.
+        if (!(block.content as unknown[] | undefined)?.length) {
+          editor.updateBlock(block, { content: " :: " } as never);
+          editor.setTextCursorPosition(block, "start");
+        }
+      },
+    },
+    {
+      title: "Outline with Nerida",
+      subtext: "Essay outline from your topic and ideas",
+      aliases: ["outline", "nerida", "essay", "plan", "structure", "ai"],
+      group: "Nerida",
+      icon: <ListTree size={18} />,
+      onItemClick: () => {
+        const at = editor.getTextCursorPosition().block;
+        openNeridaOutline({
+          topic: "",
+          insert: (md) => {
+            const blocks = editor.tryParseMarkdownToBlocks(md);
+            if (!blocks.length) return;
+            const empty = !(at.content as unknown[] | undefined)?.length;
+            if (empty) editor.replaceBlocks([at], blocks as never);
+            else editor.insertBlocks(blocks as never, at, "after");
+          },
+        });
+      },
+    },
     {
       title: "Mindmap",
       subtext: "Embed an Oceanic Mindmap",

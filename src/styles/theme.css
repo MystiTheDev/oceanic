@@ -925,6 +925,9 @@
 .oc-mm-embed-hint { margin-top: 4px; font-size: 13px; color: var(--oc-text-2); }
 .oc-mm-embed-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .oc-mm-embed-canvas { height: 260px; padding: 8px; cursor: zoom-in; }
+.oc-file-embed { overflow: hidden; padding: 12px 16px; color: var(--oc-text-2); font-size: 13px; line-height: 1.5; }
+.oc-file-embed img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.oc-file-embed h4 { margin: 6px 0 2px; font-weight: 600; color: var(--oc-text-strong); }
 
 .oc-mm-collapsed { font-size: 11px; font-weight: 400; color: var(--oc-text-2); }
 
@@ -1571,3 +1574,1195 @@
 .oc-export-card { animation: oc-rise-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 .oc-export-card.is-on { border-color: color-mix(in srgb, var(--tone) 70%, transparent); background: color-mix(in srgb, var(--tone) 9%, transparent); box-shadow: 0 6px 20px color-mix(in srgb, var(--tone) 14%, transparent); }
 @media (prefers-reduced-motion: reduce) { .oc-export-card { animation: none; } }
+
+/* ---- Sidebar polish: brand glow up top, accent bar on the active row, footer card ---- */
+.oc-sidebar { background-image: radial-gradient(120% 180px at 0% 0%, color-mix(in srgb, var(--oc-brand) 14%, transparent), transparent 70%); }
+.oc-nav-active { position: relative; background: linear-gradient(90deg, color-mix(in srgb, var(--oc-brand) 22%, transparent), color-mix(in srgb, var(--oc-brand) 6%, transparent)); }
+.oc-nav-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 3px; background: var(--oc-brand-light); }
+.oc-nav-active svg { color: var(--oc-brand-light) !important; }
+.oc-sidebar-foot { box-shadow: 0 -8px 24px -12px rgb(0 0 0 / 0.5); }
+
+/* Sidebar icon colours (Settings > Sidebar icons); unset var = keep the grey. */
+:root[style*="--oc-ic-home: #"] .oc-ic-home { color: var(--oc-ic-home) !important; }
+:root[style*="--oc-ic-library: #"] .oc-ic-library { color: var(--oc-ic-library) !important; }
+:root[style*="--oc-ic-tags: #"] .oc-ic-tags { color: var(--oc-ic-tags) !important; }
+:root[style*="--oc-ic-trash: #"] .oc-ic-trash { color: var(--oc-ic-trash) !important; }
+:root[style*="--oc-ic-import: #"] .oc-ic-import { color: var(--oc-ic-import) !important; }
+.oc-nav-active::before { animation: oc-bar-in 220ms cubic-bezier(.2,.8,.2,1); }
+@keyframes oc-bar-in { from { transform: scaleY(0); opacity: 0; } }
+.oc-view-pill { background: rgb(255 255 255 / 0.1); box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: transform 260ms cubic-bezier(.3,1.3,.5,1); }
+.oc-search { transition: border-color 150ms, box-shadow 200ms, background 150ms; }
+.oc-search:hover { border-color: color-mix(in srgb, var(--oc-brand-light) 45%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--oc-brand) 15%, transparent), 0 0 18px -4px color-mix(in srgb, var(--oc-brand) 50%, transparent); }
+
+/* More apps tiles */
+.oc-app-tile { transition: transform 180ms cubic-bezier(.3,1.4,.5,1), border-color 150ms, background 150ms, box-shadow 200ms, color 150ms; }
+.oc-app-tile:hover { transform: translateY(-2px); color: var(--color-neutral-100); border-color: color-mix(in srgb, var(--tone) 50%, transparent); background: color-mix(in srgb, var(--tone) 14%, transparent); box-shadow: 0 6px 18px -8px var(--tone); }
+.oc-app-tile:hover img { animation: oc-pop 380ms cubic-bezier(.3,1.6,.5,1); }
+
+/* Sidebar icons (SidebarIcons.tsx): one part moves on hover, then settles */
+.oc-ico { overflow: visible; }
+.oc-ico .p { transform-box: view-box; transition: transform 280ms cubic-bezier(.3,.7,.3,1); }
+.oc-ico .door { transform-origin: 10px 21px; }
+.oc-ico .tag { transform-origin: 8px 8px; }
+.oc-ico .lid { transform-origin: 20.5px 7.5px; }
+.oc-sidebar :hover > .oc-ico .door { transform: scaleX(.3); }
+.oc-ico .book { transform-origin: 20.8px 20.3px; }
+.oc-sidebar :hover > .oc-ico .book { transform: rotate(12deg); }
+.oc-sidebar :hover > .oc-ico .tag { transform: rotate(-12deg); }
+.oc-sidebar :hover > .oc-ico .lid { transform: translateY(-1.5px) rotate(14deg); }
+.oc-sidebar :hover > .oc-ico .arrow { animation: oc-drop 320ms cubic-bezier(.3,.7,.3,1); }
+.oc-sidebar :hover > .oc-ico .lens { animation: oc-sweep 420ms ease-in-out; }
+@keyframes oc-drop { from { transform: translateY(-5px); opacity: 0; } }
+@keyframes oc-sweep { 25% { transform: translate(-1.2px, -1px); } 50% { transform: translate(1px, -1.4px); } 75% { transform: translate(1.2px, .8px); } }
+@keyframes oc-pop-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes oc-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes oc-rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes oc-peek-in {
+  from { transform: translateX(24px); opacity: 0; }
+}
+.oc-peek-in  { animation: oc-peek-in 180ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.oc-pop-in   { animation: oc-pop-in 120ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.oc-fade-in  { animation: oc-fade-in 120ms ease-out both; }
+.oc-toast-in { animation: oc-rise-in 180ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.oc-page-in  { animation: oc-rise-in 220ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.oc-tab-in   { animation: oc-pop-in 140ms cubic-bezier(0.2, 0, 0, 1) backwards; transform-origin: left center; }
+
+/* Editor floating surfaces. The library positions these itself (sometimes
+   with transforms), so they only fade; our own ⋯ panel also scales. */
+.bn-container.dark .bn-formatting-toolbar,
+.bn-container.dark .mantine-Menu-dropdown,
+.bn-container.dark .bn-suggestion-menu {
+  animation: oc-fade-in 120ms ease-out backwards;
+}
+.bn-container.dark .oc-overflow-panel {
+  transform-origin: top right;
+  animation: oc-pop-in 120ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+
+/* Respect reduced-motion: keep state changes, drop the movement */
+@media (prefers-reduced-motion: reduce) {
+  .oc-pop-in, .oc-fade-in, .oc-toast-in, .oc-page-in, .oc-tab-in,
+  .bn-container.dark .bn-formatting-toolbar,
+  .bn-container.dark .oc-overflow-panel,
+  .bn-container.dark .mantine-Menu-dropdown,
+  .bn-container.dark .bn-suggestion-menu {
+    animation-duration: 1ms;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   8. Color menu — Notion's: small muted section headings, 32px rows, and an
+   "A" in a bordered tile (text colors) or a filled tile (backgrounds).
+   ------------------------------------------------------------------------ */
+.bn-container.dark .bn-color-picker-dropdown.mantine-Menu-dropdown {
+  min-width: 220px;
+  max-height: min(440px, 70vh);
+  padding: 6px;
+  overflow-y: auto;
+  background-color: var(--oc-menu);
+  border: 1px solid rgba(var(--oc-ink), 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k)));
+}
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-label {
+  padding: 6px 8px 6px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--oc-text-2);
+}
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-label ~ .mantine-Menu-label {
+  margin-top: 8px;
+}
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-item {
+  height: 32px;
+  padding: 0 8px;
+  gap: 10px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  color: var(--oc-text);
+}
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-item + .mantine-Menu-item {
+  margin-top: 1px;
+}
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-item:hover,
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-item[data-hovered] {
+  background-color: rgba(var(--oc-ink), 0.06);
+}
+.bn-container.dark .bn-color-picker-dropdown .mantine-Menu-itemSection[data-position="left"] {
+  margin: 0;
+}
+.bn-container.dark .bn-color-picker-dropdown .bn-color-icon {
+  display: grid;
+  place-items: center;
+  width: 22px !important;
+  height: 22px !important;
+  border: 1px solid rgba(var(--oc-ink), 0.12);
+  border-radius: 5px;
+  font-size: 13px !important;
+  font-weight: 500;
+  line-height: 1 !important;
+}
+
+/* --------------------------------------------------------------------------
+   9. Page links — Notion's mention: icon + title with a faint underline
+   ------------------------------------------------------------------------ */
+.oc-page-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2em;
+  padding: 0 0.15em;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--oc-text-strong);
+  transition: background-color 0.1s ease;
+}
+.oc-page-link:hover { background-color: rgba(var(--oc-ink), 0.06); }
+.oc-page-link-icon { font-size: 0.95em; }
+.oc-page-link-title {
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(var(--oc-ink), 0.25);
+  text-underline-offset: 3px;
+}
+.oc-page-link-missing { color: #737373; cursor: default; }
+.oc-page-link-missing .oc-page-link-title { text-decoration-style: dashed; }
+
+/* --------------------------------------------------------------------------
+   10. Math — KaTeX inline + block, and the shared TeX editor popover
+   ------------------------------------------------------------------------ */
+.oc-inline-math-wrap { position: relative; }
+.oc-inline-math {
+  padding: 0 0.15em;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+.oc-inline-math:hover { background-color: rgba(var(--oc-ink), 0.06); }
+.oc-tex-invalid { color: #f87171; font-family: ui-monospace, monospace; font-size: 0.9em; }
+
+.oc-math-block { position: relative; width: 100%; }
+.oc-math-display {
+  padding: 12px 8px;
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+  overflow-x: auto;
+  transition: background-color 0.1s ease;
+}
+.oc-math-display:hover { background-color: rgba(var(--oc-ink), 0.04); }
+.oc-math-empty { text-align: left; background-color: rgba(var(--oc-ink), 0.04); }
+.oc-math-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--oc-text-2);
+  font-size: 14px;
+}
+
+.oc-tex-editor {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(420px, 90vw);
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--oc-ink), 0.08);
+  background-color: var(--oc-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, calc(0.45 * var(--oc-shadow-k)));
+  text-align: left;
+  transform-origin: top left;
+  cursor: default;
+}
+.oc-tex-editor textarea {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--oc-ink), 0.1);
+  background-color: rgba(var(--oc-ink), 0.04);
+  color: var(--oc-text-strong);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  outline: none;
+}
+.oc-tex-editor textarea:focus { border-color: rgba(14, 165, 233, 0.6); }
+.oc-tex-preview {
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: rgba(0, 0, 0, calc(0.2 * var(--oc-shadow-k)));
+  color: var(--oc-text-strong);
+  overflow-x: auto;
+}
+.oc-tex-error { color: #f87171; font-size: 12px; }
+.oc-tex-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--oc-text-3);
+}
+.oc-tex-actions button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  background-color: var(--color-sky-600);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.oc-tex-actions button:hover { background-color: #0ea5e9; }
+
+/* --------------------------------------------------------------------------
+   11. Block (⋮⋮) menu — Notion's: roomy rows, a muted icon before each label
+   ------------------------------------------------------------------------ */
+.bn-container.dark .bn-drag-handle-menu.mantine-Menu-dropdown {
+  min-width: 200px;
+  padding: 6px;
+  background-color: var(--oc-menu);
+  border: 1px solid rgba(var(--oc-ink), 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k)));
+}
+.bn-container.dark .bn-drag-handle-menu .mantine-Menu-item {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  color: var(--oc-text);
+}
+.bn-container.dark .bn-drag-handle-menu .mantine-Menu-item:hover,
+.bn-container.dark .bn-drag-handle-menu .mantine-Menu-item[data-hovered] {
+  background-color: rgba(var(--oc-ink), 0.06);
+}
+.oc-menu-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.oc-menu-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  color: var(--oc-text-2);
+}
+
+/* --------------------------------------------------------------------------
+   12. Lists — Notion-style bullets and to-do checkboxes
+   Bullets follow Notion's nesting cycle (dot → circle → square → dot), drawn
+   as masks so they take the text color and can tint to the accent on hover.
+   ------------------------------------------------------------------------ */
+.bn-container .bn-block-group {
+  --oc-bullet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='3.25'/%3E%3C/svg%3E");
+}
+.bn-container [data-content-type="bulletListItem"] ~ .bn-block-group {
+  --oc-bullet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='3' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+.bn-container [data-content-type="bulletListItem"] ~ .bn-block-group [data-content-type="bulletListItem"] ~ .bn-block-group {
+  --oc-bullet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='8.75' y='8.75' width='6.5' height='6.5' rx='1.6'/%3E%3C/svg%3E");
+}
+.bn-container [data-content-type="bulletListItem"] ~ .bn-block-group [data-content-type="bulletListItem"] ~ .bn-block-group [data-content-type="bulletListItem"] ~ .bn-block-group {
+  --oc-bullet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='3.25'/%3E%3C/svg%3E");
+}
+.bn-container .bn-block-content[data-content-type="bulletListItem"]::before {
+  content: "" !important;
+  align-self: flex-start;
+  flex-shrink: 0;
+  min-width: 0 !important;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0 !important;
+  background-color: var(--oc-text);
+  -webkit-mask: var(--oc-bullet) center / 24px 24px no-repeat;
+  mask: var(--oc-bullet) center / 24px 24px no-repeat;
+  transition: background-color 150ms ease;
+}
+.bn-container .bn-block-content[data-content-type="bulletListItem"]:hover::before {
+  background-color: var(--color-sky-500);
+}
+
+/* To-do: Notion's 16px box; checked fills with the accent and the tick pops in. */
+.bn-container .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 4px 8px 0 4px;
+  align-self: flex-start;
+  border: 1.5px solid rgba(var(--oc-ink), 0.45);
+  border-radius: 3px;
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.bn-container .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:hover {
+  background-color: rgba(var(--oc-ink), 0.06);
+}
+.bn-container .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background-color: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  transform: scale(0);
+  transition: transform 180ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.bn-container .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:checked {
+  background-color: var(--color-sky-500);
+  border-color: var(--color-sky-500);
+}
+.bn-container .bn-block-content[data-content-type="checkListItem"] > div > input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+.bn-container .bn-block-content[data-content-type="checkListItem"] .bn-inline-content {
+  transition: opacity 150ms ease;
+}
+.bn-container .bn-block-content[data-content-type="checkListItem"][data-checked="true"] .bn-inline-content {
+  opacity: 0.7;
+  text-decoration: line-through;
+  text-decoration-color: rgba(var(--oc-ink), 0.45);
+}
+
+/* Search hits: Notion's soft yellow underline-highlight. */
+.oc-search-hit {
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  box-shadow: inset 0 -0.45em 0 rgba(250, 177, 67, 0.28);
+  border-radius: 2px;
+}
+
+/* Home: Recently visited cards rise in one after another. */
+@keyframes oc-card-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+.oc-home-card { animation: oc-card-in 260ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+
+/* --------------------------------------------------------------------------
+   13. Lecture audio — Notion's slim rounded player bar + [mm:ss] chips
+   ------------------------------------------------------------------------ */
+.oc-audio { width: 100%; padding: 2px 0; user-select: none; }
+.oc-audio-name {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+  font-size: 12px; color: var(--oc-text-2);
+}
+.oc-audio-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-audio-bar {
+  display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px 0 6px;
+  border-radius: 10px; background: rgba(var(--oc-ink), 0.05);
+  border: 1px solid rgba(var(--oc-ink), 0.07);
+}
+.oc-audio-play {
+  display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0;
+  border-radius: 999px; background: var(--color-sky-500); color: #fff; cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+.oc-audio-play:hover { filter: brightness(1.1); transform: scale(1.06); }
+.oc-audio-time { font: 500 12px/1 ui-monospace, Consolas, monospace; color: var(--oc-text-2); white-space: nowrap; }
+.oc-audio-seek {
+  flex: 1; height: 4px; appearance: none; cursor: pointer; border-radius: 999px;
+  background: linear-gradient(to right, var(--color-sky-500) var(--oc-pct), rgba(var(--oc-ink), 0.15) var(--oc-pct));
+}
+.oc-audio-seek::-webkit-slider-thumb {
+  appearance: none; width: 12px; height: 12px; border-radius: 999px; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); opacity: 0; transition: opacity 120ms ease;
+}
+.oc-audio-bar:hover .oc-audio-seek::-webkit-slider-thumb { opacity: 1; }
+.oc-audio-speed {
+  min-width: 42px; height: 24px; padding: 0 8px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--oc-text);
+  background: rgba(var(--oc-ink), 0.08); transition: background-color 120ms ease;
+}
+.oc-audio-speed:hover { background: rgba(var(--oc-ink), 0.14); }
+.oc-audio-empty {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 44px; padding: 0 12px;
+  border-radius: 10px; cursor: pointer; font-size: 14px; color: var(--oc-text-2);
+  background: rgba(var(--oc-ink), 0.05); transition: background-color 120ms ease;
+}
+.oc-audio-empty:hover { background: rgba(var(--oc-ink), 0.09); }
+.oc-timestamp {
+  display: inline-block; padding: 0 5px; margin: 0 1px; border-radius: 4px; cursor: pointer;
+  font: 600 0.85em/1.5 ui-monospace, Consolas, monospace;
+  color: var(--color-sky-400); background: color-mix(in srgb, var(--color-sky-500) 14%, transparent);
+  transition: background-color 120ms ease;
+}
+.oc-timestamp:hover { background: color-mix(in srgb, var(--color-sky-500) 26%, transparent); }
+
+
+/* --------------------------------------------------------------------------
+   14. Oceanic Mindmap — Miro-like topics on a dotted board
+   ------------------------------------------------------------------------ */
+:root { --oc-mm-edge: rgba(255, 255, 255, 0.28); }
+:root[data-theme="light"] { --oc-mm-edge: rgba(55, 53, 47, 0.3); }
+.oc-mindmap .react-flow { background: var(--oc-canvas); --xy-background-color: var(--oc-canvas); }
+.oc-mm-node {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 90px; max-width: 240px; padding: 8px 16px;
+  border: 1.5px solid rgba(var(--oc-ink), 0.16); background: var(--oc-raised);
+  color: var(--oc-text-strong); font-size: 14px; font-weight: 500; text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, calc(0.25 * var(--oc-shadow-k)));
+  transition: box-shadow 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+.oc-mm-node.is-root { padding: 12px 24px; font-size: 17px; font-weight: 700; border-width: 2px; }
+.oc-mm-node:hover { transform: translateY(-1px); }
+.oc-mm-node.is-selected { box-shadow: 0 0 0 2px var(--color-sky-500), 0 4px 14px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k))); }
+.oc-mm-label { overflow-wrap: anywhere; }
+.oc-mm-input { width: 160px; background: transparent; text-align: center; outline: none; font: inherit; color: inherit; }
+.oc-mm-link { display: flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 400; color: var(--color-sky-400); }
+.oc-mm-handle { opacity: 0; width: 6px; height: 6px; min-width: 0; min-height: 0; border: 0; }
+.oc-mm-toolbar {
+  display: flex; align-items: center; gap: 3px; padding: 4px; border-radius: 10px;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-mm-swatch { width: 16px; height: 16px; border-radius: 999px; cursor: pointer; transition: transform 100ms ease; }
+.oc-mm-swatch:hover, .oc-mm-swatch.is-on { transform: scale(1.18); box-shadow: 0 0 0 2px var(--oc-surface), 0 0 0 3.5px var(--oc-text-2); }
+.oc-mm-sep { width: 1px; height: 18px; margin: 0 3px; background: rgba(var(--oc-ink), 0.12); }
+.oc-mm-tool { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; color: var(--oc-text-2); }
+.oc-mm-tool:hover { background: rgba(var(--oc-ink), 0.08); color: var(--oc-text-strong); }
+.oc-mm-tool.is-on { color: var(--color-sky-400); background: color-mix(in srgb, var(--color-sky-500) 15%, transparent); }
+.oc-mm-tool.is-danger:hover { color: #ef4444; }
+.oc-mm-shape { width: 14px; height: 9px; border: 1.5px solid currentColor; }
+.oc-mm-btn {
+  display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; color: var(--oc-text); background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1);
+}
+.oc-mm-btn:hover { background: var(--oc-raised-hover); }
+.oc-mindmap .react-flow__controls { box-shadow: none; border: 1px solid rgba(var(--oc-ink), 0.1); border-radius: 8px; overflow: hidden; }
+.oc-mindmap .react-flow__controls-button { background: var(--oc-surface); border-color: rgba(var(--oc-ink), 0.08); color: var(--oc-text); fill: var(--oc-text); }
+.oc-mindmap .react-flow__controls-button:hover { background: var(--oc-raised-hover); }
+.oc-mm-minimap { background: var(--oc-surface) !important; border-radius: 8px; overflow: hidden; border: 1px solid rgba(var(--oc-ink), 0.1); }
+.oc-mm-embed { width: 100%; border-radius: 10px; border: 1px solid rgba(var(--oc-ink), 0.1); background: var(--oc-canvas); overflow: hidden; }
+.oc-mm-embed.is-empty { padding: 14px; }
+.oc-mm-embed-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid rgba(var(--oc-ink), 0.07); }
+.oc-mm-embed-head button, .oc-mm-embed-pick button {
+  display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; color: var(--oc-text); background: rgba(var(--oc-ink), 0.06);
+}
+.oc-mm-embed-head button:hover, .oc-mm-embed-pick button:hover { background: rgba(var(--oc-ink), 0.12); }
+.oc-mm-embed-title { font-size: 14px; font-weight: 600; color: var(--oc-text-strong); }
+.oc-mm-embed-hint { margin-top: 4px; font-size: 13px; color: var(--oc-text-2); }
+.oc-mm-embed-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.oc-mm-embed-canvas { height: 260px; padding: 8px; cursor: zoom-in; }
+.oc-file-embed { overflow: hidden; padding: 12px 16px; color: var(--oc-text-2); font-size: 13px; line-height: 1.5; }
+.oc-file-embed img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.oc-file-embed h4 { margin: 6px 0 2px; font-weight: 600; color: var(--oc-text-strong); }
+
+.oc-mm-collapsed { font-size: 11px; font-weight: 400; color: var(--oc-text-2); }
+
+/* Mindmap motion: topics pop in, the toolbar rises in, connectors draw on. */
+@keyframes oc-mm-pop { from { opacity: 0; transform: scale(0.85); } }
+.oc-mm-node { animation: oc-mm-pop 200ms cubic-bezier(0.3, 1.4, 0.5, 1) backwards; }
+.oc-mm-toolbar { animation: oc-pop-in 140ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+@keyframes oc-mm-draw { from { stroke-dasharray: 0 3000; } to { stroke-dasharray: 3000 0; } }
+.oc-mindmap .react-flow__edge-path { animation: oc-mm-draw 400ms ease-out; transition: stroke 150ms ease; }
+.oc-mindmap .react-flow__node.dragging .oc-mm-node { transform: scale(1.04); box-shadow: 0 10px 24px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k))); }
+
+.oc-mm-btn.is-on { color: var(--color-sky-400); border-color: color-mix(in srgb, var(--color-sky-500) 55%, transparent); background: color-mix(in srgb, var(--color-sky-500) 16%, var(--oc-surface)); }
+.oc-mm-minimap { animation: oc-pop-in 160ms cubic-bezier(0.2, 0, 0, 1) backwards; transform-origin: bottom left; }
+
+/* Connect mode: crosshair, and the topic under the cursor lights up as the target. */
+.oc-mindmap.is-connecting .react-flow__pane, .oc-mindmap.is-connecting .react-flow__node { cursor: crosshair !important; }
+.oc-mindmap.is-connecting .react-flow__node:hover .oc-mm-node { box-shadow: 0 0 0 2px var(--color-sky-500), 0 0 0 6px color-mix(in srgb, var(--color-sky-500) 25%, transparent); }
+
+/* Brand colours: the logo's deep blue into the wordmark's sky blue. Fixed,
+   unlike the user-picked accent. */
+:root { --oc-brand-deep: #0b3d91; --oc-brand: #2383e2; --oc-brand-light: #5aa2e9; }
+
+/* Home hero: subtle brand glow (navy card, blue light from the top-left). */
+.oc-home-hero {
+  border-color: color-mix(in srgb, var(--oc-brand-light) 22%, transparent) !important;
+  background:
+    radial-gradient(110% 140% at 0% 0%, color-mix(in srgb, var(--oc-brand) 30%, transparent), transparent 55%),
+    radial-gradient(80% 120% at 100% 100%, color-mix(in srgb, var(--oc-brand-deep) 45%, transparent), transparent 65%),
+    linear-gradient(160deg, color-mix(in srgb, var(--oc-brand-deep) 22%, var(--oc-raised)), var(--oc-raised));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--oc-brand-light) 14%, transparent);
+  animation: oc-card-in 320ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+.oc-home-brand { animation: oc-card-in 300ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+
+/* Branding: soft accent glow under the logo, gradient wordmark on Home. */
+.oc-brand-logo { filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--oc-brand) 40%, transparent)); }
+.oc-brand-word {
+  background: linear-gradient(90deg, var(--oc-text-strong), var(--oc-brand-light));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Home: one glass card style for actions, recents, upcoming and maps. */
+.oc-glass {
+  border-radius: 14px;
+  border: 1px solid rgba(var(--oc-ink), 0.07);
+  background: color-mix(in srgb, var(--oc-raised) 82%, transparent);
+  backdrop-filter: blur(10px);
+}
+.oc-glass-hover { transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
+.oc-glass-hover:hover {
+  transform: translateY(-2px);
+  background: var(--oc-raised-hover);
+  border-color: color-mix(in srgb, var(--oc-brand-light) 45%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--oc-brand) 18%, transparent);
+}
+
+/* Mindmap brand: violet into blue (matches the Mindmap logo). */
+:root { --oc-mm-violet: #7c3aed; --oc-mm-violet-light: #a78bfa; }
+.oc-mm-hero {
+  border-color: color-mix(in srgb, var(--oc-mm-violet-light) 25%, transparent);
+  background:
+    radial-gradient(110% 140% at 0% 0%, color-mix(in srgb, var(--oc-mm-violet) 32%, transparent), transparent 55%),
+    radial-gradient(90% 130% at 100% 100%, color-mix(in srgb, var(--oc-brand) 30%, transparent), transparent 60%),
+    linear-gradient(160deg, color-mix(in srgb, var(--oc-mm-violet) 14%, var(--oc-raised)), var(--oc-raised));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--oc-mm-violet-light) 14%, transparent);
+  animation: oc-card-in 320ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+.oc-mm-template { transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.oc-mm-template:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--oc-mm-violet-light) 55%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--oc-mm-violet) 24%, transparent);
+}
+.oc-mm-template-art {
+  background:
+    radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--oc-mm-violet) 18%, transparent), transparent 60%),
+    radial-gradient(120% 120% at 100% 100%, color-mix(in srgb, var(--oc-brand) 16%, transparent), transparent 60%),
+    var(--oc-canvas);
+}
+
+/* Branding motion (Home): the wordmark's letters bob like a slow swell and
+   catch the light; the logo floats while its glow breathes. */
+.oc-wave-word { display: inline-flex; }
+.oc-wave-word > span { display: inline-block; animation: oc-wave 3.2s ease-in-out infinite; }
+@keyframes oc-wave {
+  0%, 100% { transform: translateY(0); filter: brightness(1); }
+  25% { transform: translateY(-6px); filter: brightness(1.18); }
+  50% { transform: translateY(0); }
+  75% { transform: translateY(3px); filter: brightness(0.94); }
+}
+.oc-logo-float { animation: oc-float 5s ease-in-out infinite, oc-glow 5s ease-in-out infinite; }
+@keyframes oc-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes oc-glow {
+  0%, 100% { filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--oc-brand) 30%, transparent)); }
+  50% { filter: drop-shadow(0 8px 22px color-mix(in srgb, var(--oc-brand) 60%, transparent)); }
+}
+
+/* Action tiles: each has its own tone (icon tint + hover glow). */
+.oc-action-tile { transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
+.oc-action-tile:hover {
+  transform: translateY(-2px);
+  background: var(--oc-raised-hover);
+  border-color: color-mix(in srgb, var(--tone) 50%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--tone) 18%, transparent);
+}
+.oc-action-icon { color: var(--tone); background: color-mix(in srgb, var(--tone) 15%, transparent); }
+
+/* Mindmap branding: the logo blooms out with ripples; letters appear like nodes. */
+/* Logo: blooms in, then sways gently around the shell like branches in a
+   current, while its glow breathes. */
+.oc-mm-logo {
+  position: relative;
+  transform-origin: 31% 49%;
+  animation:
+    oc-mm-bloom 700ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards,
+    oc-mm-sway 6s 700ms ease-in-out infinite,
+    oc-glow 5s 700ms ease-in-out infinite;
+}
+@keyframes oc-mm-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes oc-mm-bloom { from { transform: scale(0.4) rotate(-25deg); opacity: 0; } }
+.oc-mm-logo-wrap { position: relative; display: grid; place-items: center; }
+/* Three staggered rings, centred on the shell (≈31% across, 49% down the
+   image): they leave in the logo's blue and turn violet as they spread. */
+.oc-mm-ring {
+  position: absolute; width: 52%; height: 52%; left: calc(31% - 26%); top: calc(49% - 26%);
+  border-radius: 999px; border: 2.5px solid var(--oc-brand); pointer-events: none;
+  animation: oc-mm-ripple 3.6s ease-out infinite;
+}
+.oc-mm-ring:nth-child(2) { animation-delay: 1.2s; }
+.oc-mm-ring:nth-child(3) { animation-delay: 2.4s; }
+@keyframes oc-mm-ripple {
+  0% { transform: scale(0.7); opacity: 0.95; border-color: var(--oc-brand); box-shadow: 0 0 14px color-mix(in srgb, var(--oc-brand) 60%, transparent); }
+  55% { border-color: var(--oc-mm-violet-light); box-shadow: 0 0 18px color-mix(in srgb, var(--oc-mm-violet-light) 45%, transparent); }
+  100% { transform: scale(2.4); opacity: 0; border-color: var(--oc-mm-violet-light); box-shadow: 0 0 22px transparent; }
+}
+.oc-node-word { display: inline-flex; }
+/* Letters arrive like nodes, then a signal sweeps through them every few
+   seconds: each lifts and brightens in turn. */
+.oc-node-word > span {
+  display: inline-block;
+  animation:
+    oc-node-in 420ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards,
+    oc-node-pulse 4.5s ease-in-out infinite;
+}
+@keyframes oc-node-pulse {
+  0%, 14%, 100% { transform: translateY(0); filter: brightness(1); }
+  6% { transform: translateY(-5px); filter: brightness(1.45) drop-shadow(0 0 10px color-mix(in srgb, var(--oc-mm-violet-light) 60%, transparent)); }
+}
+@keyframes oc-node-in { from { opacity: 0; transform: translateY(10px) scale(0.6); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-wave-word > span, .oc-logo-float, .oc-mm-logo, .oc-mm-ring, .oc-node-word > span { animation: none !important; }
+}
+
+/* Mindmap wordmark: white into the Mindmap violet (sidebar header). */
+.oc-mm-word {
+  background: linear-gradient(90deg, var(--oc-text-strong), var(--oc-mm-violet-light));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Canvas: a hovered parent's orbiting children breathe a soft glow in its tint. */
+@keyframes oc-orbit-glow {
+  0%, 100% { box-shadow: 0 0 6px 0 color-mix(in srgb, var(--glow) 35%, transparent); }
+  50% { box-shadow: 0 0 22px 4px color-mix(in srgb, var(--glow) 70%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { [style*="oc-orbit-glow"] { animation: none !important; } }
+
+/* Chrome-style active tab: curved "ears" flow its bottom corners into the page. */
+.oc-tab-active::before, .oc-tab-active::after {
+  content: ""; position: absolute; bottom: 0; width: 10px; height: 10px; pointer-events: none;
+}
+.oc-tab-active::before { left: -10px; border-bottom-right-radius: 10px; box-shadow: 4px 4px 0 4px var(--color-neutral-900, #171717); }
+.oc-tab-active::after { right: -10px; border-bottom-left-radius: 10px; box-shadow: -4px 4px 0 4px var(--color-neutral-900, #171717); }
+
+/* ---------------------------------------------------------- Oceanic Docs */
+:root { --oc-docs: #0fb5ba; --oc-docs-light: #67e8e0; } /* ocean teal: half green, half blue */
+.oc-docs-word { background: linear-gradient(90deg, var(--oc-text-strong), var(--oc-docs-light)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Home: logo lifts in; the wordmark is written on like ink, then fills. */
+.oc-docs-logo { animation: oc-docs-lift 900ms cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards, oc-docs-glow 5s 900ms ease-in-out infinite; }
+@keyframes oc-docs-lift { from { opacity: 0; transform: translateY(18px) scale(0.9); } }
+@keyframes oc-docs-glow {
+  0%, 100% { filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--oc-docs) 30%, transparent)); }
+  50% { filter: drop-shadow(0 8px 22px color-mix(in srgb, var(--oc-docs) 60%, transparent)); }
+}
+.oc-ink-word text {
+  stroke-width: 1.5; stroke-dasharray: 900; stroke-dashoffset: 900; fill-opacity: 0;
+  animation: oc-ink-draw 1.6s 300ms ease-in-out forwards, oc-ink-fill 600ms 1.5s ease-out forwards;
+}
+@keyframes oc-ink-draw { to { stroke-dashoffset: 0; } }
+@keyframes oc-ink-fill { to { fill-opacity: 1; stroke-width: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .oc-docs-logo { animation: none; }
+  .oc-ink-word text { animation: none; stroke-dashoffset: 0; fill-opacity: 1; }
+}
+/* Page canvas: gray desk, white paper whatever the theme. */
+.oc-doc-canvas { background: #2b2b2b; }
+:root[data-theme="light"] .oc-doc-canvas { background: #e8e8e8; }
+.oc-doc-body { outline: none; font-family: Calibri, Carlito, Arial, sans-serif; font-size: 11pt; line-height: 1.15; color: #000; min-height: 100%; }
+.oc-doc-body p { margin: 0 0 8pt; }
+.oc-doc-body h1 { font-size: 26pt; font-weight: 400; margin: 0 0 6pt; }
+.oc-doc-body h2 { font-size: 16pt; color: #2f5496; margin: 12pt 0 4pt; }
+.oc-doc-body h3 { font-size: 13pt; color: #2f5496; margin: 10pt 0 4pt; }
+.oc-doc-body h4 { font-size: 12pt; color: #1f3763; margin: 8pt 0 4pt; }
+.oc-doc-body ul { list-style: disc; padding-left: 24pt; }
+.oc-doc-body ol { list-style: decimal; padding-left: 24pt; }
+.oc-doc-body li p { margin: 0; }
+.oc-doc-body img { max-width: 100%; height: auto; vertical-align: middle; }
+/* Word keeps every space/tab the author typed and uses them for alignment
+   (e.g. a logo "centered" by padding spaces in a justified paragraph).
+   Collapse-free text is what makes those layouts land correctly. */
+.oc-doc-body p,
+.oc-doc-body h1,
+.oc-doc-body h2,
+.oc-doc-body h3,
+.oc-doc-body h4,
+.oc-doc-body li,
+.oc-doc-body td,
+.oc-doc-body th { white-space: pre-wrap; }
+.oc-doc-body table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
+.oc-doc-body td, .oc-doc-body th { border: 1px solid #999; padding: 4pt 6pt; vertical-align: top; }
+.oc-doc-body th { background: #f2f2f2; font-weight: 600; }
+.oc-page-break { margin: 18pt 0; border-top: 1px dashed #bbb; position: relative; }
+.oc-page-break::after { content: "Page break"; position: absolute; left: 50%; top: -8px; transform: translateX(-50%); background: #fff; padding: 0 6px; font: 10px sans-serif; color: #999; }
+@media print {
+  body * { visibility: hidden; }
+  .oc-doc-pages, .oc-doc-pages * { visibility: visible; }
+  /* Lift the paper out of the app: no transforms/offsets above it, so pages start at the sheet's corner. */
+  html, body, #root { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .oc-docs, .oc-doc-canvas, .oc-doc-zoom-box, .oc-doc-zoom { position: static !important; transform: none !important; overflow: visible !important; padding: 0 !important; margin: 0 !important; }
+  .oc-doc-pages { position: absolute !important; left: 0; top: 0; margin: 0 !important; }
+  .oc-doc-page { border: 0 !important; }
+  .oc-doc-pages * { animation: none !important; }
+  .oc-doc-page { box-shadow: none !important; }
+  .oc-page-break { break-after: page; border: 0; }
+  .oc-page-break::after { display: none; }
+}
+
+/* Docs Home template cards: glass tinted by each template's colour. */
+.oc-template {
+  background: color-mix(in srgb, var(--tone) 9%, var(--oc-raised));
+  border-color: color-mix(in srgb, var(--tone) 22%, transparent);
+  transition: border-color 150ms, box-shadow 150ms, background-color 150ms;
+}
+.oc-template:hover {
+  background: color-mix(in srgb, var(--tone) 15%, var(--oc-raised));
+  border-color: color-mix(in srgb, var(--tone) 55%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+
+/* Printing a doc: no browser header/footer (date, title); the page box carries its own margins. */
+@media print { @page { margin: 0; } }
+
+/* Seam bridges: white band over the card gap where a tall table/figure flows across pages.
+   Keeps the paper looking continuous, prevents a dark gap/border cutting through content. */
+.oc-page-bridge { position: absolute; left: 0; right: 0; background: #fff; pointer-events: none; z-index: 1; }
+@media print { .oc-page-bridge { display: none; } }
+
+
+/* Oceanic Docs chrome: neutral surfaces (brand colour only on accents). */
+.oc-docs-chrome { background: var(--oc-surface); border-bottom: 1px solid rgba(255,255,255,0.06); }
+.oc-docs-ribbon { background: var(--oc-raised); border-bottom: 1px solid rgba(var(--oc-ink),0.08); }
+:root[data-theme="light"] .oc-docs-ribbon { background: #f3f3f3; }
+
+/* Word-style title band + tab row in the user's accent (Settings → Accent Color). */
+.oc-docs-titlebar { background: var(--color-sky-600); color: #fff; }
+.oc-docs-titlebar .oc-press { color: #fff; }
+.oc-docs-titlebar .oc-press:hover { background: rgba(255,255,255,0.16); }
+.oc-docs-titlebar button[title] { color: rgba(255,255,255,0.9); }
+.oc-docs-titlebar button[title]:not([title="Close"]):hover { background: rgba(255,255,255,0.16); color: #fff; }
+.oc-docs-titlebar-status span { color: rgba(255,255,255,0.7) !important; padding: 0; font-size: 11.5px; }
+.oc-docs-tab { color: #fff; transition: background-color 120ms ease, color 120ms ease; }
+.oc-docs-tab:hover:not(.is-on) { background: rgba(255,255,255,0.14); }
+.oc-docs-tab.is-on { background: var(--oc-raised); color: var(--color-sky-600); font-weight: 600; }
+:root[data-theme="light"] .oc-docs-tab.is-on { background: #f3f3f3; }
+:root:not([data-theme="light"]) .oc-docs-tab.is-on { color: var(--color-sky-400); }
+.oc-docs-status { background: var(--oc-surface); border-top: 1px solid rgba(255,255,255,0.06); }
+.oc-docs-backstage { background: var(--oc-raised); border-right: 1px solid rgba(255,255,255,0.06); }
+
+/* Docs: floated (wrapped) pictures and Word table widths. */
+/* Float the picture's outer wrapper (the inner <img> also carries the attribute). */
+.oc-doc-body [data-resize-container][data-float="left"] { float: left; margin: 2pt 10pt 6pt 0; }
+.oc-doc-body [data-resize-container][data-float="right"] { float: right; margin: 2pt 0 6pt 10pt; }
+.oc-doc-body [data-resize-container] { cursor: grab; max-width: 100%; }
+.oc-doc-body [data-resize-container].ProseMirror-selectednode { outline: 2px solid var(--oc-docs); outline-offset: 2px; }
+.oc-doc-body .tableWrapper { overflow: visible; }
+.oc-doc-body table:has(colgroup col[style*="width"]) { width: auto; table-layout: fixed; }
+
+/* Tabs: Word's default stop is every 0.5in; paragraphs override via tab-size. */
+.oc-doc-body { tab-size: 36pt; }
+
+/* ---------------------------------------------------------- Docs motion + polish */
+@keyframes oc-docs-down { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes oc-docs-up { from { opacity: 0; transform: translateY(8px); } }
+@keyframes oc-docs-swap { from { opacity: 0; transform: translateX(10px); } }
+@keyframes oc-page-rise { from { opacity: 0; transform: translateY(14px) scale(0.985); } }
+@keyframes oc-docs-pop { from { opacity: 0; transform: translateY(-4px) scale(0.97); } }
+@keyframes oc-rail-in { from { transform: translateX(-100%); } }
+@keyframes oc-fade { from { opacity: 0; } }
+@keyframes oc-node-pop { from { opacity: 0; transform: scale(0.96); } }
+.oc-docs-enter { animation: oc-docs-down 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-docs-enter-up { animation: oc-docs-up 240ms 80ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-ribbon-swap > * { animation: oc-docs-swap 200ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-ribbon-swap > *:nth-child(2) { animation-delay: 30ms; } .oc-ribbon-swap > *:nth-child(3) { animation-delay: 60ms; } .oc-ribbon-swap > *:nth-child(n+4) { animation-delay: 90ms; }
+.oc-page-rise { animation: oc-page-rise 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18), 0 6px 22px rgba(0,0,0,0.22); }
+.oc-docs-pop { animation: oc-docs-pop 150ms cubic-bezier(0.2, 0.8, 0.2, 1); transform-origin: top left; }
+.oc-docs-tip { animation: oc-fade 120ms ease-out; }
+.oc-swatch { animation: oc-node-pop 160ms ease-out backwards; }
+.oc-backstage-in { animation: oc-fade 160ms ease-out; }
+.oc-backstage-rail { animation: oc-rail-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.oc-press { transition: transform 100ms ease, background-color 150ms ease, color 150ms ease; }
+.oc-press:active { transform: scale(0.92); }
+.oc-style-tile { transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
+.oc-style-tile:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.3); }
+/* Inserted pictures/tables pop in; selection in the brand tint. */
+.oc-doc-body img, .oc-doc-body .tableWrapper { animation: oc-node-pop 220ms ease-out; }
+.oc-doc-body ::selection { background: color-mix(in srgb, var(--oc-docs) 30%, transparent); }
+.oc-doc-body { caret-color: #0b6f80; }
+/* Softer desk. */
+.oc-docs .oc-doc-canvas { background: #2a2c2d; }
+:root[data-theme="light"] .oc-docs .oc-doc-canvas { background: #e9ebec; }
+@media (prefers-reduced-motion: reduce) {
+  .oc-docs-enter, .oc-docs-enter-up, .oc-ribbon-swap > *, .oc-page-rise, .oc-docs-pop, .oc-docs-tip, .oc-swatch, .oc-backstage-in, .oc-backstage-rail, .oc-doc-body img, .oc-doc-body .tableWrapper { animation: none !important; }
+}
+
+/* Docs Home: a calmer entrance when returning from a document. */
+.oc-docs-home-in { animation: oc-rise-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+@media (prefers-reduced-motion: reduce) { .oc-docs-home-in { animation: none; } }
+
+/* Explicit pointers in Docs so the WebView always re-asserts one on move. */
+.oc-doc-canvas { cursor: default; }
+.oc-doc-body { cursor: text; }
+.oc-doc-body img, .oc-doc-body [data-resize-container] { cursor: grab; }
+
+/* Oceanic Sketch brand: coral. Placeholder until the Sketch screens settle on their text colour. */
+.oc-sketch-word { background: linear-gradient(90deg, var(--oc-text-strong), var(--oc-sketch-light)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* ---------------------------------------------------------- Oceanic Sketch (coral) */
+:root { --oc-sketch: #ff7a59; --oc-sketch-light: #ffb199; } /* matches the Sketch logo */
+.oc-sketch-word { background: linear-gradient(90deg, var(--oc-text-strong), var(--oc-sketch-light)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.oc-sketch-logo { animation: oc-sketch-pop 800ms cubic-bezier(0.3, 1.4, 0.5, 1) backwards, oc-sketch-sway 6s 800ms ease-in-out infinite; }
+@keyframes oc-sketch-pop { from { opacity: 0; transform: rotate(-18deg) scale(0.6); } }
+@keyframes oc-sketch-sway { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-4deg); } }
+/* Wordmark painted on with a brush: thick stroke sweeps, then fills. */
+.oc-brush-word text { stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1000; stroke-dashoffset: 1000; fill-opacity: 0;
+  animation: oc-ink-draw 1.5s 250ms cubic-bezier(0.6, 0, 0.3, 1) forwards, oc-ink-fill 500ms 1.4s ease-out forwards; }
+.oc-sketch-desk { background: #2a2c2d; }
+:root[data-theme="light"] .oc-sketch-desk { background: #e9ebec; }
+.oc-sketch-sheet { box-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 26px rgba(0,0,0,0.3); animation: oc-page-rise 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-sketch-panel { background: var(--oc-surface); border-left: 1px solid rgba(255,255,255,0.06); border-right: 1px solid rgba(255,255,255,0.06); }
+/* Transparency checkerboard. */
+.oc-checker { background-color: #fff; background-image: conic-gradient(#e5e5e5 25%, transparent 0 50%, #e5e5e5 0 75%, transparent 0); background-size: 16px 16px; }
+/* Marching-ants selection. */
+.oc-marquee { outline: 1px dashed #000; box-shadow: 0 0 0 1px #fff; animation: oc-ants 0.6s linear infinite; }
+@keyframes oc-ants { to { outline-offset: 0; } }
+@media (prefers-reduced-motion: reduce) { .oc-sketch-logo, .oc-sketch-sheet { animation: none; } .oc-brush-word text { animation: none; stroke-dashoffset: 0; fill-opacity: 1; } }
+
+/* ---------------------------------------------------------- App homes (Docs, Sketch, Mindmap): lively */
+/* Two soft brand-tinted glows drift slowly behind the content. */
+.oc-app-home::before, .oc-app-home::after {
+  content: ""; position: absolute; z-index: 0; pointer-events: none; border-radius: 9999px; filter: blur(70px);
+  background: color-mix(in srgb, var(--home-tone) 22%, transparent);
+}
+.oc-app-home::before { width: 420px; height: 420px; top: 8%; left: 18%; animation: oc-drift-a 18s ease-in-out infinite alternate; }
+.oc-app-home::after { width: 360px; height: 360px; bottom: 6%; right: 12%; background: color-mix(in srgb, var(--home-tone) 14%, transparent); animation: oc-drift-b 22s ease-in-out infinite alternate; }
+@keyframes oc-drift-a { to { transform: translate(120px, 60px) scale(1.15); } }
+@keyframes oc-drift-b { to { transform: translate(-140px, -50px) scale(0.9); } }
+/* Sections arrive one after another. */
+.oc-stagger > * { animation: oc-rise-in 600ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+.oc-stagger > *:nth-child(2) { animation-delay: 120ms; }
+.oc-stagger > *:nth-child(3) { animation-delay: 240ms; }
+.oc-stagger > *:nth-child(4) { animation-delay: 360ms; }
+.oc-stagger > *:nth-child(n+5) { animation-delay: 480ms; }
+/* Cards and thumbnails in a grid pop in a wave; hovering lifts with a brand glow. */
+.oc-stagger section button { animation: oc-node-pop 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-stagger section button:nth-child(2) { animation-delay: 60ms; } .oc-stagger section button:nth-child(3) { animation-delay: 120ms; }
+.oc-stagger section button:nth-child(4) { animation-delay: 180ms; } .oc-stagger section button:nth-child(n+5) { animation-delay: 240ms; }
+.oc-stagger section button:hover { filter: drop-shadow(0 8px 18px color-mix(in srgb, var(--home-tone) 25%, transparent)); }
+@media (prefers-reduced-motion: reduce) {
+  .oc-app-home::before, .oc-app-home::after, .oc-stagger > *, .oc-stagger section button { animation: none !important; }
+}
+
+/* Per-app motifs behind the homes. */
+.oc-motif { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; width: 100%; height: 100%; }
+.oc-splash { position: absolute; animation: oc-splash-in 900ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards, oc-bob 7s ease-in-out infinite alternate; }
+@keyframes oc-splash-in { from { transform: scale(0) rotate(-40deg); opacity: 0; } }
+@keyframes oc-bob { to { translate: 0 -14px; rotate: 12deg; } }
+.oc-stroke { position: absolute; left: 0; bottom: 12%; width: 100%; height: 160px; }
+.oc-stroke path { stroke-dasharray: 1400; stroke-dashoffset: 1400; animation: oc-ink-draw 3s 400ms ease-in-out forwards; }
+.oc-floatpage { position: absolute; bottom: -60px; width: 38px; height: 50px; animation: oc-floatup linear infinite; }
+@keyframes oc-floatup { 0% { transform: translateY(0) rotate(-8deg); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(-115vh) rotate(14deg); opacity: 0; } }
+.oc-netmotif circle { fill: var(--oc-mm-violet-light); opacity: .45; transform-box: fill-box; transform-origin: center;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--oc-mm-violet-light) 70%, transparent)); animation: oc-net-pulse 4s ease-in-out infinite; }
+@keyframes oc-net-pulse { 50% { transform: scale(1.5); opacity: .8; } }
+/* Thin connector lines that softly brighten in turn. */
+.oc-netmotif line { stroke: var(--oc-mm-violet-light); stroke-width: 1; stroke-linecap: round; opacity: .14; animation: oc-signal 5s ease-in-out infinite; }
+@keyframes oc-signal { 50% { opacity: .32; } }
+@media (prefers-reduced-motion: reduce) { .oc-motif * { animation: none !important; } .oc-stroke path { stroke-dashoffset: 0; } }
+
+/* Sketch home: livelier — bigger bob, looping brush strokes, rising droplets, wiggling logo. */
+.oc-splash { animation: oc-splash-in 900ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards, oc-bob-big 5s ease-in-out infinite alternate; }
+@keyframes oc-bob-big { 0% { translate: 0 0; rotate: 0deg; scale: 1; } 50% { scale: 1.12; } 100% { translate: 0 -30px; rotate: 25deg; scale: 0.95; } }
+.oc-stroke path { animation: oc-stroke-loop 9s 400ms ease-in-out infinite; }
+.oc-stroke-2 { bottom: 30%; }
+.oc-stroke-2 path { animation-delay: 3s; animation-duration: 11s; }
+@keyframes oc-stroke-loop { 0% { stroke-dashoffset: 1400; } 45%, 55% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -1400; } }
+.oc-droplet { position: absolute; bottom: -20px; width: 10px; height: 10px; border-radius: 50% 50% 50% 0; rotate: -45deg; opacity: 0; animation: oc-floatup linear infinite; filter: saturate(1.2); }
+.oc-sketch-logo { animation: oc-sketch-pop 800ms cubic-bezier(0.3, 1.4, 0.5, 1) backwards, oc-sketch-wiggle 3.2s 800ms ease-in-out infinite; }
+@keyframes oc-sketch-wiggle { 0%, 100% { transform: rotate(0) translateY(0); } 25% { transform: rotate(-6deg) translateY(-4px); } 75% { transform: rotate(4deg) translateY(2px); } }
+@media (prefers-reduced-motion: reduce) { .oc-droplet, .oc-sketch-logo { animation: none !important; } }
+
+/* ---------------------------------------------------------- Student dashboard */
+.oc-widget { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
+.oc-widget:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--tone) 35%, transparent); box-shadow: 0 10px 28px color-mix(in srgb, var(--tone) 14%, transparent); }
+.oc-row-in { animation: oc-rise-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-tick { animation: oc-tick 260ms cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes oc-tick { from { transform: scale(0.4); } }
+.oc-flame { animation: oc-flame 1.6s ease-in-out infinite; transform-origin: bottom center; }
+@keyframes oc-flame { 50% { transform: scale(1.15) rotate(-6deg); } }
+.oc-bar { animation: oc-bar-grow 600ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; transform-origin: bottom; }
+@keyframes oc-bar-grow { from { transform: scaleY(0); } }
+@media (prefers-reduced-motion: reduce) { .oc-widget, .oc-row-in, .oc-tick, .oc-flame, .oc-bar { animation: none !important; transition: none; } }
+
+/* Student dashboard cards: soft gradient glass in each card's own colour. */
+.oc-card {
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tone) 16%, transparent), transparent 60%),
+    linear-gradient(160deg, color-mix(in srgb, var(--tone) 7%, var(--oc-raised)), var(--oc-raised));
+  border: 1px solid color-mix(in srgb, var(--tone) 20%, rgba(255,255,255,0.06));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 10px rgba(0,0,0,0.18);
+}
+.oc-doodle { color: var(--tone); opacity: 0.07; transform: rotate(12deg); transition: opacity 200ms, transform 300ms; }
+.oc-card:hover .oc-doodle { opacity: 0.12; transform: rotate(4deg) scale(1.05); }
+.oc-class { animation: oc-node-pop 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; transition: transform 180ms ease, box-shadow 180ms ease; }
+.oc-class:hover { transform: translateY(-3px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 28px color-mix(in srgb, var(--tone) 22%, transparent); }
+.oc-class-art { background: radial-gradient(70% 90% at 50% 30%, color-mix(in srgb, var(--tone) 22%, transparent), transparent 70%); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.oc-class-art svg { transition: transform 300ms cubic-bezier(0.3, 1.4, 0.5, 1); }
+.oc-class:hover .oc-class-art svg { transform: scale(1.08) rotate(-4deg); }
+.oc-progress { animation: oc-progress 900ms 200ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; transform-origin: left; }
+@keyframes oc-progress { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .oc-class, .oc-progress { animation: none !important; } }
+
+/* Dashboard edit mode: cards wiggle gently while you rearrange them. */
+.oc-jiggle { animation: oc-jiggle 0.5s ease-in-out infinite alternate; }
+@keyframes oc-jiggle { from { transform: rotate(-0.35deg); } to { transform: rotate(0.35deg); } }
+@media (prefers-reduced-motion: reduce) { .oc-jiggle { animation: none; } }
+
+/* Free dashboard grid: cards fill their cell and scroll inside when content is taller. */
+.oc-fill > * { height: 100%; }
+.oc-fill > section, .oc-fill > aside { overflow: auto; scrollbar-width: thin; }
+.oc-fill .oc-card { height: 100%; }
+/* Faint cell guides while customising. */
+.oc-grid-lines { background-image: linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: calc((100% + 12px) / 12) 36px; border-radius: 12px; }
+@media (max-width: 767px) { .oc-freegrid { display: flex !important; flex-direction: column; } .oc-freegrid > div { min-height: 220px; } }
+
+/* ---------------------------------------------------------- Update UI */
+.oc-update-toast { animation: oc-toast-up 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards; }
+@keyframes oc-toast-up { from { opacity: 0; transform: translateY(24px) scale(0.95); } }
+.oc-update-hero { background: linear-gradient(180deg, #0b1d3a, #0b3d91 85%); }
+.oc-update-sea { overflow: hidden; }
+.oc-wave { position: absolute; left: 0; top: 0; width: 200%; height: 48px; fill: var(--oc-brand); animation: oc-wave-move linear infinite; }
+.oc-wave-0 { opacity: .35; animation-duration: 9s; }
+.oc-wave-1 { opacity: .5; top: 8px; animation-duration: 6s; animation-direction: reverse; }
+.oc-wave-2 { opacity: .8; top: 16px; animation-duration: 4.5s; fill: color-mix(in srgb, var(--oc-brand) 70%, #fff 0%); }
+@keyframes oc-wave-move { to { transform: translateX(-50%); } }
+.oc-update-logo { animation: oc-logo-bob 3s ease-in-out infinite, oc-node-pop 600ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards; }
+@keyframes oc-logo-bob { 50% { translate: 0 -6px; rotate: -3deg; } }
+.oc-update-badge { animation: oc-rise-in 500ms 200ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-confetti { width: 7px; height: 11px; border-radius: 2px; animation: oc-confetti 1.8s cubic-bezier(0.3, 0.6, 0.5, 1) forwards; }
+@keyframes oc-confetti { from { transform: translateY(-20px) rotate(0); opacity: 1; } to { transform: translateY(170px) rotate(540deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .oc-update-toast, .oc-wave, .oc-update-logo, .oc-update-badge, .oc-confetti { animation: none !important; } }
+
+/* Update hero, richer: deeper wave colours, rays, bubbles, shimmering badge. */
+.oc-wave-0 { fill: #1e5fb8; }
+.oc-wave-1 { fill: #2a78d6; }
+.oc-wave-2 { fill: #3b8ff0; }
+.oc-update-sea > div { background: linear-gradient(180deg, #2f7fe0, #0b3d91) !important; }
+.oc-rays { position: absolute; inset: -40% -20% auto; height: 180%; pointer-events: none;
+  background: repeating-conic-gradient(from 200deg at 50% 0%, rgba(255,255,255,0.09) 0deg 6deg, transparent 6deg 18deg);
+  mask-image: linear-gradient(180deg, black, transparent 70%); animation: oc-rays 14s ease-in-out infinite alternate; }
+@keyframes oc-rays { to { transform: rotate(8deg) translateX(4%); } }
+.oc-bubble { position: absolute; bottom: -10px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.12); animation: oc-bubble linear infinite; }
+@keyframes oc-bubble { 0% { transform: translateY(0) translateX(0); opacity: 0; } 15% { opacity: 1; } 50% { transform: translateY(-60px) translateX(6px); } 100% { transform: translateY(-130px) translateX(-4px); opacity: 0; } }
+.oc-update-logo { animation: oc-ride 3.2s ease-in-out infinite, oc-node-pop 600ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards; }
+@keyframes oc-ride { 0%, 100% { translate: 0 0; rotate: -4deg; } 50% { translate: 0 -7px; rotate: 4deg; } }
+.oc-shimmer { overflow: hidden; }
+.oc-shimmer::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%); transform: translateX(-120%); animation: oc-shine 2.8s 0.8s ease-in-out infinite; }
+@keyframes oc-shine { 60%, 100% { transform: translateX(120%); } }
+@media (prefers-reduced-motion: reduce) { .oc-rays, .oc-bubble, .oc-shimmer::after { animation: none !important; } }
+
+/* Settings → Preferences → Editor text size (headings are em-based, so they follow). */
+:root[data-editor-size="small"] .bn-container .bn-editor { font-size: 14px; }
+:root[data-editor-size="large"] .bn-container .bn-editor { font-size: 18px; }
+
+/* App-switch loader: logo lifts in with a soft glow, name follows, bar fills. */
+@keyframes oc-loader-logo { from { opacity: 0; transform: translateY(14px) scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes oc-loader-glow { 0%, 100% { filter: drop-shadow(0 0 0 transparent); } 50% { filter: drop-shadow(0 0 22px color-mix(in srgb, var(--tone) 55%, transparent)); } }
+@keyframes oc-loader-text { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes oc-loader-bar { from { width: 0; } to { width: 100%; } }
+.oc-loader-logo { animation: oc-loader-logo 600ms cubic-bezier(0.2, 0, 0, 1) backwards, oc-loader-glow 2.2s 600ms ease-in-out infinite; }
+.oc-loader-text { animation: oc-loader-text 500ms 250ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.oc-loader-bar { width: 0; animation: oc-loader-bar linear forwards; animation-delay: 200ms; }
+
+/* ---------------------------------------------------------- PDF: card + reader */
+.oc-pdf-card {
+  position: relative; width: 100%; max-width: 360px; overflow: hidden; cursor: pointer; user-select: none;
+  border-radius: 12px; background: rgba(var(--oc-ink), 0.04); border: 1px solid rgba(var(--oc-ink), 0.08);
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.oc-pdf-card:hover { border-color: rgba(var(--oc-ink), 0.16); box-shadow: 0 6px 18px rgba(0, 0, 0, calc(0.25 * var(--oc-shadow-k))); }
+.oc-pdf-thumb { position: relative; height: 220px; display: grid; place-items: center; background: rgba(var(--oc-ink), 0.05); overflow: hidden; }
+.oc-pdf-thumb img { max-height: 204px; max-width: 92%; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); background: #fff; }
+.oc-pdf-thumb-wait { width: 140px; height: 190px; background: #fff; opacity: 0.6; animation: oc-pdf-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes oc-pdf-pulse { to { opacity: 0.25; } }
+.oc-pdf-peek {
+  position: absolute; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 999px; background: var(--oc-surface); color: var(--oc-text); opacity: 0; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); transition: opacity 120ms ease, transform 120ms ease;
+}
+.oc-pdf-peek:disabled { opacity: 0 !important; pointer-events: none; }
+.oc-pdf-peek:hover { transform: scale(1.08); }
+.oc-pdf-peek-l { left: 8px; }
+.oc-pdf-peek-r { right: 8px; }
+.oc-pdf-card:hover .oc-pdf-peek { opacity: 1; }
+.oc-pdf-peek-n {
+  position: absolute; bottom: 6px; right: 8px; padding: 1px 7px; border-radius: 999px; font-size: 11px;
+  background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0; transition: opacity 120ms ease;
+}
+.oc-pdf-card:hover .oc-pdf-peek-n { opacity: 1; }
+.oc-pdf-info { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.oc-pdf-name { font-size: 14px; font-weight: 500; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-pdf-meta { font-size: 12px; color: var(--oc-text-2); }
+.oc-pdf-error { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: default; color: var(--color-amber-400); }
+.oc-pdf-progress { position: relative; padding: 0 12px 10px; font-size: 11px; color: var(--oc-text-2); }
+.oc-pdf-progress i { display: block; height: 3px; margin-top: 4px; border-radius: 999px; background: var(--color-sky-500); transition: width 200ms ease; }
+
+.oc-pdf-reader { background: var(--oc-canvas); }
+.oc-pdf-scroll { position: absolute; inset: 0; overflow: auto; }
+.oc-pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-left: 72px; padding-right: 32px; }
+.oc-pdf-page { position: relative; flex-shrink: 0; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.28); }
+.oc-pdf-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.oc-pdf-dark .oc-pdf-page { background: #111; }
+.oc-pdf-dark .oc-pdf-canvas { filter: invert(1) hue-rotate(180deg); }
+.oc-pdf-title {
+  position: absolute; top: 10px; right: 18px; max-width: 40%; padding: 3px 10px; border-radius: 999px; pointer-events: none;
+  font-size: 12px; color: var(--oc-text-2); background: var(--oc-surface); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
+}
+.oc-pdf-pill {
+  position: absolute; z-index: 5; left: 14px; top: 50%; translate: 0 -50%; max-height: calc(100% - 24px); overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 999px;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.08); scrollbar-width: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-tool {
+  display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 999px; color: var(--oc-text);
+  cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
+}
+.oc-pdf-tool:hover:not(:disabled) { background: rgba(var(--oc-ink), 0.08); }
+.oc-pdf-tool:disabled { opacity: 0.35; cursor: default; }
+.oc-pdf-tool-on { background: rgba(14, 165, 233, 0.18); color: var(--color-sky-400); }
+.oc-pdf-pill-sep { display: block; flex-shrink: 0; width: 20px; height: 1px; margin: 4px 0; background: rgba(var(--oc-ink), 0.1); }
+.oc-pdf-pagebox { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--oc-text-2); }
+.oc-pdf-pagebox input {
+  width: 34px; height: 24px; text-align: center; border-radius: 6px; font-size: 12px; color: var(--oc-text-strong);
+  background: rgba(var(--oc-ink), 0.06); outline: none;
+}
+.oc-pdf-pagebox input:focus { box-shadow: 0 0 0 1.5px var(--color-sky-500); }
+.oc-pdf-zoom { width: 38px; height: 22px; flex-shrink: 0; border-radius: 6px; font-size: 10.5px; font-weight: 600; color: var(--oc-text-2); cursor: pointer; }
+.oc-pdf-zoom:hover { background: rgba(var(--oc-ink), 0.08); }
+
+/* pdf.js text layer (selectable, transparent text over the canvas) */
+.textLayer { position: absolute; text-align: initial; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; z-index: 0; }
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; }
+.textLayer span.markedContent { top: 0; height: 0; }
+.textLayer ::selection { background: rgba(0, 110, 255, 0.28); }
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
+
+/* PDF annotations */
+.oc-pdf-ann { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: visible; }
+.oc-pdf-ann-item { pointer-events: visiblePainted; cursor: move; }
+.oc-pdf-ann-draw { pointer-events: all; cursor: crosshair; }
+.oc-pdf-ann-draw .oc-pdf-ann-item { pointer-events: none; }
+.oc-pdf-ann-erase { cursor: cell; }
+.oc-pdf-sel rect:first-child { stroke: var(--color-sky-500); pointer-events: none; }
+.oc-pdf-handle { fill: #fff; stroke: var(--color-sky-500); pointer-events: all; }
+.oc-pdf-handle-0, .oc-pdf-handle-2 { cursor: nwse-resize; }
+.oc-pdf-handle-1, .oc-pdf-handle-3 { cursor: nesw-resize; }
+@keyframes oc-pdf-flash { 0%, 100% { opacity: 1; } 25%, 75% { opacity: 0.15; } }
+.oc-pdf-flash { animation: oc-pdf-flash 0.6s ease-in-out 3; }
+.oc-pdf-textbox { width: 100%; height: 100%; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.25; font-family: Inter, "Segoe UI", sans-serif; }
+.oc-pdf-textedit {
+  position: absolute; z-index: 4; resize: none; padding: 0; line-height: 1.25; font-family: Inter, "Segoe UI", sans-serif;
+  background: rgba(255, 255, 255, 0.85); outline: 1.5px solid var(--color-sky-500); border-radius: 2px;
+}
+.oc-pdf-swatch { display: block; width: 18px; height: 18px; border-radius: 999px; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18); transition: transform 100ms ease; }
+.oc-pdf-swatch:hover { transform: scale(1.12); }
+.oc-pdf-swatch-on { box-shadow: 0 0 0 2px var(--oc-surface), 0 0 0 3.5px rgba(var(--oc-ink), 0.55); }
+.oc-pdf-bar {
+  position: absolute; z-index: 6; translate: -50% 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1); box-shadow: 0 6px 20px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-bar[style*="fixed"] { translate: -100% 0; z-index: 40; }
+.oc-pdf-bar-sep { width: 1px; height: 18px; background: rgba(var(--oc-ink), 0.12); }
+.oc-pdf-bar-btn { display: grid; place-items: center; height: 26px; min-width: 26px; padding: 0 6px; gap: 4px; border-radius: 999px; color: var(--oc-text); font-size: 12px; cursor: pointer; }
+.oc-pdf-bar-btn:hover { background: rgba(var(--oc-ink), 0.08); }
+.oc-pdf-sticky {
+  position: absolute; z-index: 6; width: 240px; overflow: hidden; border-radius: 10px; background: var(--oc-surface);
+  border: 1px solid rgba(var(--oc-ink), 0.1); box-shadow: 0 10px 30px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k)));
+}
+.oc-pdf-sticky-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px 5px 10px; font-size: 11px; font-weight: 600; color: rgba(0, 0, 0, 0.7); }
+.oc-pdf-sticky-head button { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; }
+.oc-pdf-sticky-head button:hover { background: rgba(0, 0, 0, 0.12); }
+.oc-pdf-sticky textarea { display: block; width: 100%; height: 120px; padding: 8px 10px; resize: none; outline: none; font-size: 13px; color: var(--oc-text-strong); background: transparent; }
+.oc-pdf-tool { position: relative; width: 32px; height: 32px; }
+.oc-pdf-more { position: absolute; right: 4px; bottom: 4px; width: 0; height: 0; border-left: 4px solid transparent; border-bottom: 4px solid currentColor; opacity: 0.5; }
+.oc-pdf-fly {
+  position: absolute; z-index: 6; left: 66px; translate: 0 -50%; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1); box-shadow: 0 6px 20px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-fly:has(> div) { border-radius: 14px; padding: 8px 10px; }
+.oc-pdf-fly .oc-pdf-bar-btn { display: flex; }
+.oc-pdf-find { position: absolute; z-index: 1; border-radius: 2px; background: rgba(250, 204, 21, 0.35); pointer-events: none; mix-blend-mode: multiply; }
+.oc-pdf-find-on { background: rgba(249, 115, 22, 0.55); box-shadow: 0 0 0 1.5px rgb(234, 88, 12); }
+.oc-pdf-findbar {
+  position: absolute; z-index: 7; top: 12px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 4px; width: 380px; max-width: calc(100% - 120px);
+  padding: 5px 6px 5px 12px; border-radius: 999px; background: var(--oc-surface); border: 1px solid rgba(var(--oc-ink), 0.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, calc(0.35 * var(--oc-shadow-k)));
+}
+.oc-pdf-findbar input { flex: 1; min-width: 0; height: 26px; background: transparent; outline: none; font-size: 13px; color: var(--oc-text-strong); }
+.oc-pdf-findcount { font-size: 11.5px; color: var(--oc-text-2); white-space: nowrap; padding: 0 4px; }
+.oc-pdf-bar-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Offline spelling: wavy underline + grey completion. */
+.oc-misspell { text-decoration: underline wavy rgba(239, 68, 68, 0.85); text-decoration-skip-ink: none; text-underline-offset: 3px; cursor: pointer; }
+.oc-ghost { color: rgba(140, 140, 140, 0.7); pointer-events: none; }
+.oc-doc-body .oc-ghost { color: #a3a3a3; }
+
+/* Export window format cards. */
+.oc-export-card { animation: oc-rise-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.oc-export-card.is-on { border-color: color-mix(in srgb, var(--tone) 70%, transparent); background: color-mix(in srgb, var(--tone) 9%, transparent); box-shadow: 0 6px 20px color-mix(in srgb, var(--tone) 14%, transparent); }
+@media (prefers-reduced-motion: reduce) { .oc-export-card { animation: none; } }
+
+/* ---- Sidebar polish: brand glow up top, accent bar on the active row, footer card ---- */
+.oc-sidebar { background-image: radial-gradient(120% 180px at 0% 0%, color-mix(in srgb, var(--oc-brand) 14%, transparent), transparent 70%); }
+.oc-nav-active { position: relative; background: linear-gradient(90deg, color-mix(in srgb, var(--oc-brand) 22%, transparent), color-mix(in srgb, var(--oc-brand) 6%, transparent)); }
+.oc-nav-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 3px; background: var(--oc-brand-light); }
+.oc-nav-active svg { color: var(--oc-brand-light) !important; }
+.oc-sidebar-foot { box-shadow: 0 -8px 24px -12px rgb(0 0 0 / 0.5); }
+
+/* Sidebar icon colours (Settings > Sidebar icons); unset var = keep the grey. */
+:root[style*="--oc-ic-home: #"] .oc-ic-home { color: var(--oc-ic-home) !important; }
+:root[style*="--oc-ic-library: #"] .oc-ic-library { color: var(--oc-ic-library) !important; }
+:root[style*="--oc-ic-tags: #"] .oc-ic-tags { color: var(--oc-ic-tags) !important; }
+:root[style*="--oc-ic-trash: #"] .oc-ic-trash { color: var(--oc-ic-trash) !important; }
+:root[style*="--oc-ic-import: #"] .oc-ic-import { color: var(--oc-ic-import) !important; }
+.oc-nav-active::before { animation: oc-bar-in 220ms cubic-bezier(.2,.8,.2,1); }
+@keyframes oc-bar-in { from { transform: scaleY(0); opacity: 0; } }
+.oc-view-pill { background: rgb(255 255 255 / 0.1); box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: transform 260ms cubic-bezier(.3,1.3,.5,1); }
+.oc-search { transition: border-color 150ms, box-shadow 200ms, background 150ms; }
+.oc-search:hover { border-color: color-mix(in srgb, var(--oc-brand-light) 45%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--oc-brand) 15%, transparent), 0 0 18px -4px color-mix(in srgb, var(--oc-brand) 50%, transparent); }
+
+/* More apps tiles */
+.oc-app-tile { transition: transform 180ms cubic-bezier(.3,1.4,.5,1), border-color 150ms, background 150ms, box-shadow 200ms, color 150ms; }
+.oc-app-tile:hover { transform: translateY(-2px); color: var(--color-neutral-100); border-color: color-mix(in srgb, var(--tone) 50%, transparent); background: color-mix(in srgb, var(--tone) 14%, transparent); box-shadow: 0 6px 18px -8px var(--tone); }
+.oc-app-tile:hover img { animation: oc-pop 380ms cubic-bezier(.3,1.6,.5,1); }
+
+/* Sidebar icon hover animations (one per meaning) */
+.oc-sidebar svg path, .oc-sidebar svg line, .oc-sidebar svg circle, .oc-sidebar svg rect { transform-box: fill-box; }
+.oc-sidebar :hover > .oc-ic-home { animation: oc-home 450ms ease; }
+.oc-sidebar :hover > .oc-ic-library { animation: oc-tilt 500ms ease; }
+.oc-sidebar :hover > .oc-ic-tags { animation: oc-swing 600ms ease; transform-origin: 20% 20%; }
+.oc-sidebar :hover > .oc-ic-trash > :is(path:nth-child(4), path:nth-child(5)) { animation: oc-lid 550ms ease; transform-box: view-box; transform-origin: 3px 6px; }
+.oc-sidebar :hover > .oc-ic-import { animation: oc-up 450ms ease; }
+.oc-sidebar :hover > .oc-ic-search { animation: oc-wiggle 500ms ease; }
+@keyframes oc-home { 30% { transform: translateY(-3px) scaleY(1.08); } 60% { transform: translateY(0) scaleY(.94); } }
+@keyframes oc-tilt { 35% { transform: rotate(-12deg); } 70% { transform: rotate(5deg); } }
+@keyframes oc-swing { 25% { transform: rotate(14deg); } 50% { transform: rotate(-10deg); } 75% { transform: rotate(5deg); } }
+@keyframes oc-lid { 40%, 60% { transform: translateY(-2px) rotate(-18deg); } }
+@keyframes oc-up { 40% { transform: translateY(-3px); } 70% { transform: translateY(1px); } }
+@keyframes oc-wiggle { 25% { transform: rotate(-14deg); } 50% { transform: rotate(10deg); } 75% { transform: rotate(-4deg); } }
+@keyframes oc-pop { 50% { transform: scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .oc-sidebar *, .oc-app-tile, .oc-app-tile img { animation: none !important; } }
+/* Light mode: faint brand tint so the floating sidebar stands out (no shadow). */
+:root[data-theme="light"] .oc-sidebar { background-color: color-mix(in srgb, var(--oc-brand) 5%, var(--oc-sidebar)); border-color: color-mix(in srgb, var(--oc-brand) 22%, transparent); }
+
+/* Home | Dashboard | Nerida switch: the leading edge moves first, the trailing edge catches up (stretch). */
+.oc-switch-pill { position: absolute; top: 2px; bottom: 2px; border-radius: 9999px; background: rgb(255 255 255 / 0.12); transition: left 250ms cubic-bezier(.3,.9,.3,1), right 250ms cubic-bezier(.3,.9,.3,1), background 250ms, box-shadow 250ms; }
+.oc-switch-pill[data-dir="1"] { transition-delay: 70ms, 0ms, 0ms, 0ms; }
+.oc-switch-pill[data-dir="-1"] { transition-delay: 0ms, 70ms, 0ms, 0ms; }
+.oc-switch-nerida { background: linear-gradient(90deg, rgb(56 189 248 / 0.28), rgb(139 92 246 / 0.32)); box-shadow: 0 0 14px -2px rgb(139 92 246 / 0.55); }
+.oc-nudge { animation: oc-nudge 300ms cubic-bezier(.3,1.6,.5,1); }
+@keyframes oc-nudge { 40% { transform: translateY(-2px) scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .oc-switch-pill, .oc-nudge { transition: none; animation: none; } }

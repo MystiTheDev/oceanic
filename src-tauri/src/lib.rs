@@ -1,3 +1,4 @@
+mod ai;
 mod db;
 
 use std::path::PathBuf;
@@ -403,7 +404,7 @@ struct RecentItem {
 }
 
 /// Tray menu, grouped: show · create/search · apps & views · quit.
-fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem]) -> tauri::Result<Menu<tauri::Wry>> {
+fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem], today: &[RecentItem]) -> tauri::Result<Menu<tauri::Wry>> {
     let item = |id: &str, label: &str| MenuItem::with_id(app, id, label, true, None::<&str>);
     let recent_items = recent
         .iter()
@@ -428,6 +429,18 @@ fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem]) -> tau
         doc_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect()
     };
     let docs_menu = Submenu::with_items(app, "Recent documents", true, &doc_refs)?;
+    // Pages due today (ids are page ids, opened like recent pages).
+    let today_items = today
+        .iter()
+        .map(|r| MenuItem::with_id(app, format!("recent:{}", r.id), &r.title, true, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let no_today = MenuItem::with_id(app, "today-none", "Nothing due today", false, None::<&str>)?;
+    let today_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = if today_items.is_empty() {
+        vec![&no_today]
+    } else {
+        today_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect()
+    };
+    let today_menu = Submenu::with_items(app, "Today's agenda", true, &today_refs)?;
     let new_menu = Submenu::with_items(
         app,
         "New",
@@ -441,6 +454,8 @@ fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem]) -> tau
             &PredefinedMenuItem::separator(app)?,
             &new_menu,
             &item("search", "Search…")?,
+            &item("nerida", "Open Nerida")?,
+            &today_menu,
             &PredefinedMenuItem::separator(app)?,
             &item("mindmap", "Oceanic Mindmap")?,
             &item("docs", "Oceanic Docs")?,
@@ -459,8 +474,8 @@ fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem]) -> tau
 
 /// The app sends its last opened pages so the tray's "Recent pages" stays current.
 #[tauri::command]
-fn set_tray_recent(app: AppHandle, items: Vec<RecentItem>, docs: Option<Vec<RecentItem>>) -> Result<(), String> {
-    let menu = tray_menu(&app, &items, &docs.unwrap_or_default()).map_err(|e| e.to_string())?;
+fn set_tray_recent(app: AppHandle, items: Vec<RecentItem>, docs: Option<Vec<RecentItem>>, today: Option<Vec<RecentItem>>) -> Result<(), String> {
+    let menu = tray_menu(&app, &items, &docs.unwrap_or_default(), &today.unwrap_or_default()).map_err(|e| e.to_string())?;
     if let Some(tray) = app.tray_by_id("main") {
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
@@ -468,7 +483,7 @@ fn set_tray_recent(app: AppHandle, items: Vec<RecentItem>, docs: Option<Vec<Rece
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let menu = tray_menu(app, &[], &[])?;
+    let menu = tray_menu(app, &[], &[], &[])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Oceanic")
@@ -479,7 +494,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             match id {
                 "show" => show_main(app),
                 "quit" => app.exit(0),
-                "new_page" | "search" | "mindmap" | "calendar" | "new_doc" | "new_sketch" | "new_mindmap" | "docs" | "sketch" | "settings" | "check_updates" => {
+                "new_page" | "search" | "nerida" | "mindmap" | "calendar" | "new_doc" | "new_sketch" | "new_mindmap" | "docs" | "sketch" | "settings" | "check_updates" => {
                     show_main(app);
                     let _ = app.emit("tray-action", id);
                 }
@@ -612,7 +627,18 @@ pub fn run() {
                 }
             }
         })
+        .manage(ai::Ai::default())
         .invoke_handler(tauri::generate_handler![
+            ai::ai_status,
+            ai::ai_download,
+            ai::ai_cancel_download,
+            ai::ai_delete_model,
+            ai::ai_start,
+            ai::ai_chat,
+            ai::ai_stop,
+            ai::ai_set_key,
+            ai::ai_list_models,
+            ai::web_get,
             db::get_pages,
             db::get_trashed_pages,
             db::get_page,
@@ -637,6 +663,13 @@ pub fn run() {
             db::connect_pages,
             db::update_canvas_edge,
             db::delete_canvas_edge,
+            db::list_concepts,
+            db::create_concept,
+            db::update_concept,
+            db::delete_concept,
+            db::list_concept_resources,
+            db::attach_resource,
+            db::detach_resource,
             db::get_tabs,
             db::save_tabs,
             db::get_workspaces,
@@ -686,6 +719,11 @@ pub fn run() {
             db::save_pdf_text,
             db::get_pdf_text,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                ai::shutdown(&app.state::<ai::Ai>());
+            }
+        });
 }

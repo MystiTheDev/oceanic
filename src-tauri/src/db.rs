@@ -259,6 +259,36 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;"
         ))?;
     }
+
+    if version < 9 {
+        // Atlas: concepts share the canvas with pages (ids prefixed
+        // `concept:`), canvas edges gain a relationship type, and concepts
+        // reference existing resources by their app entry id.
+        conn.execute_batch(&format!(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS concepts (
+               id           TEXT PRIMARY KEY,
+               workspace_id TEXT NOT NULL DEFAULT 'general',
+               title        TEXT NOT NULL DEFAULT '',
+               description  TEXT NOT NULL DEFAULT '',
+               tags         TEXT NOT NULL DEFAULT '[]',
+               state        TEXT NOT NULL DEFAULT 'unexplored',
+               created_at   DATETIME NOT NULL DEFAULT ({NOW}),
+               updated_at   DATETIME NOT NULL DEFAULT ({NOW})
+             );
+             CREATE INDEX IF NOT EXISTS idx_concepts_workspace ON concepts(workspace_id);
+             CREATE TABLE IF NOT EXISTS concept_resources (
+               concept_id TEXT NOT NULL,
+               entry_id   TEXT NOT NULL,
+               created_at DATETIME NOT NULL DEFAULT ({NOW}),
+               PRIMARY KEY (concept_id, entry_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_concept_res_entry ON concept_resources(entry_id);
+             ALTER TABLE canvas_edges ADD COLUMN rel_type TEXT NOT NULL DEFAULT 'related';
+             PRAGMA user_version = 9;
+             COMMIT;"
+        ))?;
+    }
     Ok(())
 }
 
@@ -424,11 +454,13 @@ pub struct CanvasEdge {
     color: String,
     style: String,
     manual: bool,
+    /// Atlas relationship type, one of `REL_TYPES`.
+    rel_type: String,
 }
 
 fn edge_by_key(conn: &Connection, source: &str, target: &str) -> rusqlite::Result<CanvasEdge> {
     conn.query_row(
-        "SELECT source_id, target_id, label, color, style, manual FROM canvas_edges
+        "SELECT source_id, target_id, label, color, style, manual, rel_type FROM canvas_edges
          WHERE source_id = ?1 AND target_id = ?2",
         params![source, target],
         |r| {
@@ -439,6 +471,7 @@ fn edge_by_key(conn: &Connection, source: &str, target: &str) -> rusqlite::Resul
                 color: r.get(3)?,
                 style: r.get(4)?,
                 manual: r.get::<_, i64>(5)? != 0,
+                rel_type: r.get(6)?,
             })
         },
     )
@@ -667,20 +700,25 @@ pub fn delete_page_forever(db: State<Db>, id: String) -> CmdResult<()> {
         [&id],
     )
     .map_err(err)?;
-    // Links and canvas cards pointing at pages that no longer exist.
+    prune_orphans(&conn).map_err(err)?;
+    pdf_gc(&conn).map_err(err)?;
+    Ok(())
+}
+
+/// Links, canvas cards and index rows pointing at pages that no longer exist.
+/// Concepts count as live canvas nodes.
+pub(crate) fn prune_orphans(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "DELETE FROM page_links WHERE source_id NOT IN (SELECT id FROM pages)
                                    OR target_id NOT IN (SELECT id FROM pages);
-         DELETE FROM canvas_positions WHERE page_id NOT IN (SELECT id FROM pages);
+         DELETE FROM canvas_positions WHERE page_id NOT IN (SELECT id FROM pages UNION SELECT id FROM concepts);
          DELETE FROM page_search WHERE page_id NOT IN (SELECT id FROM pages) AND page_id NOT LIKE 'pdf:%';
          DELETE FROM flashcards WHERE page_id NOT IN (SELECT id FROM pages);
          DELETE FROM assignments WHERE page_id NOT IN (SELECT id FROM pages);
-         DELETE FROM canvas_edges WHERE source_id NOT IN (SELECT id FROM pages)
-                                     OR target_id NOT IN (SELECT id FROM pages);",
+         DELETE FROM canvas_edges WHERE source_id NOT IN (SELECT id FROM pages UNION SELECT id FROM concepts)
+                                     OR target_id NOT IN (SELECT id FROM pages UNION SELECT id FROM concepts);
+         DELETE FROM concept_resources WHERE entry_id NOT LIKE '%:%' AND entry_id NOT IN (SELECT id FROM pages);",
     )
-    .map_err(err)?;
-    pdf_gc(&conn).map_err(err)?;
-    Ok(())
 }
 
 /// Copies a page (not its sub-pages) to just after the original. `content`
@@ -845,24 +883,95 @@ pub fn get_canvas_edges(db: State<Db>) -> CmdResult<Vec<CanvasEdge>> {
     keys.iter().map(|(s, t)| edge_by_key(&conn, s, t).map_err(err)).collect()
 }
 
-/// Drop-to-connect: records a drawn connection from `source_id` to `target_id`.
-#[tauri::command]
-pub fn connect_pages(db: State<Db>, source_id: String, target_id: String) -> CmdResult<CanvasEdge> {
-    if source_id == target_id {
-        return Err("A page can't connect to itself".into());
-    }
-    let conn = db.0.lock().unwrap();
-    conn.execute(
-        "INSERT INTO canvas_edges (source_id, target_id, manual, workspace_id)
-         VALUES (?1, ?2, 1, (SELECT workspace_id FROM pages WHERE id = ?1))
-         ON CONFLICT(source_id, target_id) DO UPDATE SET manual = 1",
-        params![source_id, target_id],
+/// Atlas relationship types. `contrasts` and `related` are symmetric.
+pub(crate) const REL_TYPES: &[&str] = &[
+    "depends_on", "explains", "part_of", "example_of", "applied_in",
+    "contrasts", "causes", "extends", "related",
+];
+
+/// A canvas node: a live page or an Atlas concept.
+fn node_exists(conn: &Connection, id: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pages WHERE id = ?1) OR EXISTS(SELECT 1 FROM concepts WHERE id = ?1)",
+        [id],
+        |r| r.get(0),
     )
-    .map_err(err)?;
-    edge_by_key(&conn, &source_id, &target_id).map_err(err)
 }
 
-/// Label / color / line style for a connection (drawn or from a document).
+/// Endpoint and type checks shared by every edge write.
+fn check_edge(conn: &Connection, source: &str, target: &str, rel_type: Option<&str>) -> CmdResult<()> {
+    if source == target {
+        return Err("A card can't connect to itself".into());
+    }
+    if let Some(t) = rel_type {
+        if !REL_TYPES.contains(&t) {
+            return Err(format!("Unknown relationship type: {t}"));
+        }
+    }
+    for id in [source, target] {
+        if !node_exists(conn, id).map_err(err)? {
+            return Err(format!("No page or concept with id {id}"));
+        }
+    }
+    Ok(())
+}
+
+/// The workspace an edge belongs to: its source node's.
+const EDGE_WS: &str = "COALESCE((SELECT workspace_id FROM pages WHERE id = ?1),
+                                (SELECT workspace_id FROM concepts WHERE id = ?1), 'general')";
+
+pub(crate) fn connect(conn: &Connection, source: &str, target: &str, rel_type: Option<&str>) -> CmdResult<CanvasEdge> {
+    check_edge(conn, source, target, rel_type)?;
+    conn.execute(
+        &format!(
+            "INSERT INTO canvas_edges (source_id, target_id, manual, workspace_id, rel_type)
+             VALUES (?1, ?2, 1, {EDGE_WS}, COALESCE(?3, 'related'))
+             ON CONFLICT(source_id, target_id) DO UPDATE SET manual = 1, rel_type = COALESCE(?3, rel_type)"
+        ),
+        params![source, target, rel_type],
+    )
+    .map_err(err)?;
+    edge_by_key(conn, source, target).map_err(err)
+}
+
+pub(crate) fn update_edge(
+    conn: &Connection,
+    source: &str,
+    target: &str,
+    label: &str,
+    color: &str,
+    style: &str,
+    rel_type: Option<&str>,
+) -> CmdResult<CanvasEdge> {
+    check_edge(conn, source, target, rel_type)?;
+    conn.execute(
+        &format!(
+            "INSERT INTO canvas_edges (source_id, target_id, label, color, style, workspace_id, rel_type)
+             VALUES (?1, ?2, ?3, ?4, ?5, {EDGE_WS}, COALESCE(?6, 'related'))
+             ON CONFLICT(source_id, target_id) DO UPDATE
+               SET label = ?3, color = ?4, style = ?5, rel_type = COALESCE(?6, rel_type)"
+        ),
+        params![source, target, label, color, style, rel_type],
+    )
+    .map_err(err)?;
+    edge_by_key(conn, source, target).map_err(err)
+}
+
+/// Drop-to-connect: records a drawn connection from `source_id` to `target_id`,
+/// either a page or a concept. `rel_type` defaults to "related".
+#[tauri::command]
+pub fn connect_pages(
+    db: State<Db>,
+    source_id: String,
+    target_id: String,
+    rel_type: Option<String>,
+) -> CmdResult<CanvasEdge> {
+    let conn = db.0.lock().unwrap();
+    connect(&conn, &source_id, &target_id, rel_type.as_deref())
+}
+
+/// Label (the relationship's explanation) / color / line style / type for a
+/// connection (drawn or from a document). `rel_type: None` keeps the current type.
 #[tauri::command]
 pub fn update_canvas_edge(
     db: State<Db>,
@@ -871,16 +980,10 @@ pub fn update_canvas_edge(
     label: String,
     color: String,
     style: String,
+    rel_type: Option<String>,
 ) -> CmdResult<CanvasEdge> {
     let conn = db.0.lock().unwrap();
-    conn.execute(
-        "INSERT INTO canvas_edges (source_id, target_id, label, color, style, workspace_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, (SELECT workspace_id FROM pages WHERE id = ?1))
-         ON CONFLICT(source_id, target_id) DO UPDATE SET label = ?3, color = ?4, style = ?5",
-        params![source_id, target_id, label, color, style],
-    )
-    .map_err(err)?;
-    edge_by_key(&conn, &source_id, &target_id).map_err(err)
+    update_edge(&conn, &source_id, &target_id, &label, &color, &style, rel_type.as_deref())
 }
 
 /// Removes a drawn connection (and its styling). Document links can only be
@@ -933,6 +1036,206 @@ pub fn save_canvas_positions(db: State<Db>, positions: Vec<CanvasPosition>) -> C
         }
     }
     tx.commit().map_err(err)
+}
+
+/* ---------------------------------------------------------------- atlas */
+
+/// Learning states a student can set on a concept.
+pub(crate) const CONCEPT_STATES: &[&str] = &["unexplored", "learning", "understood", "mastered", "review"];
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Concept {
+    id: String,
+    workspace_id: String,
+    title: String,
+    description: String,
+    tags: Vec<String>,
+    state: String,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptResource {
+    concept_id: String,
+    /// The app entry id used to open it: a page id, `doc:<path>`,
+    /// `sketch:<path>`, `mindmap:<id>` or `pdf:<id>`.
+    entry_id: String,
+    created_at: String,
+}
+
+const CONCEPT_COLS: &str = "id, workspace_id, title, description, tags, state, created_at, updated_at";
+
+fn concept_row(r: &Row) -> rusqlite::Result<Concept> {
+    Ok(Concept {
+        id: r.get(0)?,
+        workspace_id: r.get(1)?,
+        title: r.get(2)?,
+        description: r.get(3)?,
+        tags: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or_default(),
+        state: r.get(5)?,
+        created_at: r.get(6)?,
+        updated_at: r.get(7)?,
+    })
+}
+
+fn get_concept(conn: &Connection, id: &str) -> CmdResult<Concept> {
+    conn.query_row(&format!("SELECT {CONCEPT_COLS} FROM concepts WHERE id = ?1"), [id], concept_row)
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| format!("No concept with id {id}"))
+}
+
+fn check_state(state: &str) -> CmdResult<()> {
+    if CONCEPT_STATES.contains(&state) {
+        Ok(())
+    } else {
+        Err(format!("Unknown learning state: {state}"))
+    }
+}
+
+pub(crate) fn concepts_in(conn: &Connection, workspace_id: &str) -> CmdResult<Vec<Concept>> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT {CONCEPT_COLS} FROM concepts WHERE workspace_id = ?1 ORDER BY created_at"))
+        .map_err(err)?;
+    let rows = stmt.query_map([workspace_id], concept_row).map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+pub(crate) fn insert_concept(conn: &Connection, workspace_id: &str, title: &str) -> CmdResult<Concept> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("A concept needs a title".into());
+    }
+    let id = format!("concept:{}", new_id());
+    conn.execute(
+        "INSERT INTO concepts (id, workspace_id, title) VALUES (?1, ?2, ?3)",
+        params![id, workspace_id, title],
+    )
+    .map_err(err)?;
+    get_concept(conn, &id)
+}
+
+pub(crate) fn edit_concept(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+    description: &str,
+    tags: &[String],
+    state: &str,
+) -> CmdResult<Concept> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("A concept needs a title".into());
+    }
+    check_state(state)?;
+    let tags = serde_json::to_string(tags).map_err(|e| e.to_string())?;
+    let n = conn
+        .execute(
+            &format!(
+                "UPDATE concepts SET title = ?2, description = ?3, tags = ?4, state = ?5, updated_at = {NOW}
+                 WHERE id = ?1"
+            ),
+            params![id, title, description, tags, state],
+        )
+        .map_err(err)?;
+    if n == 0 {
+        return Err(format!("No concept with id {id}"));
+    }
+    get_concept(conn, id)
+}
+
+/// Removes the concept plus its edges, canvas position and resource links.
+/// The resources themselves are untouched.
+pub(crate) fn remove_concept(conn: &mut Connection, id: &str) -> CmdResult<()> {
+    let tx = conn.transaction().map_err(err)?;
+    tx.execute("DELETE FROM canvas_edges WHERE source_id = ?1 OR target_id = ?1", [id]).map_err(err)?;
+    tx.execute("DELETE FROM canvas_positions WHERE page_id = ?1", [id]).map_err(err)?;
+    tx.execute("DELETE FROM concept_resources WHERE concept_id = ?1", [id]).map_err(err)?;
+    tx.execute("DELETE FROM concepts WHERE id = ?1", [id]).map_err(err)?;
+    tx.commit().map_err(err)
+}
+
+pub(crate) fn attach(conn: &Connection, concept_id: &str, entry_id: &str) -> CmdResult<()> {
+    get_concept(conn, concept_id)?;
+    if entry_id.trim().is_empty() {
+        return Err("Missing resource id".into());
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO concept_resources (concept_id, entry_id) VALUES (?1, ?2)",
+        params![concept_id, entry_id],
+    )
+    .map_err(err)?;
+    Ok(())
+}
+
+pub(crate) fn resources_of(conn: &Connection, workspace_id: &str) -> CmdResult<Vec<ConceptResource>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.concept_id, r.entry_id, r.created_at FROM concept_resources r
+             JOIN concepts c ON c.id = r.concept_id
+             WHERE c.workspace_id = ?1 ORDER BY r.created_at",
+        )
+        .map_err(err)?;
+    let rows = stmt
+        .query_map([workspace_id], |r| {
+            Ok(ConceptResource { concept_id: r.get(0)?, entry_id: r.get(1)?, created_at: r.get(2)? })
+        })
+        .map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+#[tauri::command]
+pub fn list_concepts(db: State<Db>, workspace_id: String) -> CmdResult<Vec<Concept>> {
+    concepts_in(&db.0.lock().unwrap(), &workspace_id)
+}
+
+#[tauri::command]
+pub fn create_concept(db: State<Db>, workspace_id: String, title: String) -> CmdResult<Concept> {
+    insert_concept(&db.0.lock().unwrap(), &workspace_id, &title)
+}
+
+#[tauri::command]
+pub fn update_concept(
+    db: State<Db>,
+    id: String,
+    title: String,
+    description: String,
+    tags: Vec<String>,
+    state: String,
+) -> CmdResult<Concept> {
+    edit_concept(&db.0.lock().unwrap(), &id, &title, &description, &tags, &state)
+}
+
+#[tauri::command]
+pub fn delete_concept(db: State<Db>, id: String) -> CmdResult<()> {
+    remove_concept(&mut db.0.lock().unwrap(), &id)
+}
+
+/// Every resource link of the workspace's concepts.
+#[tauri::command]
+pub fn list_concept_resources(db: State<Db>, workspace_id: String) -> CmdResult<Vec<ConceptResource>> {
+    resources_of(&db.0.lock().unwrap(), &workspace_id)
+}
+
+#[tauri::command]
+pub fn attach_resource(db: State<Db>, concept_id: String, entry_id: String) -> CmdResult<()> {
+    attach(&db.0.lock().unwrap(), &concept_id, &entry_id)
+}
+
+/// Unlinks a resource from a concept; the resource itself is kept.
+#[tauri::command]
+pub fn detach_resource(db: State<Db>, concept_id: String, entry_id: String) -> CmdResult<()> {
+    db.0.lock()
+        .unwrap()
+        .execute(
+            "DELETE FROM concept_resources WHERE concept_id = ?1 AND entry_id = ?2",
+            params![concept_id, entry_id],
+        )
+        .map_err(err)?;
+    Ok(())
 }
 
 /* ---------------------------------------------------------------- export */
@@ -1131,6 +1434,8 @@ pub fn delete_workspace(db: State<Db>, id: String, fallback_id: String) -> CmdRe
     tx.execute("UPDATE pages SET workspace_id = ?2 WHERE workspace_id = ?1", params![id, fallback_id])
         .map_err(err)?;
     tx.execute("UPDATE canvas_edges SET workspace_id = ?2 WHERE workspace_id = ?1", params![id, fallback_id])
+        .map_err(err)?;
+    tx.execute("UPDATE concepts SET workspace_id = ?2 WHERE workspace_id = ?1", params![id, fallback_id])
         .map_err(err)?;
     tx.execute("DELETE FROM workspaces WHERE id = ?1", [&id]).map_err(err)?;
     tx.commit().map_err(err)
@@ -1578,4 +1883,60 @@ pub fn get_pdf_text(db: State<Db>, doc_id: String) -> CmdResult<Vec<String>> {
 pub fn set_pdf_thumb(conn: &Connection, id: &str, path: &str) -> rusqlite::Result<()> {
     conn.execute("UPDATE pdf_docs SET thumb_path = ?2 WHERE id = ?1", params![id, path])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn atlas_concepts_and_edges() {
+        let mut c = db();
+        let a = insert_concept(&c, "general", "Charge").unwrap();
+        let b = insert_concept(&c, "general", "Field").unwrap();
+        assert!(insert_concept(&c, "general", "  ").is_err());
+        assert!(edit_concept(&c, &a.id, "Charge", "", &[], "bogus").is_err());
+        assert_eq!(edit_concept(&c, &a.id, "Electric charge", "d", &[], "learning").unwrap().state, "learning");
+
+        // Typed edge concept -> page; self-link, bad type and missing node rejected.
+        assert_eq!(connect(&c, &b.id, "welcome", None).unwrap().rel_type, "related");
+        assert_eq!(connect(&c, &b.id, &a.id, Some("depends_on")).unwrap().rel_type, "depends_on");
+        assert!(connect(&c, &a.id, &a.id, None).is_err());
+        assert!(connect(&c, &a.id, &b.id, Some("nope")).is_err());
+        assert!(connect(&c, &a.id, "concept:gone", None).is_err());
+        // Re-connecting keeps a single row (no duplicates) and keeps the type.
+        connect(&c, &b.id, &a.id, None).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM canvas_edges", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+
+        // Orphan cleanup after a page delete keeps concept nodes.
+        c.execute("INSERT INTO canvas_positions (page_id, x, y) VALUES (?1, 0, 0)", [&a.id]).unwrap();
+        prune_orphans(&c).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM canvas_positions", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+
+        // Deleting a concept removes its edges, position and links, not the page.
+        attach(&c, &a.id, "welcome").unwrap();
+        attach(&c, &a.id, "welcome").unwrap();
+        assert_eq!(resources_of(&c, "general").unwrap().len(), 1);
+        remove_concept(&mut c, &a.id).unwrap();
+        let left: i64 = c
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM canvas_edges) + (SELECT COUNT(*) FROM canvas_positions)
+                      + (SELECT COUNT(*) FROM concept_resources)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 1); // only the Field -> Welcome edge
+        assert!(node_exists(&c, "welcome").unwrap());
+        assert_eq!(concepts_in(&c, "general").unwrap().len(), 1);
+    }
 }

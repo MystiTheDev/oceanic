@@ -33,24 +33,23 @@ export function AppSwitcher({ current, onSwitch }: { current: AppId; onSwitch: (
   }, [open]);
   return (
     <div className="flex flex-col gap-px px-2 pb-1">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full cursor-pointer items-center gap-1.5 px-2 pb-0.5 pt-3 text-[12px] font-semibold text-neutral-500 hover:text-neutral-400">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full cursor-pointer items-center gap-1.5 px-2 pb-0.5 pt-3 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-500 hover:text-neutral-400">
         <LayoutGrid className="size-3.5" />
         <span className="flex-1 text-left">More apps</span>
+        {!open && ORDER.filter((a) => a !== current).map((a) => <img key={a} src={APPS[a].logo} alt="" className="size-4 object-contain opacity-80" />)}
         <ChevronRight className={`size-3 transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
       </button>
       <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
         <div className="min-h-0 overflow-hidden">
-          {ORDER.filter((a) => a !== current).map((a) => (
-            <button
-              key={a}
-              type="button"
-              onClick={() => onSwitch(a)}
-              className="flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
-            >
-              <img src={APPS[a].logo} alt="" className="size-5 shrink-0 object-contain" />
-              <span className="flex-1 text-left">{APPS[a].name}</span>
-            </button>
-          ))}
+          <div className="grid grid-cols-3 gap-1.5 pt-1">
+            {ORDER.filter((a) => a !== current).map((a) => (
+              <button key={a} type="button" title={APPS[a].tagline} onClick={() => onSwitch(a)} style={{ "--tone": APPS[a].tone } as React.CSSProperties}
+                className="oc-app-tile flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.03] px-1 py-2 text-[11.5px] text-neutral-400">
+                <img src={APPS[a].logo} alt="" className="size-6 object-contain" />
+                <span className="w-full truncate text-center">{APPS[a].name.replace(/^Oceanic /, "")}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

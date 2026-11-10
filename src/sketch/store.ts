@@ -1,3 +1,4 @@
+import { writeDoc } from "../docs/store";
 import { useSyncExternalStore } from "react";
 import { readFileBytes } from "../lib/fileIO";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -120,4 +121,4 @@ export function setSketchLayout(layout: SketchLayout) {
 }
 
 export const readImageFile = readFileBytes;
-export const writeImageFile = (path: string, data: Uint8Array) => invoke("docs_write", { path, data: Array.from(data) });
+export const writeImageFile = writeDoc;

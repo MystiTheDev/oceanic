@@ -19,9 +19,11 @@ import { Pagination, paginate, type Bridge } from "./pagination";
 import { ParagraphFormat } from "./paragraphFormat";
 import { WordFeel, alignTo } from "./wordFeel";
 import { spellMenuItems, spellPlugin } from "../lib/spell/plugin";
+import { FeedbackDrawer, NeridaGroup, NeridaSlash } from "./docNerida";
 import { WindowControls } from "../components/TitleBar";
 import { Modal, ModalButton } from "../components/Modal";
 import { isOceanicDoc, type PageBorder, DEFAULT_PAGE, PAGE_MM, exportDocx, importDocx, resetImageCache, type PageSetup } from "./docxIO";
+import { registerSaver } from "../lib/embedSource";
 import { makeWorkingCopy, originalOf, revealDoc, setUntitledContent, forgetUntitled, docTitle, isUnsaved, newUntitled, pickDocx, pickSavePath, readDoc, refreshFiles, touchRecent, untitledContent, useDocs, writeDoc } from "./store";
 
 /** Images are INLINE like Word: they share the line with text/spaces, get
@@ -114,7 +116,8 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
   const [page, setPage] = useState<PageSetup>(DEFAULT_PAGE);
   const [status, setStatus] = useState<Status>("loading");
   const [lossy, setLossy] = useState(false);
-  const [tab, setTab] = useState<"file" | "home" | "insert" | "layout" | "review">("home");
+  const [tab, setTab] = useState<"file" | "home" | "insert" | "layout" | "review" | "nerida">("home");
+  const [feedback, setFeedback] = useState(false);
   const [find, setFind] = useState<string | null>(null);
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
   const [backstage, setBackstage] = useState(false);
@@ -151,6 +154,7 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
       ParagraphFormat,
       WordFeel,
       Extension.create({ name: "spellAssist", addProseMirrorPlugins: () => [spellPlugin()] }),
+      NeridaSlash(() => docTitle(path), () => {}),
     ],
     // Word opens with the caret blinking at the start of the document.
     autofocus: "start",
@@ -171,27 +175,35 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
     onUpdate: () => scheduleSave(),
   });
 
-  const save = async () => {
-    if (!editor || !loadedRef.current) return;
+  const save = async (): Promise<string | null> => {
+    if (!editor || !loadedRef.current) return null;
     // First save of a new document: Save As, then continue in the real file.
     if (isUnsaved(path)) {
       const target = await pickSavePath(docTitle(path));
-      if (!target) return;
+      if (!target) return null;
       await writeDoc(target, await exportDocx(editor.getJSON(), pageRef.current));
       void refreshFiles();
       forgetUntitled(path);
       onSavedAs(target);
-      return;
+      return target;
     }
     setStatus("saving");
     try {
       await writeDoc(path, await exportDocx(editor.getJSON(), pageRef.current));
       setStatus("saved");
       void refreshFiles();
+      return path;
     } catch {
       setStatus("error");
+      return null;
     }
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    registerSaver(() => saveRef.current());
+    return () => registerSaver(null);
+  }, []);
   const scheduleSave = () => {
     if (!loadedRef.current) return;
     if (isUnsaved(path)) {
@@ -358,6 +370,7 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
     insert: <RibbonGroup label="Insert"><InsertGroup editor={editor} page={page} updatePage={updatePage} /></RibbonGroup>,
     layout: <RibbonGroup label="Layout"><LayoutGroup page={page} updatePage={updatePage} /></RibbonGroup>,
     review: <RibbonGroup label="Review"><ReviewGroup editor={editor} onFind={() => setFind("")} /></RibbonGroup>,
+    nerida: <RibbonGroup label="Nerida"><NeridaGroup editor={editor} title={docTitle(path)} onFeedback={() => setFeedback(true)} Big={(p) => <Big {...p} />} /></RibbonGroup>,
   };
 
   return (
@@ -445,7 +458,7 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
               <button type="button" onClick={() => setBackstage(true)} className="oc-docs-tab h-[26px] cursor-pointer rounded-t px-4 text-[13px]">
                 File
               </button>
-              {(["home", "insert", "layout", "review"] as const).map((t) => (
+              {(["home", "insert", "layout", "review", "nerida"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -482,6 +495,8 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
             {groups.home}
             <Sep />
             {groups.insert}
+            <Sep />
+            {groups.nerida}
             <span className="flex-1" />
             <SaveStatus status={status} />
           </div>
@@ -562,6 +577,7 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
         setZoom={setZoom}
         onFitWidth={() => canvasRef.current && setZoom(Math.min(2, Math.max(0.5, Math.floor(((canvasRef.current.clientWidth - 64) / (w * PX_PER_MM)) * 100) / 100)))}
       />
+      {feedback && <FeedbackDrawer editor={editor} onClose={() => setFeedback(false)} />}
       {dialog === "font" && <FontDialog editor={editor} onClose={() => setDialog(null)} />}
       {dialog === "paragraph" && <ParagraphDialog editor={editor} onClose={() => setDialog(null)} />}
       {backstage && (

@@ -29,3 +29,12 @@ dist-ssr
 
 # Private notes
 FUTURE_IDEAS.md
+
+# Dev tools (local only)
+.sidebar-backup/
+graphify-out/
+.graphifyignore
+.gitattributes
+CLAUDE.md
+.claude/
+scripts/

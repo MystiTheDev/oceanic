@@ -1,6 +1,6 @@
 [package]
 name = "oceanic"
-version = "1.0.3"
+version = "2.0.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
@@ -33,6 +33,12 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 trash = "5"
 tauri-plugin-window-state = "2"
+reqwest = { version = "0.13", features = ["stream"] }
+futures-util = "0.3"
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+sha2 = "0.10"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tokio = { version = "1", features = ["time"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

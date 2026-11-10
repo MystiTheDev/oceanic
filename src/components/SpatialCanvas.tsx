@@ -11,6 +11,7 @@ import {
   AppWindow,
   FileText,
   FolderInput,
+  Lightbulb,
   Maximize2,
   Minus,
   Palette,
@@ -28,8 +29,12 @@ import {
   type CanvasEdge,
   type EdgeColor,
   type EdgeStyle,
+  type Concept,
   type LinkEdge,
+  type RelType,
+  REL_TYPES,
 } from "../data/api";
+import { isConceptId, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
 import type { PageMeta } from "../data/workspace";
 import { tagColor } from "../lib/colors";
 
@@ -51,6 +56,13 @@ type SpatialCanvasProps = {
   onTrashPage: (pageId: string) => void;
   workspaces: { id: string; name: string; icon: string }[];
   onMoveToWorkspace: (pageId: string, workspaceId: string) => void;
+  /** Active workspace: its Atlas concepts share the map with its pages. */
+  workspaceId: string;
+};
+
+/** Learning-state dot colors on concept cards. */
+const STATE_DOT: Record<Concept["state"], string> = {
+  unexplored: "#737373", learning: "#f59e0b", understood: "#38bdf8", mastered: "#22c55e", review: "#f43f5e",
 };
 
 const CARD_W = 208;
@@ -94,7 +106,12 @@ type VisualEdge = {
   label: string;
   color: EdgeColor;
   style: EdgeStyle;
+  relType: RelType;
 };
+
+/** Edge tag: the relationship type (unless plain "Related to") and its explanation. */
+const edgeText = (e: VisualEdge) =>
+  [e.relType !== "related" && REL_LABELS[e.relType], e.label].filter(Boolean).join(" · ");
 
 const edgeKey = (s: string, t: string) => `${s}>${t}`;
 
@@ -106,7 +123,7 @@ const edgeKey = (s: string, t: string) => `${s}>${t}`;
  * double-click a card to open it.
  */
 export function SpatialCanvas({
-  pages,
+  pages: pageList,
   activePageId,
   version,
   onOpenPage,
@@ -116,7 +133,22 @@ export function SpatialCanvas({
   onTrashPage,
   workspaces,
   onMoveToWorkspace,
+  workspaceId,
 }: SpatialCanvasProps) {
+  const [concepts, setConcepts] = useState<Concept[]>([]);
+  /** Concept card whose title is being typed. */
+  const [renaming, setRenaming] = useState<string | null>(null);
+  useEffect(() => {
+    api.listConcepts(workspaceId).then(setConcepts).catch((e) => console.error("Loading concepts failed", e));
+  }, [workspaceId, version]);
+  /** Pages and concepts are both cards; concepts never orbit. */
+  const pages = useMemo<PageMeta[]>(
+    () => [
+      ...pageList,
+      ...concepts.map((c) => ({ id: c.id, icon: "💡", title: c.title, pinned: false, parentId: null, workspaceId: c.workspaceId })),
+    ],
+    [pageList, concepts],
+  );
   const viewport = useRef<HTMLDivElement>(null);
   const [positions, setPositions] = useState<Map<string, Point> | null>(null);
   const [docLinks, setDocLinks] = useState<LinkEdge[]>([]);
@@ -216,6 +248,7 @@ export function SpatialCanvas({
         label: m?.label ?? "",
         color: m?.color ?? "default",
         style: m?.style ?? "solid",
+        relType: m?.relType ?? "related",
       });
     }
     return [...byPair.values()];
@@ -402,21 +435,22 @@ export function SpatialCanvas({
   const connect = (from: string, to: string) => {
     api
       .connectPages(from, to)
-      .then((edge) =>
+      .then((edge) => {
         setCanvasEdges((prev) => [
           ...prev.filter((e) => edgeKey(e.sourceId, e.targetId) !== edgeKey(from, to)),
           edge,
-        ]),
-      )
+        ]);
+        setEditingEdge(edgeKey(from, to)); // pick the relationship type straight away
+      })
       .catch((e) => console.error("Connecting pages failed", e));
   };
 
   /** Label / color / style change: optimistic, then saved. */
-  const updateEdge = (key: string, patch: Partial<Pick<CanvasEdge, "label" | "color" | "style">>) => {
+  const updateEdge = (key: string, patch: Partial<Pick<CanvasEdge, "label" | "color" | "style" | "relType">>) => {
     const [source, target] = key.split(">");
     const current = edges.find((e) => e.key === key);
     if (!current) return;
-    const next = { label: current.label, color: current.color, style: current.style, ...patch };
+    const next = { label: current.label, color: current.color, style: current.style, relType: current.relType, ...patch };
     setCanvasEdges((prev) => {
       const existing = prev.find((e) => edgeKey(e.sourceId, e.targetId) === key);
       return existing
@@ -436,6 +470,36 @@ export function SpatialCanvas({
       api.deleteCanvasEdge(e.sourceId, e.targetId).catch((err) => console.error("Deleting connection failed", err)),
     );
   };
+
+  /** New concept card (at `at`, world coords), then type its title. */
+  const newConcept = (at?: Point) =>
+    api
+      .createConcept(workspaceId, "New concept")
+      .then((c) => {
+        if (at) pendingPlacement.current = at;
+        setConcepts((prev) => [...prev, c]);
+        setRenaming(c.id);
+      })
+      .catch((e) => console.error("Creating concept failed", e));
+
+  const renameConcept = (id: string, title: string) => {
+    setRenaming(null);
+    const c = concepts.find((x) => x.id === id);
+    if (!c || !title.trim() || title.trim() === c.title) return;
+    api
+      .updateConcept(id, { title, description: c.description, tags: c.tags, state: c.state })
+      .then((u) => setConcepts((prev) => prev.map((x) => (x.id === id ? u : x))))
+      .catch((e) => console.error("Renaming concept failed", e));
+  };
+
+  const deleteConcept = (id: string) =>
+    api
+      .deleteConcept(id)
+      .then(() => {
+        setConcepts((prev) => prev.filter((c) => c.id !== id));
+        setCanvasEdges((prev) => prev.filter((e) => e.sourceId !== id && e.targetId !== id));
+      })
+      .catch((e) => console.error("Deleting concept failed", e));
 
   /** "Tidy up": forget every position and lay the whole graph out again. */
   const relayout = () => {
@@ -463,6 +527,7 @@ export function SpatialCanvas({
   const backgroundMenu = (e: React.MouseEvent) => {
     const at = toWorld(e.clientX, e.clientY);
     openContextMenu(e, [
+      { label: "New concept here", icon: <Lightbulb className="size-4" />, onSelect: () => newConcept(at) },
       {
         label: "New page here",
         icon: <Plus className="size-4" />,
@@ -479,7 +544,11 @@ export function SpatialCanvas({
   };
 
   const cardMenu = (e: React.MouseEvent, page: PageMeta) =>
-    openContextMenu(e, [
+    openContextMenu(e, isConceptId(page.id) ? [
+      { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(page.id) },
+      "divider",
+      { label: "Delete concept", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => deleteConcept(page.id) },
+    ] : [
       { label: "Open", icon: <FileText className="size-4" />, onSelect: () => onOpenPage(page.id) },
       { label: "Open in new tab", icon: <AppWindow className="size-4" />, onSelect: () => onOpenInNewTab(page.id) },
       "divider",
@@ -512,7 +581,7 @@ export function SpatialCanvas({
   const edgeMenu = (e: React.MouseEvent, edge: VisualEdge) =>
     openContextMenu(e, [
       {
-        label: edge.label ? "Edit label" : "Add label",
+        label: "Edit relationship",
         icon: <PenLine className="size-4" />,
         onSelect: () => setEditingEdge(edge.key),
       },
@@ -673,8 +742,8 @@ export function SpatialCanvas({
                       strokeWidth={lit ? 2 : 1.5}
                       strokeDasharray={DASH[edge.style]}
                       strokeLinecap="round"
-                      markerEnd={marker}
-                      markerStart={edge.mutual ? marker : undefined}
+                      markerEnd={SYMMETRIC_TYPES.has(edge.relType) ? undefined : marker}
+                      markerStart={edge.mutual && !SYMMETRIC_TYPES.has(edge.relType) ? marker : undefined}
                       className="transition-[stroke,stroke-width] duration-150"
                     />
                     {/* Wide invisible stroke: easy to hover and click */}
@@ -715,8 +784,9 @@ export function SpatialCanvas({
             const a = shown.get(edge.source);
             const b = shown.get(edge.target);
             if (!a || !b) return null;
-            const showGhost = !edge.label && edge.key === hoveredEdge;
-            if (!edge.label && !showGhost) return null;
+            const text = edgeText(edge);
+            const showGhost = !text && edge.key === hoveredEdge;
+            if (!text && !showGhost) return null;
             const mid = connector(a, b).mid;
             return (
               <button
@@ -738,7 +808,7 @@ export function SpatialCanvas({
                     : "border-white/[0.08] bg-[var(--oc-raised)] text-neutral-300 hover:border-white/20"
                 }`}
               >
-                {edge.label || "+ Label"}
+                {text || "+ Relationship"}
               </button>
             );
           })}
@@ -759,6 +829,7 @@ export function SpatialCanvas({
             const isDropTarget = draft?.target === page.id;
             const showHandles = !draft && hovered === page.id && !gesture.current;
             const links = degree(page.id);
+            const concept = concepts.find((c) => c.id === page.id);
             return (
               <div
                 key={page.id}
@@ -772,9 +843,9 @@ export function SpatialCanvas({
                   setHovered((h) => (h === page.id ? null : h));
                   pausedRef.current = false;
                 }}
-                onDoubleClick={() => onOpenPage(page.id)}
+                onDoubleClick={() => (concept ? setRenaming(page.id) : onOpenPage(page.id))}
                 onContextMenu={(e) => cardMenu(e, page)}
-                title="Double-click to open"
+                title={concept ? "Concept · double-click to rename" : "Double-click to open"}
                 style={{
                   left: p.x - CARD_W / 2,
                   top: p.y - CARD_H / 2,
@@ -785,7 +856,7 @@ export function SpatialCanvas({
                   zIndex: child ? undefined : 1,
                   ...(t && !lit && !isDropTarget ? { borderColor: `color-mix(in srgb, ${t.solid} 55%, transparent)`, background: `color-mix(in srgb, ${t.solid} 14%, var(--oc-raised))` } : {}),
                 }}
-                className={`oc-pop-in absolute flex cursor-pointer flex-col justify-center rounded-xl border px-3 shadow-lg shadow-black/40 transition-[border-color,background-color,box-shadow] duration-150 ${
+                className={`oc-pop-in absolute flex cursor-pointer flex-col justify-center border ${concept ? "rounded-full px-5 ring-1 ring-violet-400/40" : "rounded-xl px-3"} shadow-lg shadow-black/40 transition-[border-color,background-color,box-shadow] duration-150 ${
                   isDropTarget
                     ? "border-sky-400 bg-sky-500/10 ring-2 ring-sky-500/40"
                     : lit
@@ -796,10 +867,29 @@ export function SpatialCanvas({
                 }`}
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="text-base leading-none">{page.icon}</span>
-                  <span className="truncate text-[13px] font-medium text-neutral-100">
-                    {page.title || "Untitled"}
-                  </span>
+                  {concept ? (
+                    <span className="size-2.5 shrink-0 rounded-full" title={concept.state} style={{ backgroundColor: STATE_DOT[concept.state] }} />
+                  ) : (
+                    <span className="text-base leading-none">{page.icon}</span>
+                  )}
+                  {renaming === page.id ? (
+                    <input
+                      autoFocus
+                      defaultValue={page.title}
+                      onFocus={(e) => e.target.select()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onBlur={(e) => renameConcept(page.id, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") setRenaming(null);
+                      }}
+                      className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-neutral-100 outline-none"
+                    />
+                  ) : (
+                    <span className={`truncate text-[13px] font-medium ${concept ? "text-violet-100" : "text-neutral-100"}`}>
+                      {page.title || "Untitled"}
+                    </span>
+                  )}
                 </div>
                 {glow && (
                   <span
@@ -822,7 +912,7 @@ export function SpatialCanvas({
                     {count}
                   </button>
                 )}
-                <div className="mt-1 pl-6 text-[11px] text-neutral-500">
+                <div className={`mt-1 text-[11px] text-neutral-500 ${concept ? "pl-[18px]" : "pl-6"}`}>
                   {links ? `${links} link${links === 1 ? "" : "s"}` : "No links yet"}
                   {active && <span className="text-neutral-400"> · open</span>}
                 </div>
@@ -870,11 +960,11 @@ export function SpatialCanvas({
       {/* Hint */}
       <div className="pointer-events-none absolute left-4 top-3 text-[11px] text-neutral-500">
         Drag to pan · scroll to zoom · drag a card's edge dot onto another card to connect · click a line
-        to label it · double-click to open
+        to set its relationship · right-click for a new concept
       </div>
 
       {pages.length === 0 && (
-        <div className="absolute inset-0 grid place-items-center text-sm text-neutral-500">No pages yet</div>
+        <div className="absolute inset-0 grid place-items-center text-sm text-neutral-500">No pages or concepts yet</div>
       )}
 
       {/* Controls */}
@@ -882,6 +972,10 @@ export function SpatialCanvas({
         onPointerDown={(e) => e.stopPropagation()}
         className="absolute bottom-4 right-4 flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-neutral-800/90 p-1 shadow-xl shadow-black/40 backdrop-blur"
       >
+        <CanvasButton title="New concept" onClick={() => newConcept()}>
+          <Lightbulb className="size-3.5" />
+        </CanvasButton>
+        <span className="mx-0.5 h-4 w-px bg-white/10" />
         <CanvasButton title="Zoom out" onClick={() => zoomCenter(1 / 1.2)}>
           <Minus className="size-4" />
         </CanvasButton>
@@ -935,7 +1029,7 @@ function EdgePopover({
   y: number;
   from: string;
   to: string;
-  onChange: (patch: Partial<Pick<CanvasEdge, "label" | "color" | "style">>) => void;
+  onChange: (patch: Partial<Pick<CanvasEdge, "label" | "color" | "style" | "relType">>) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -952,15 +1046,32 @@ function EdgePopover({
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       style={{ left: x, top: y }}
-      className="oc-edge-popover oc-pop-in absolute z-20 w-[260px] -translate-x-1/2 origin-top cursor-default rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-2 shadow-2xl shadow-black/60"
+      className="oc-edge-popover oc-pop-in absolute z-20 w-[300px] -translate-x-1/2 origin-top cursor-default rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-2 shadow-2xl shadow-black/60"
     >
       <p className="truncate px-1 pb-2 text-[11px] text-neutral-500">
-        {from} <span className="text-neutral-600">{edge.mutual ? "↔" : "→"}</span> {to}
+        {from} <span className="text-neutral-600">{edge.mutual || SYMMETRIC_TYPES.has(edge.relType) ? "↔" : "→"}</span> {to}
       </p>
+      <p className="px-1 pb-1.5 text-[11px] font-medium text-neutral-500">Relationship</p>
+      <div className="mb-2 grid grid-cols-3 gap-1 px-1">
+        {REL_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => onChange({ relType: t })}
+            className={`h-7 cursor-pointer truncate rounded-md border px-1 text-[11px] transition-colors duration-100 ${
+              edge.relType === t
+                ? "border-sky-500 bg-sky-500/10 text-neutral-100"
+                : "border-white/[0.08] text-neutral-400 hover:bg-white/[0.05] hover:text-neutral-200"
+            }`}
+          >
+            {REL_LABELS[t]}
+          </button>
+        ))}
+      </div>
       <input
         ref={inputRef}
         value={label}
-        placeholder="Add a label, e.g. relates to"
+        placeholder="Why are they connected? (optional)"
         onChange={(e) => setLabel(e.target.value)}
         onBlur={commitLabel}
         onKeyDown={(e) => {

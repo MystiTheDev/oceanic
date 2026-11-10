@@ -6,7 +6,9 @@ import { api } from "../../data/api";
  * your own dictionary, auto-learned words, custom replacements and subject
  * word packs. Everything runs locally.
  */
-export type SpellSettings = { autocorrect: boolean; underline: boolean; complete: boolean };
+/** "uk"/"us": the other spelling is flagged and autocorrected (colour ↔ color). */
+export type Dialect = "both" | "uk" | "us";
+export type SpellSettings = { autocorrect: boolean; underline: boolean; complete: boolean; dialect: Dialect };
 type State = {
   ready: boolean;
   settings: SpellSettings;
@@ -18,7 +20,7 @@ type State = {
   replacements: Record<string, string>;
   packs: string[];
 };
-let state: State = { ready: false, settings: { autocorrect: true, underline: true, complete: true }, user: [], learned: {}, replacements: {}, packs: [] };
+let state: State = { ready: false, settings: { autocorrect: true, underline: true, complete: true, dialect: "both" }, user: [], learned: {}, replacements: {}, packs: [] };
 const listeners = new Set<() => void>();
 const set = (p: Partial<State>) => ((state = { ...state, ...p }), listeners.forEach((l) => l()));
 export const useSpell = () =>
@@ -31,6 +33,38 @@ export const subscribeSpell = (l: () => void) => (listeners.add(l), () => void l
 
 let words: Set<string> = new Set();
 let sorted: string[] = [];
+/** Word → frequency rank (0 = most common), from a 50k subtitle-corpus list. */
+let rank = new Map<string, number>();
+/** "dont" → "don't": apostrophe-less contractions, fixed as you type. */
+let contractions = new Map<string, string>();
+const rankOf = (w: string) => rank.get(w) ?? 1e6;
+
+/* ------------------------------------------------------------ UK ↔ US */
+const OUR = "colour favour flavour honour humour labour neighbour rumour behaviour harbour vapour odour armour savour endeavour vigour rigour tumour parlour splendour clamour candour valour saviour ardour fervour";
+const RE = "centre theatre metre litre fibre calibre sombre spectre lustre meagre sabre kilometre centimetre millimetre";
+const PAIRS =
+  "defence:defense offence:offense grey:gray travelled:traveled travelling:traveling traveller:traveler travellers:travelers cancelled:canceled cancelling:canceling " +
+  "labelled:labeled labelling:labeling modelled:modeled modelling:modeling fuelled:fueled jewellery:jewelry aluminium:aluminum catalogue:catalog analogue:analog " +
+  "plough:plow pyjamas:pajamas sceptical:skeptical sceptic:skeptic mould:mold smoulder:smolder enrol:enroll fulfil:fulfill skilful:skillful aeroplane:airplane " +
+  "manoeuvre:maneuver paediatric:pediatric encyclopaedia:encyclopedia ageing:aging judgement:judgment acknowledgement:acknowledgment analyse:analyze analysed:analyzed " +
+  "analysing:analyzing paralyse:paralyze paralysed:paralyzed catalyse:catalyze";
+/** UK → US and US → UK, built once the word lists load. */
+const toUS = new Map<string, string>(), toUK = new Map<string, string>();
+function buildDialects() {
+  const add = (uk: string, us: string) => (toUS.set(uk, us), toUK.set(us, uk));
+  for (const p of PAIRS.split(" ")) add(...(p.split(":") as [string, string]));
+  const both = (uk: string, us: string) => words.has(uk) && words.has(us) && add(uk, us);
+  for (const b of OUR.split(" ")) for (const e of ["", "s", "ed", "ing", "ite", "ites", "able", "ful", "less", "ably"]) both(b + e, b.replace(/our$/, "or") + e);
+  for (const b of RE.split(" ")) for (const e of ["", "s", "d"]) both(b + e, b.replace(/re$/, "er") + e);
+  // -ise → -ize, only where both spellings are common words ("realise"/"realize", not "surprise").
+  for (const [w, r] of rank) {
+    if (r > 30000 || w.length < 6) continue;
+    const m = w.match(/^(.+)is(e|es|ed|ing|ation|ations|er|ers)$/);
+    if (m && rankOf(`${m[1]}iz${m[2]}`) < 30000) add(w, `${m[1]}iz${m[2]}`);
+  }
+}
+/** The spelling the chosen dialect wants for w, or null if w is already fine. */
+const dialectFix = (w: string) => (state.settings.dialect === "uk" ? toUK.get(w) : state.settings.dialect === "us" ? toUS.get(w) : undefined) ?? null;
 const ignored = new Set<string>();
 
 /** Common typos fixed as you type. */
@@ -43,7 +77,14 @@ const TYPOS: Record<string, string> = Object.fromEntries(
     "garantee:guarantee grammer:grammar happend:happened independant:independent knowlege:knowledge libary:library neccessary:necessary " +
     "noticable:noticeable posession:possession prefered:preferred reccomend:recommend refered:referred relevent:relevant succesful:successful " +
     "suprise:surprise tommorow:tomorrow tounge:tongue truely:truly wierd:weird writting:writing hte:the fo:of nad:and waht:what jsut:just " +
-    "becasue:because whcih:which wiht:with tehre:there thsi:this yuo:you abotu:about").split(" ").map((p) => p.split(":")),
+    "becasue:because whcih:which wiht:with tehre:there thsi:this yuo:you abotu:about " +
+    "definatly:definitely definatley:definitely definitly:definitely occurence:occurrence occurance:occurrence persue:pursue publically:publicly " +
+    "begining:beginning beleif:belief calender:calendar cemetary:cemetery colum:column concensus:consensus embarass:embarrass foriegn:foreign " +
+    "fourty:forty gaurd:guard harrass:harass hieght:height ignorence:ignorance immediatly:immediately interupt:interrupt lenght:length " +
+    "maintainance:maintenance millenium:millennium mischevious:mischievous mispell:misspell occassionally:occasionally oppurtunity:opportunity " +
+    "parliment:parliament peice:piece posible:possible prefered:preferred priviledge:privilege pronounciation:pronunciation reciept:receipt " +
+    "rythm:rhythm sieze:seize sentance:sentence similiar:similar strenght:strength tendancy:tendency threshhold:threshold tommorrow:tomorrow " +
+    "vaccum:vacuum wether:whether wierd:weird").split(" ").map((p) => p.split(":")),
 );
 
 /** Subject packs: extra words never flagged. */
@@ -52,6 +93,16 @@ export const PACKS: Record<string, { label: string; words: string }> = {
   maths: { label: "Maths", words: "polynomial quadratic logarithm exponent integral derivative differentiation integration trigonometry sine cosine tangent hypotenuse asymptote matrix matrices vector scalar eigenvalue binomial permutation combination probability theorem lemma corollary parabola hyperbola ellipse circumference perpendicular parallelogram rhombus trapezium sigma summation factorial" },
   computing: { label: "Computing", words: "algorithm boolean recursion iteration bytecode compiler interpreter runtime array struct pointer integer float string null async await promise callback api json html css javascript typescript python java kotlin rust sql database backend frontend localhost github repo" },
 };
+
+/** Modern / app words missing from both word lists (always accepted). */
+const MODERN = new Set(
+  ("autocorrect autocorrects autocorrected autocomplete autofill spellcheck spellchecker mindmap mindmaps flashcard flashcards dropdown dropdowns checkbox checkboxes " +
+    "wifi emoji emojis selfie selfies youtube youtuber google googled instagram tiktok whatsapp netflix spotify chatbot chatbots podcast podcasts livestream " +
+    "smartwatch touchscreen screenshot screenshots screencast webcam webpage webpages website websites username usernames login logins logout signup " +
+    "hashtag hashtags inbox timestamp timestamps workspace workspaces sidebar sidebars toolbar toolbars homepage dashboard dashboards backlink backlinks " +
+    "subpage subpages tooltip tooltips popup popups darkmode offline online email emails emailed emailing app apps ebook ebooks pdf pdfs docx " +
+    "unselect deselect redo undo multitask multitasking pomodoro").split(" "),
+);
 
 /** Words worth completing (ranked first after learned words). */
 const COMMON =
@@ -71,8 +122,12 @@ export async function loadSpell(stored: Record<string, string>) {
   } catch {}
   // The big list loads in the background (its own chunk).
   const list = ((await import("an-array-of-english-words/index.json")) as { default: string[] }).default;
+  const freq = ((await import("./freq.json")) as { default: string[] }).default;
   words = new Set(list);
   sorted = list.slice().sort();
+  rank = new Map(freq.map((w, i) => [w, i]));
+  buildDialects();
+  contractions = new Map(freq.filter((w) => w.includes("'")).map((w) => [w.replace(/'/g, ""), w]));
   set({ ready: true });
 }
 
@@ -81,7 +136,11 @@ const norm = (w: string) => w.toLowerCase().replace(/[’']/g, "'");
 export function isKnown(word: string) {
   if (!state.ready || word.length < 2 || /\d/.test(word) || ignored.has(norm(word))) return true;
   const w = norm(word).replace(/'s$/, "");
+  if (dialectFix(w) && !state.user.includes(w)) return false;
   if (words.has(w) || words.has(norm(word))) return true;
+  if (MODERN.has(w)) return true;
+  // Common words the dictionary lacks (names, newer words), but not typos or "dont"-style contractions.
+  if (rankOf(w) < 20000 && !TYPOS[w] && !contractions.has(w)) return true;
   if (state.user.includes(w) || (state.learned[w] ?? 0) >= 3) return true;
   if (state.packs.some((p) => PACKS[p]?.words.split(" ").includes(w))) return true;
   if (/^[A-Z0-9]{2,}$/.test(word)) return true; // acronyms
@@ -92,9 +151,24 @@ export function isKnown(word: string) {
 export function autocorrectFor(word: string): string | null {
   if (!state.settings.autocorrect) return null;
   const w = norm(word);
-  const fix = state.replacements[w] ?? TYPOS[w];
+  const fix = state.replacements[w] ?? TYPOS[w] ?? contractions.get(w) ?? dialectFix(w) ?? swapFix(word);
   if (!fix) return null;
   return word[0] === word[0].toUpperCase() && word[0] !== word[0].toLowerCase() ? fix[0].toUpperCase() + fix.slice(1) : fix;
+}
+
+/** Safe autocorrect: two swapped letters making a common word ("form"/"from" untouched: both are words), or one unambiguous edit on a long word. */
+function swapFix(word: string): string | null {
+  const w = norm(word);
+  if (w.length < 4 || isKnown(word)) return null;
+  let best: string | null = null;
+  for (let i = 0; i < w.length - 1; i++) {
+    const x = w.slice(0, i) + w[i + 1] + w[i] + w.slice(i + 2);
+    if (rankOf(x) < 5000 && (!best || rankOf(x) < rankOf(best))) best = x;
+  }
+  if (best || w.length < 6) return best;
+  // Longer words with exactly one common word one edit away ("excercise" → "exercise").
+  const hits = [...edits1(w)].filter((x) => rankOf(x) < 15000);
+  return hits.length === 1 ? hits[0] : null;
 }
 
 const ALPHA = "abcdefghijklmnopqrstuvwxyz'";
@@ -114,16 +188,20 @@ function edits1(w: string) {
 /** Up to 3 suggestions, closest and most familiar first. */
 export function suggestionsFor(word: string): string[] {
   const w = norm(word);
-  const known = (x: string) => words.has(x) || state.user.includes(x) || (state.learned[x] ?? 0) >= 3;
-  const score = (x: string) => (state.learned[x] ?? 0) * 10 + (COMMON_LIST.includes(x) ? 50 : 0) - Math.abs(x.length - w.length);
-  let found = [...edits1(w)].filter(known);
-  if (!found.length && w.length <= 12) {
+  const known = (x: string) => words.has(x) || rank.has(x) || MODERN.has(x) || state.user.includes(x) || (state.learned[x] ?? 0) >= 3;
+  // Your words first, then by how common the word is (rare dictionary words last).
+  const cost = (x: string) => ((state.learned[x] ?? 0) >= 3 || state.user.includes(x) ? -1 : Math.log2(rankOf(x) + 2));
+  const one = [...edits1(w)].filter(known);
+  let found = one.sort((a, b) => cost(a) - cost(b));
+  // Also try two edits when one edit only found rare words.
+  if (w.length <= 12 && (!one.length || rankOf(one[0]) > 20000)) {
     const two = new Set<string>();
-    for (const e of edits1(w)) for (const e2 of edits1(e)) if (known(e2)) two.add(e2);
-    found = [...two];
+    for (const e of edits1(w)) for (const e2 of edits1(e)) if (rank.has(e2) && rankOf(e2) < 20000) two.add(e2);
+    // A common word two edits away beats a rare word one edit away.
+    found = [...new Set([...found.filter((x) => rankOf(x) < 20000), ...[...two].sort((a, b) => cost(a) - cost(b)), ...found])];
   }
-  const typo = TYPOS[w];
-  const ranked = [...new Set([...(typo ? [typo] : []), ...found.sort((a, b) => score(b) - score(a))])].slice(0, 3);
+  const typo = TYPOS[w] ?? contractions.get(w) ?? dialectFix(w);
+  const ranked = [...new Set([...(typo ? [typo] : []), ...found])].filter((x) => x !== w).slice(0, 3);
   const cap = word[0] !== word[0].toLowerCase();
   return ranked.map((s) => (cap ? s[0].toUpperCase() + s.slice(1) : s));
 }
@@ -139,9 +217,15 @@ export function completionFor(prefix: string): string | null {
     learned ??
     state.user.find((w) => w.startsWith(p) && w !== p) ??
     COMMON_LIST.find((w) => w.startsWith(p) && w !== p) ??
-    (p.length >= 5 ? dictPrefix(p) : null);
+    freqPrefix(p) ??
+    (p.length >= 6 ? dictPrefix(p) : null);
   if (!pick) return null;
   return prefix + pick.slice(prefix.length);
+}
+/** Most common word that starts with p and adds at least 2 letters (worth a Tab). */
+function freqPrefix(p: string) {
+  for (const [w] of rank) if (w.length >= p.length + 2 && w.startsWith(p) && !w.includes("'")) return w;
+  return null;
 }
 function dictPrefix(p: string) {
   let lo = 0, hi = sorted.length;

@@ -79,7 +79,7 @@ export function HomeView(props: HomeViewProps) {
           <div className="mt-3 flex flex-wrap gap-2">
             <ActionPill tone="#5aa2e9" icon={<Plus className="size-3.5" />} label="New page" onClick={onNewPage} />
             <ActionPill tone="#a78bfa" icon={<Sparkles className="size-3.5" />} label="New mindmap" onClick={props.onNewMindmap} />
-            <ActionPill tone="#2dd4bf" icon={<Network className="size-3.5" />} label="Spatial canvas" onClick={() => onChangeView("canvas")} />
+            <ActionPill tone="#2dd4bf" icon={<Network className="size-3.5" />} label="Atlas" onClick={() => onChangeView("atlas")} />
             <ActionPill tone="#fbbf24" icon={<CalendarDays className="size-3.5" />} label="Calendar" onClick={() => onChangeView("calendar")} />
             <ActionPill tone="#94a3b8" icon={<Upload className="size-3.5" />} label="Import" onClick={props.onImport} />
           </div>

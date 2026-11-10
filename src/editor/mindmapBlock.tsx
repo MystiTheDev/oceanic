@@ -60,15 +60,17 @@ export function Preview({ nodes }: { nodes: MNode[] }) {
 }
 
 export const MindmapEmbed = createReactBlockSpec(
-  { type: "mindmapEmbed", propSchema: { mindmapId: { default: "" } }, content: "none" },
+  { type: "mindmapEmbed", propSchema: { mindmapId: { default: "" }, name: { default: "" } }, content: "none" },
   {
     render: function MindmapEmbedView({ block, editor }) {
       const id = block.props.mindmapId;
       const [maps, setMaps] = useState<MindmapRecord[]>([]);
       const [map, setMap] = useState<{ title: string; subject: string; nodes: MNode[] } | null>(null);
+      /** A missing map offers Relink, which reuses the empty state's picker. */
+      const [relinking, setRelinking] = useState(false);
 
       useEffect(() => {
-        if (!id) {
+        if (!id || relinking) {
           api.getAllMindmaps().then(setMaps);
           return;
         }
@@ -78,16 +80,16 @@ export const MindmapEmbed = createReactBlockSpec(
         const onSaved = (e: Event) => (e as CustomEvent).detail === id && void load();
         window.addEventListener(MINDMAP_SAVED, onSaved);
         return () => window.removeEventListener(MINDMAP_SAVED, onSaved);
-      }, [id]);
+      }, [id, relinking]);
 
-      if (!id) {
+      if (!id || relinking) {
         return (
           <div className="oc-mm-embed is-empty" contentEditable={false}>
             <p className="oc-mm-embed-title">🧠 Embed a mindmap</p>
             {maps.length ? (
               <div className="oc-mm-embed-pick">
                 {maps.map((m) => (
-                  <button key={m.id} type="button" onClick={() => editor.updateBlock(block, { props: { mindmapId: m.id } } as never)}>
+                  <button key={m.id} type="button" onClick={() => (setRelinking(false), editor.updateBlock(block, { props: { mindmapId: m.id, name: m.title } } as never))}>
                     {subjectOf(m.subjectTag).icon} {m.title}
                   </button>
                 ))}
@@ -103,12 +105,17 @@ export const MindmapEmbed = createReactBlockSpec(
         <div className="oc-mm-embed" contentEditable={false}>
           <div className="oc-mm-embed-head">
             <span className="oc-mm-embed-title">
-              {map ? `${subjectOf(map.subject).icon} ${map.title}` : "Mindmap not found"}
+              {map ? `${subjectOf(map.subject).icon} ${map.title}` : `${block.props.name || "Mindmap"} (not found)`}
             </span>
-            {map && (
+            {map ? (
               <button type="button" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_MINDMAP, { detail: id }))}>
                 <ExternalLink size={13} /> Open
               </button>
+            ) : (
+              <span className="flex gap-1.5">
+                <button type="button" onClick={() => setRelinking(true)}>Relink</button>
+                <button type="button" onClick={() => editor.removeBlocks([block])}>Remove</button>
+              </span>
             )}
           </div>
           <div className="oc-mm-embed-canvas" onDoubleClick={() => map && window.dispatchEvent(new CustomEvent(OPEN_MINDMAP, { detail: id }))}>

@@ -4,7 +4,7 @@
  * popover, the selected annotation's bar and the text-selection bar.
  * ------------------------------------------------------------------------ */
 import { useEffect, useRef, useState } from "react";
-import { Highlighter, Strikethrough, Trash2, Underline } from "lucide-react";
+import { Highlighter, Layers, Lightbulb, MessageSquareText, ScrollText, Strikethrough, Trash2, Underline } from "lucide-react";
 import type { PdfAnnotationKind } from "../data/api";
 import { HIGHLIGHT_COLORS, INK_COLORS, MARKUP, STICKY_SIZE, bbox, type Ann } from "./annotations";
 
@@ -132,12 +132,14 @@ export function SelectionBar({
   color,
   onColor,
   onMark,
+  onNerida,
 }: {
   x: number;
   y: number;
   color: string;
   onColor: (c: string) => void;
   onMark: (kind: PdfAnnotationKind) => void;
+  onNerida?: (action: "explain" | "summarize" | "cards" | "ask") => void;
 }) {
   return (
     <div className="oc-pdf-bar oc-pop-in" style={{ left: x, top: y, position: "fixed" }} onMouseDown={(e) => e.preventDefault()}>
@@ -152,6 +154,15 @@ export function SelectionBar({
       <button type="button" className="oc-pdf-bar-btn" data-tip="Strikethrough" onClick={() => onMark("strike")}>
         <Strikethrough size={14} />
       </button>
+      {onNerida && (
+        <>
+          <i className="oc-pdf-bar-sep" />
+          <button type="button" className="oc-pdf-bar-btn" data-tip="Explain simply (Nerida)" onClick={() => onNerida("explain")}><Lightbulb size={14} /></button>
+          <button type="button" className="oc-pdf-bar-btn" data-tip="Summarize (Nerida)" onClick={() => onNerida("summarize")}><ScrollText size={14} /></button>
+          <button type="button" className="oc-pdf-bar-btn" data-tip="Flashcards (Nerida)" onClick={() => onNerida("cards")}><Layers size={14} /></button>
+          <button type="button" className="oc-pdf-bar-btn" data-tip="Ask Nerida about it" onClick={() => onNerida("ask")}><MessageSquareText size={14} /></button>
+        </>
+      )}
     </div>
   );
 }

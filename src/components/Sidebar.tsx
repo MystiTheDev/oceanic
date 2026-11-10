@@ -6,6 +6,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { HomeIcon, ImportIcon, LibraryIcon, SearchIcon, TagsIcon, TrashIcon } from "./SidebarIcons";
 import {
   AppWindow,
   FolderInput,
@@ -13,14 +14,9 @@ import {
   Copy,
   MoreHorizontal,
   PenLine,
-  House,
-  LibraryBig,
-  Tags,
   Plus,
-  Search,
   Star,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { buildPageTree, subtreeIds, type PageMeta, type PageNode } from "../data/workspace";
 import { SearchModal } from "./SearchModal";
@@ -71,8 +67,8 @@ type DropTarget = { targetId: string | null; zone: DropZone };
 
 /** Fired on window to open the search palette from elsewhere (e.g. right-click menu). */
 /** Notion's sidebar bounds. */
-const SIDEBAR_DEFAULT = 264;
-const clampWidth = (w: number) => Math.min(480, Math.max(224, w));
+/** On-screen width; contents render at 90% (zoom) so everything is a touch smaller. */
+const SIDEBAR_WIDTH = 264;
 
 export const OPEN_SEARCH_EVENT = "oceanic:open-search";
 
@@ -110,34 +106,6 @@ export function Sidebar({
 }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [fileOver, setFileOver] = useState(false);
-  const [width, setWidth] = useState(() => {
-    try {
-      return clampWidth(Number(localStorage.getItem("oc-sidebar-w3")) || SIDEBAR_DEFAULT);
-    } catch {
-      return SIDEBAR_DEFAULT;
-    }
-  });
-  const saveWidth = (w: number) => {
-    setWidth(w);
-    try {
-      localStorage.setItem("oc-sidebar-w3", String(w));
-    } catch {}
-  };
-  const startResize = (e: { preventDefault(): void; clientX: number }) => {
-    e.preventDefault();
-    const x0 = e.clientX, w0 = width;
-    let w = w0;
-    const move = (ev: globalThis.MouseEvent) => setWidth((w = clampWidth(w0 + ev.clientX - x0)));
-    const up = () => {
-      saveWidth(w);
-      document.body.style.cursor = "";
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-  };
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [privateOpen, setPrivateOpen] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["roadmap"]));
@@ -152,21 +120,11 @@ export function Sidebar({
   const pinned = pages.filter((p) => p.pinned);
   const menuPage = menu ? pages.find((p) => p.id === menu.pageId) : undefined;
 
-  // Global Ctrl+K → open the search palette.
+  // Ctrl+K lives in App's universal keys, which send this event in Notes.
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
     const onOpenSearch = () => setSearchOpen(true);
-    window.addEventListener("keydown", onKeyDown);
     window.addEventListener(OPEN_SEARCH_EVENT, onOpenSearch);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener(OPEN_SEARCH_EVENT, onOpenSearch);
-    };
+    return () => window.removeEventListener(OPEN_SEARCH_EVENT, onOpenSearch);
   }, []);
 
   const toggleExpanded = (id: string) =>
@@ -315,7 +273,7 @@ export function Sidebar({
 
   return (
     <aside
-      style={{ width }}
+      style={{ width: SIDEBAR_WIDTH / 0.9, zoom: 0.9 }}
       onDragOver={(e) => e.dataTransfer.types.includes("Files") && (e.preventDefault(), setFileOver(true))}
       onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setFileOver(false)}
       onDrop={(e) => {
@@ -324,20 +282,13 @@ export function Sidebar({
         setFileOver(false);
         onImport([...e.dataTransfer.files]);
       }}
-      className="relative flex h-full shrink-0 flex-col overflow-hidden rounded-r-2xl border-r border-white/[0.06] bg-[var(--oc-sidebar)] backdrop-blur"
+      className="oc-sidebar relative z-10 my-2 ml-2 flex h-[calc(100%-16px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[var(--oc-sidebar)] backdrop-blur"
     >
       {fileOver && (
         <div className="oc-fade-in pointer-events-none absolute inset-2 z-30 grid place-items-center rounded-xl border-2 border-dashed border-sky-400/70 bg-sky-500/10 text-[13px] font-medium text-sky-300">
           Drop to import notes
         </div>
       )}
-      {/* Notion-style resize edge: drag to resize, double-click to reset. */}
-      <div
-        onMouseDown={startResize}
-        onDoubleClick={() => saveWidth(SIDEBAR_DEFAULT)}
-        title="Drag to resize"
-        className="absolute inset-y-0 right-0 z-20 w-1.5 cursor-col-resize transition-colors hover:bg-[color:var(--oc-brand)]/40"
-      />
       {/* ---- Workspace header ---- */}
       <div className="flex h-16 items-center gap-2.5 px-3 pt-2">
         <img src={logoRaw} alt="Oceanic logo" className="oc-brand-logo size-10 shrink-0 rounded-lg object-contain" />
@@ -358,9 +309,9 @@ export function Sidebar({
           type="button"
           onClick={() => setSearchOpen(true)}
           title="Search (Ctrl+K)"
-          className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 text-[14px] text-neutral-500 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-400"
+          className="oc-search flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 text-[14px] text-neutral-500 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-400"
         >
-          <Search className="size-4 shrink-0" />
+          <SearchIcon className="size-4 shrink-0 oc-ic-search" />
           <span className="flex-1 text-left">Search</span>
           <kbd className="shrink-0 rounded bg-white/[0.08] px-1.5 py-0.5 font-sans text-[11px] leading-none text-neutral-400">Ctrl+K</kbd>
         </button>
@@ -371,29 +322,29 @@ export function Sidebar({
         <button
           type="button"
           onClick={onHome}
-          className={`flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 ${
-            homeActive ? "bg-white/[0.07] text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
+          className={`flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
+            homeActive ? "oc-nav-active text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
           }`}
         >
-          <House className="size-4 shrink-0 text-neutral-500" />
+          <HomeIcon className="size-4 shrink-0 text-neutral-500 oc-ic-home" />
           <span className="flex-1 text-left">Home</span>
         </button>
         <button
           type="button"
           onClick={onLibrary}
-          className={`flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 ${
-            libraryActive ? "bg-white/[0.07] text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
+          className={`flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
+            libraryActive ? "oc-nav-active text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
           }`}
         >
-          <LibraryBig className="size-4 shrink-0 text-neutral-500" />
+          <LibraryIcon className="size-4 shrink-0 text-neutral-500 oc-ic-library" />
           <span className="flex-1 text-left">Library</span>
         </button>
         <button
           type="button"
           onClick={onOpenTags}
-          className="flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
+          className="flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
         >
-          <Tags className="size-4 shrink-0 text-neutral-500" />
+          <TagsIcon className="size-4 shrink-0 text-neutral-500 oc-ic-tags" />
           <span className="flex-1 text-left">Tags &amp; status</span>
         </button>
         <button
@@ -402,13 +353,13 @@ export function Sidebar({
             const el = e.currentTarget;
             setTrashAnchor((a) => (a ? null : el));
           }}
-          className={`flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 ${
+          className={`flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
             trashAnchor
               ? "bg-white/[0.07] text-neutral-200"
               : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
           }`}
         >
-          <Trash2 className="size-4 text-neutral-500" />
+          <TrashIcon className="size-4 text-neutral-500 oc-ic-trash" />
           <span className="flex-1 text-left">Trash</span>
           {trashedPages.length > 0 && (
             <span className="text-[11px] text-neutral-500">{trashedPages.length}</span>
@@ -418,9 +369,9 @@ export function Sidebar({
           type="button"
           onClick={() => onImport()}
           title="Markdown, Word, text, HTML or a Notion export (.zip). You can also drop files on the sidebar."
-          className="flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
+          className="flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
         >
-          <Upload className="size-4 text-neutral-500" />
+          <ImportIcon className="size-4 text-neutral-500 oc-ic-import" />
           <span className="flex-1 text-left">Import</span>
         </button>
       </div>
@@ -567,7 +518,7 @@ function SectionHeader({
       <button
         type="button"
         onClick={onToggle}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-[12px] font-semibold text-neutral-500 transition-colors duration-100 group-hover:text-neutral-400"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-500 transition-colors duration-100 group-hover:text-neutral-400"
       >
         {label}
         {count !== undefined && (
@@ -666,11 +617,11 @@ function PageTreeRow(props: PageTreeRowProps) {
         }}
         onDragEnd={onDragEndRow}
         onContextMenu={(e) => !renaming && onRowContextMenu(e, page, expandKey)}
-        className={`group relative flex h-[30px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[14px] transition-colors duration-100 ${
+        className={`oc-row group relative flex h-[34px] cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[14px] transition-colors duration-100 ${
           dropZone === "inside"
             ? "bg-sky-500/15 text-neutral-100 ring-1 ring-inset ring-sky-500/60"
             : active
-              ? "bg-white/10 font-medium text-neutral-100"
+              ? "oc-nav-active font-medium text-neutral-100"
               : menuOpen
                 ? "bg-white/5 text-neutral-300"
                 : "text-neutral-300 hover:bg-white/5"

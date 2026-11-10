@@ -1,3 +1,4 @@
+import { registerSaver } from "../lib/embedSource";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   House,
@@ -123,11 +124,11 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   });
 
   /* ------------------------------------------------------------ saving */
-  const save = async (): Promise<void> => {
+  const save = async (): Promise<string | null> => {
     const d = docRef.current;
-    if (!d) return;
+    if (!d) return null;
     const target = isUnsavedSketch(path) ? await pickSketchSavePath(sketchTitle(path)) : path;
-    if (!target) return;
+    if (!target) return null;
     setStatus("saving");
     try {
       const jpg = /\.jpe?g$/i.test(target);
@@ -138,10 +139,18 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
         forgetSketch(path);
         onSavedAs(target);
       } else setStatus("saved");
+      return target;
     } catch {
       setStatus("error");
+      return null;
     }
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    registerSaver(() => saveRef.current());
+    return () => registerSaver(null);
+  }, []);
   /** After every change: autosave real files, mark new ones unsaved. */
   const changed = () => {
     rerender();

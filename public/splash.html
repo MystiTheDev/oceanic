@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <title>Oceanic</title>
     <style>
-      /* The window is transparent; the card inside it carries the shape and shadow. */
+      /* The window is transparent; the card inside it carries the shape. */
       html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
       body {
         display: grid;
@@ -23,7 +23,6 @@
         border-radius: 16px;
         overflow: hidden;
         background: #020a18;
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(120, 180, 255, 0.08);
       }
 
       /* ------------------------------------------------------------ the world
@@ -356,6 +355,12 @@
     </div>
 
     <script>
+      // A splash is not a web page: no browser menu, keys, zoom or image drag.
+      addEventListener("contextmenu", (e) => e.preventDefault());
+      addEventListener("keydown", (e) => e.preventDefault(), true);
+      addEventListener("wheel", (e) => e.ctrlKey && e.preventDefault(), { passive: false });
+      addEventListener("dragstart", (e) => e.preventDefault());
+
       const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const card = document.getElementById("card");
       const rand = (a, b) => a + Math.random() * (b - a);

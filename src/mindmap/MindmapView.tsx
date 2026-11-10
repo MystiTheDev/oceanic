@@ -18,6 +18,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import "./mindmap-ui.css";
 import { askLogo } from "./MapDialogs";
+import { MAP_FLAG, NeridaMapDialog, type Branch } from "./NeridaMap";
+import { NeridaMark } from "../components/NeridaOrb";
 import { createMindmap } from "./MindmapGallery";
 import { OPEN_MINDMAP } from "../editor/mindmapBlock";
 import { toPng, toSvg } from "html-to-image";
@@ -225,6 +227,8 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  /** Topic Nerida is growing branches under. */
+  const [mapFor, setMapFor] = useState<string | null>(null);
   /** Topic waiting for its new parent to be clicked. */
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const flash = (text: string) => {
@@ -260,6 +264,7 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
       setTitle(m.title);
       setSubject(m.subjectTag);
       setNodes(m.nodes.map(fromRecord));
+      if (sessionStorage.getItem(MAP_FLAG) === mindmapId) (sessionStorage.removeItem(MAP_FLAG), setMapFor(ROOT));
       onTitle(mindmapId, m.title);
     });
   }, [mindmapId]);
@@ -586,6 +591,7 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
       { label: "Add child", icon: <Plus className="size-4" />, hint: "Tab", onSelect: () => addChild(id) },
       { label: "Add sibling", icon: <Plus className="size-4" />, hint: "Enter", disabled: isRoot, onSelect: () => addSibling(id) },
       { label: "Edit label", icon: <PenLine className="size-4" />, hint: "F2", onSelect: () => setEditing(id) },
+      { label: "Expand with Nerida", icon: <NeridaMark size={16} />, onSelect: () => setMapFor(id) },
       "divider",
       { label: "Connect to a topic…", icon: <GitBranchPlus className="size-4" />, disabled: isRoot, onSelect: () => setConnectFrom(id) },
       { label: "Cut connection", icon: <Scissors className="size-4" />, disabled: isRoot || !n.parentId, onSelect: () => actions.cut(id) },
@@ -751,6 +757,9 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
           <button type="button" onClick={onHome} className="oc-mm-ibtn" data-tip="Mindmap Home" aria-label="Mindmap Home">
             <House size={18} />
           </button>
+          <button type="button" onClick={() => setMapFor(ROOT)} className="oc-mm-ibtn" data-tip="Mindmap with Nerida" aria-label="Mindmap with Nerida">
+            <NeridaMark size={18} />
+          </button>
           <button type="button" onClick={tidy} className="oc-mm-ibtn" data-tip="Tidy up" aria-label="Tidy up">
             <Sparkles size={18} />
           </button>
@@ -868,6 +877,19 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
       </div>
 
       <ZoomPill onFit={fit} />
+      {mapFor && (
+        <NeridaMapDialog
+          topic={nodes.find((n) => n.id === mapFor)?.label ?? ""}
+          pages={mapFor === ROOT ? pages : undefined}
+          onClose={() => (setMapFor(null), wrap.current?.focus())}
+          onAdd={(bs) => {
+            const add: MNode[] = [];
+            const walk = (b: Branch, parentId: string) => (add.push({ id: b.id, label: b.label, x: 0, y: 0, parentId, linkedPageId: null, style: {} }), b.kids.forEach((k) => walk(k, b.id)));
+            bs.forEach((b) => walk(b, mapFor));
+            update((ns) => layout([...ns, ...add]));
+          }}
+        />
+      )}
 
       <ReactFlow
         nodes={rfNodes}

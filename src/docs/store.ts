@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api } from "../data/api";
+import { notifyFileSaved } from "../lib/embedSource";
 
 /** Oceanic Docs: real .docx files in a folder the user picks (plus any opened elsewhere). */
 export type DocFile = { name: string; path: string; modified: number };
@@ -144,7 +145,7 @@ export const writeDoc = (path: string, data: Uint8Array) => {
   // Chunks of 0x8000 keep String.fromCharCode inside the stack limit.
   let bin = "";
   for (let i = 0; i < data.length; i += 0x8000) bin += String.fromCharCode.apply(null, data.subarray(i, i + 0x8000) as never);
-  return invoke("docs_write", { path, data: btoa(bin) });
+  return invoke("docs_write", { path, data: btoa(bin) }).then(() => notifyFileSaved(path));
 };
 
 /** New file in the Docs folder (asks for the folder first if none). */

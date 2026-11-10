@@ -1,4 +1,6 @@
 import { ASSIGNMENT, EXAM, loadStudy } from "./lib/study";
+import { SIDEBAR_ITEMS, sidebarPalette } from "./components/SettingsModal";
+import { loadSrs, scanAll, syncPage } from "./lib/srs";
 import { parseImports, pickImportFiles, type ImportedPage, type ImportFailure } from "./lib/importNotes";
 import { importOmap } from "./lib/omapFile";
 import { StudyHome } from "./components/StudyHome";
@@ -22,6 +24,18 @@ import {
 } from "lucide-react";
 import { TitleBar, type TabInfo } from "./components/TitleBar";
 import { PageHeader } from "./components/PageHeader";
+import { NeridaPanel } from "./components/NeridaPanel";
+import { HomeSwitch, NeridaSidebar } from "./components/NeridaHome";
+import { NeridaCardsHost } from "./components/NeridaCards";
+import { NeridaEditUI } from "./components/NeridaEditUI";
+import { NeridaOutlineUI } from "./components/NeridaOutlineUI";
+import { NERIDA_TASK, type TaskRequest } from "./lib/neridaTask";
+import { NERIDA_NOTE, type NoteRequest } from "./lib/neridaPdf";
+import { BlockNoteEditor } from "@blocknote/core";
+import { schema } from "./editor/schema";
+import { withMath, type MdBlock } from "./components/PageEditor";
+import { withCards, type SaveCardsDetail } from "./lib/neridaStudy";
+import { nerida, useNerida } from "./lib/nerida";
 import { PageEditor } from "./components/PageEditor";
 import { Toast } from "./components/Toast";
 import { SpatialCanvas } from "./components/SpatialCanvas";
@@ -37,6 +51,9 @@ import { SidebarFooter } from "./components/SidebarFooter";
 import { Tooltip } from "./components/Tooltip";
 import { prefs } from "./lib/prefs";
 import { readFileBytes } from "./lib/fileIO";
+import { EmbedInNoteModal } from "./components/EmbedInNoteModal";
+import { SearchModal } from "./components/SearchModal";
+import { OPEN_EMBED_FILE, saveOpenEditor, type FileEmbedKind } from "./lib/embedSource";
 import { AppLoader, AppSwitcher, type AppId } from "./components/AppSwitcher";
 import { ImportMetaDialog, type MetaChoice } from "./components/ImportMetaDialog";
 import { setBanner } from "./lib/banners";
@@ -61,7 +78,7 @@ import { SketchEditor } from "./sketch/SketchEditor";
 import { isDirtySketch, loadSketchSettings, newSketch, sketchTitle } from "./sketch/store";
 import { HomeView } from "./components/HomeView";
 import { TagsPanel } from "./components/TagsPanel";
-import { setTagColors } from "./lib/colors";
+import { isoDate, setTagColors } from "./lib/colors";
 import { MindmapGallery } from "./mindmap/MindmapGallery";
 import { MindmapView, MINDMAP_SAVED } from "./mindmap/MindmapView";
 import { MindmapSidebar } from "./mindmap/MindmapSidebar";
@@ -139,7 +156,7 @@ const toMeta = (r: PageRecord): PageMeta => ({
   tags: r.tags,
 });
 
-const DEFAULT_SETTINGS: AppSettings = { userName: "", avatar: "", theme: "dark", accent: "#2383e2", closeToTray: true, startup: "home", homeStyle: "classic", weekStart: "sunday", editorSize: "default", studyChime: true, appLoader: true };
+const DEFAULT_SETTINGS: AppSettings = { userName: "", avatar: "", theme: "dark", accent: "#2383e2", closeToTray: true, startup: "home", homeStyle: "classic", weekStart: "sunday", editorSize: "default", studyChime: true, appLoader: true, sidebarIcons: "subtle", sidebarColors: "" };
 
 /** Recolors Tailwind's sky scale (the app's accent) from one hex value. */
 const systemDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -175,6 +192,18 @@ const currentPage = (tab: Tab) => tab.history[tab.index];
 
 export default function App() {
   const [loaded, setLoaded] = useState(false);
+  const { open: neridaOpen, homeMode } = useNerida();
+  // Ctrl+J toggles Nerida's side panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        nerida.toggle();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   /** Live and trashed pages together; the tree helpers tell them apart. */
   const [pages, setPages] = useState<PageMeta[]>([]);
   /** Documents fetched (or edited) so far, keyed by page id. */
@@ -188,7 +217,13 @@ export default function App() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState("general");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [askName, setAskName] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean | string>(false);
+  // Deep links into Settings (e.g. Nerida's model menu → Settings → Nerida AI).
+  useEffect(() => {
+    const open = (e: Event) => setSettingsOpen((e as CustomEvent<string>).detail || true);
+    window.addEventListener("oc-open-settings", open);
+    return () => window.removeEventListener("oc-open-settings", open);
+  }, []);
   /** Workspace dialog: "new", or the id being edited. */
   const [wsDialog, setWsDialog] = useState<string | null>(null);
   const [wsToDelete, setWsToDelete] = useState<string | null>(null);
@@ -268,6 +303,8 @@ export default function App() {
         editorSize: stored.editorSize === "small" || stored.editorSize === "large" ? stored.editorSize : "default",
         studyChime: stored.studyChime !== "false",
         appLoader: stored.appLoader !== "false",
+        sidebarIcons: stored.sidebarIcons === "richer" || stored.sidebarIcons === "custom" ? stored.sidebarIcons : "subtle",
+        sidebarColors: stored.sidebarColors ?? "",
       };
       setSettings(next);
       loadConfirmDeleteSettings(stored);
@@ -280,6 +317,7 @@ export default function App() {
       loadDocsSettings(stored);
       loadSketchSettings(stored);
       loadStudy(stored);
+      loadSrs(stored);
       void loadSpell(stored);
       void startUpdates(stored);
       setTagLibrary(JSON.parse(stored.tagLibrary ?? "[]"));
@@ -304,6 +342,7 @@ export default function App() {
       const savedActive = savedTabs.find((t) => t.isActive)?.id;
 
       setPages(all);
+      void scanAll(all.map((p) => p.id));
       let front = restored.find((t) => t.id === savedActive)?.id ?? restored[0]?.id ?? null;
       // "Open on startup: Home" keeps every restored tab and puts Home in front.
       if (next.startup === "home" || !front || restored.length === 4) front = HOME_TAB;
@@ -388,12 +427,18 @@ export default function App() {
     .filter((p): p is PageMeta => !!p)
     .map((p) => `${p.id}\u0000${p.icon} ${p.title || "Untitled"}`)
     .join("\u0001");
+  const todayIso = isoDate(new Date());
+  const trayTodayKey = pages
+    .filter((p) => !p.trashedAt && p.dueDate === todayIso && p.status !== "done")
+    .map((p) => `${p.id}\u0000${p.icon} ${p.title || "Untitled"}`)
+    .join("\u0001");
   useEffect(() => {
     if (!isTauri() || !loaded) return;
     const items = trayRecentKey ? trayRecentKey.split("\u0001").map((x) => ({ id: x.split("\u0000")[0], title: x.split("\u0000")[1] })) : [];
     const docs = docsRecent.slice(0, 5).map((p) => ({ id: p, title: "📄 " + docTitle(p) }));
-    invoke("set_tray_recent", { items, docs }).catch(() => {});
-  }, [trayRecentKey, loaded, docsRecent.join("|")]);
+    const today = trayTodayKey ? trayTodayKey.split("\u0001").map((x) => ({ id: x.split("\u0000")[0], title: x.split("\u0000")[1] })) : [];
+    invoke("set_tray_recent", { items, docs, today }).catch(() => {});
+  }, [trayRecentKey, trayTodayKey, loaded, docsRecent.join("|")]);
 
   const lastNotesTab = useRef<string | null>(null);
   const lastMindmapTab = useRef<string | null>(null);
@@ -838,7 +883,59 @@ export default function App() {
     setDocs((prev) => ({ ...prev, [pageId]: blocks }));
     patchPage(pageId, {});
     scheduleSave(pageId);
+    syncPage(pageId, blocks as never);
   };
+
+  // Nerida flashcards for a note that isn't open in an editor (e.g. test mistakes → cards).
+  const changeDocRef = useRef(changeDoc);
+  changeDocRef.current = changeDoc;
+  useEffect(() => {
+    const on = (e: Event) => {
+      const detail = (e as CustomEvent<SaveCardsDetail>).detail;
+      setTimeout(async () => {
+        if (detail.handled) return;
+        detail.handled = true;
+        const blocks = docsRef.current[detail.pageId] ?? (await loadBlocks(detail.pageId));
+        changeDocRef.current(detail.pageId, withCards(blocks as PartialBlock[], detail.cards) as PartialBlock[]);
+      });
+    };
+    window.addEventListener("oc-nerida-cards", on);
+    return () => window.removeEventListener("oc-nerida-cards", on);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nerida task card → a new dated note (top level), or a due date on the open note.
+  const taskRef = useRef({ createTagged, changeProperties, pages, openPage });
+  taskRef.current = { createTagged, changeProperties, pages, openPage };
+  useEffect(() => {
+    const on = (e: Event) => {
+      const r = (e as CustomEvent<TaskRequest>).detail;
+      const { createTagged, changeProperties, pages } = taskRef.current;
+      const page = r.target === "current" ? pages.find((p) => p.id === r.pageId) : null;
+      if (page) {
+        const tags = r.tag && !page.tags?.includes(r.tag) ? [...(page.tags ?? []), r.tag] : page.tags ?? [];
+        changeProperties(page.id, { dueDate: r.dueDate, status: page.status ?? "not_started", tags });
+      } else void createTagged(r.title, r.tag ? [r.tag] : [], r.dueDate);
+    };
+    window.addEventListener(NERIDA_TASK, on);
+    return () => window.removeEventListener(NERIDA_TASK, on);
+  }, []);
+
+  // Nerida makes a note (PDF summary, PDF flashcards); `reuse` finds one with the same title first.
+  useEffect(() => {
+    const on = async (e: Event) => {
+      const r = (e as CustomEvent<NoteRequest>).detail;
+      const { createTagged, pages, openPage } = taskRef.current;
+      const same = r.reuse && pages.find((p) => !p.trashedAt && p.title.trim().toLowerCase() === r.title.trim().toLowerCase());
+      if (same) return r.done(same.id);
+      const body = r.markdown ? (withMath(BlockNoteEditor.create({ schema }).tryParseMarkdownToBlocks(r.markdown) as unknown as MdBlock[]) as unknown as PartialBlock[]) : undefined;
+      const id = await createTagged(r.title, [], null, body);
+      if (!id) return;
+      r.done(id);
+      if (r.open) openPage(id);
+    };
+    window.addEventListener(NERIDA_NOTE, on);
+    return () => window.removeEventListener(NERIDA_NOTE, on);
+  }, []);
 
   /** Copy of the page and its content (no sub-pages), placed right after it. */
   const duplicatePage = async (pageId: string) => {
@@ -943,8 +1040,78 @@ export default function App() {
     );
     if (gone.size) pruneTabs(gone);
   };
-  const keys = useRef({ importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId });
-  keys.current = { importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId };
+  /** Ctrl+Shift+M: the item being embedded, with its finished block. */
+  const [embedding, setEmbedding] = useState<{ name: string; block: PartialBlock; ref: string } | null>(null);
+  /** Search for Docs, Sketch and Mindmap; Notes keeps the one in its Sidebar. */
+  const [appSearchOpen, setAppSearchOpen] = useState(false);
+  const startEmbed = async () => {
+    const id = activePageId;
+    if (id?.startsWith("mindmap:")) {
+      const mindmapId = id.slice(8);
+      const map = await api.getMindmapById(mindmapId);
+      if (!map) return;
+      setEmbedding({ name: map.title, ref: mindmapId, block: { type: "mindmapEmbed", props: { mindmapId, name: map.title } } as never });
+      return;
+    }
+    const kind: FileEmbedKind | null = id?.startsWith("doc:") ? "doc" : id?.startsWith("sketch:") ? "sketch" : null;
+    if (!kind) return;
+    // Saving a new item opens Save As; cancelling it cancels the embed.
+    const path = await saveOpenEditor();
+    if (!path) return;
+    const name = kind === "doc" ? docTitle(path) : sketchTitle(path);
+    setEmbedding({ name, ref: path, block: { type: "fileEmbed", props: { kind, path, name } } as never });
+  };
+  const embedInto = async (noteId: string, created = false) => {
+    const item = embedding;
+    if (!item) return;
+    setEmbedding(null);
+    try {
+      const blocks = created ? [] : (docsRef.current[noteId] ?? (await loadBlocks(noteId)));
+      const already = blocks.some((b) => b.type === item.block.type && JSON.stringify(b.props ?? {}).includes(JSON.stringify(item.ref)));
+      changeDoc(noteId, [...blocks, item.block, { type: "paragraph" }]);
+      setNotice({
+        text: already ? `Embedded “${item.name}” again (that note already had it)` : `Embedded “${item.name}”`,
+        key: Date.now(),
+        action: { label: "Open note", run: () => keys.current.openPage(noteId) },
+      });
+    } catch (e) {
+      report("Embed in note")(e);
+    }
+  };
+  const createNoteForEmbed = async (title: string, parentId: string | null) => {
+    try {
+      const page = toMeta(await api.createPage(parentId, activeWorkspaceId, null));
+      if (title) await api.renamePage(page.id, title);
+      setPages((prev) => [...prev, { ...page, title }]);
+      await embedInto(page.id, true);
+    } catch (e) {
+      report("Create note for embed")(e);
+    }
+  };
+  const newInApp = () => {
+    if (activeApp === "mindmap") void createMindmap("").then((id) => keys.current.navigate(mindmapEntry(id)));
+    else if (activeApp === "docs") openPage(docEntry(newUntitled()));
+    else if (activeApp === "sketch") openPage(sketchEntry(newSketch(1280, 720)));
+    else void createPage(null);
+  };
+  const keys = useRef({ importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId, activeApp, startEmbed, newInApp });
+  keys.current = { importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId, activeApp, startEmbed, newInApp };
+  // Flashcard "Open in note": open the page; PageEditor scrolls to the block.
+  useEffect(() => {
+    const on = (e: Event) => keys.current.openPage((e as CustomEvent<{ pageId: string }>).detail.pageId);
+    window.addEventListener("oc-open-block", on);
+    return () => window.removeEventListener("oc-open-block", on);
+  }, []);
+
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { kind, path } = (e as CustomEvent<{ kind: FileEmbedKind; path: string }>).detail;
+      setView("document");
+      keys.current.openPage(kind === "doc" ? docEntry(path) : sketchEntry(path));
+    };
+    window.addEventListener(OPEN_EMBED_FILE, on);
+    return () => window.removeEventListener(OPEN_EMBED_FILE, on);
+  }, []);
 
   // PDF cards, `p. N` chips and search hits open the reader in the current tab.
   useEffect(() => {
@@ -1021,6 +1188,7 @@ export default function App() {
       else if (payload === "new_sketch") k.openPage(sketchEntry(newSketch(1280, 720)));
       else if (payload === "new_mindmap") void createMindmap("").then((id) => k.openPage(mindmapEntry(id)));
       else if (payload === "settings") setSettingsOpen(true);
+      else if (payload === "nerida") nerida.set({ open: true });
       else if (payload === "check_updates") void checkForUpdates(true);
       else if (payload === "calendar") (k.setActiveTabId(HOME_TAB), setView("calendar"));
       else if (payload === "search") {
@@ -1056,8 +1224,13 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Universal keys work in every app, even while typing, but wait for modals.
+      if (document.querySelector("[data-oc-modal]")) return;
       const k = keys.current;
       const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      // Docs and Sketch editors run their own Ctrl+N (new document, new canvas dialog).
+      const editorNew = k.activePageId?.startsWith("doc:") || k.activePageId?.startsWith("sketch:");
       const focusAt = (i: number) => {
         const t = k.tabs[(i + k.tabs.length) % k.tabs.length];
         if (t) k.setActiveTabId(t.id);
@@ -1066,15 +1239,29 @@ export default function App() {
 
       if (mod && e.key === "\\") setSidebarCollapsed((v) => !v);
       else if (mod && !e.shiftKey && e.key.toLowerCase() === "t") k.newHomeTab();
-      else if (mod && e.key.toLowerCase() === "n") k.createPage(null);
+      else if (mod && !e.shiftKey && key === "k") {
+        if (k.activeApp === "notes") window.dispatchEvent(new Event(OPEN_SEARCH_EVENT));
+        else setAppSearchOpen(true);
+      }
+      else if (mod && !e.shiftKey && e.key === ",") setSettingsOpen(true);
+      else if (mod && e.shiftKey && key === "m") {
+        if (k.activeApp === "notes") return;
+        void k.startEmbed().catch((err) => console.error("Embed in note failed", err));
+      }
+      else if (mod && key === "n") {
+        if (editorNew) return;
+        k.newInApp();
+      }
       else if (mod && e.key.toLowerCase() === "w") k.activeTabId && k.closeTab(k.activeTabId);
       else if (mod && e.key === "Tab") focusAt(activeIdx + (e.shiftKey ? -1 : 1));
-      else if (mod && /^[1-9]$/.test(e.key))
+      else if (mod && !e.altKey && /^[1-9]$/.test(e.key))
         focusAt(e.key === "9" ? k.tabs.length - 1 : Number(e.key) - 1);
       else if ((e.altKey && e.key === "ArrowLeft") || (mod && e.key === "[")) k.step(-1);
       else if ((e.altKey && e.key === "ArrowRight") || (mod && e.key === "]")) k.step(1);
       else return;
       e.preventDefault();
+      // Editors listen on window too; a handled key must not reach them.
+      e.stopImmediatePropagation();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
@@ -1172,7 +1359,12 @@ export default function App() {
   prefs.weekStart = settings.weekStart === "monday" ? 1 : 0;
   prefs.chime = settings.studyChime;
   useEffect(() => void (document.documentElement.dataset.editorSize = settings.editorSize), [settings.editorSize]);
+  useEffect(() => {
+    const pal = sidebarPalette(settings);
+    for (const [k] of SIDEBAR_ITEMS) document.documentElement.style.setProperty(`--oc-ic-${k}`, pal?.[k] ?? "");
+  }, [settings.sidebarIcons, settings.sidebarColors]);
   setOpenProbe((entry) => tabs.some((t) => currentPage(t) === entry));
+  const neridaHome = homeMode === "nerida" && view === "document" && activePageId === HOME;
   const inDocEditor = view === "document" && (!!activePageId?.startsWith("doc:") || !!activePageId?.startsWith("sketch:") || !!activePageId?.startsWith("mindmap:"));
   useEffect(() => setSidebarCollapsed(inDocEditor), [inDocEditor]);
   const inDocsApp = view === "document" && !!activePageId && isDocEntry(activePageId);
@@ -1256,6 +1448,8 @@ export default function App() {
               onNew={async () => navigate(mindmapEntry(await createMindmap("")))}
               footer={footerFor("mindmap")}
             />
+          ) : neridaHome ? (
+            <NeridaSidebar footer={footerFor("notes")} />
           ) : (
             <Sidebar
               pages={livePages}
@@ -1297,7 +1491,7 @@ export default function App() {
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {!loaded ? (
             <div className="h-full" />
-          ) : view === "canvas" ? (
+          ) : view === "atlas" ? (
             <SpatialCanvas
               pages={livePages}
               activePageId={activePageId}
@@ -1315,6 +1509,7 @@ export default function App() {
               onTrashPage={askTrashPage}
               workspaces={workspaces}
               onMoveToWorkspace={moveToWorkspace}
+              workspaceId={activeWorkspaceId}
             />
           ) : view === "calendar" ? (
             <CalendarView
@@ -1324,6 +1519,11 @@ export default function App() {
               onReschedule={(id, date) => {
                 const p = pages.find((x) => x.id === id);
                 if (p) changeProperties(id, { ...propsOf(p), dueDate: date });
+              }}
+              onDelete={trashPage}
+              onToggleDone={(id) => {
+                const p = pages.find((x) => x.id === id);
+                if (p) changeProperties(id, { ...propsOf(p), status: p.status === "done" ? "not_started" : "done" });
               }}
             />
           ) : activePageId === SKETCH ? (
@@ -1375,11 +1575,16 @@ export default function App() {
               onHome={() => setActiveTabId(MM_HOME_TAB)}
             />
           ) : activePageId?.startsWith("pdf:") ? (
-            <PdfReader
-              key={`${activeTabId}:${activePageId}`}
-              docId={activePageId.slice(4)}
-              onBack={() => (activeTab && activeTab.index > 0 ? step(-1) : setActiveTabId(HOME_TAB))}
-            />
+            <div className="flex h-full min-h-0">
+              <div className="min-w-0 flex-1">
+                <PdfReader
+                  key={`${activeTabId}:${activePageId}`}
+                  docId={activePageId.slice(4)}
+                  onBack={() => (activeTab && activeTab.index > 0 ? step(-1) : setActiveTabId(HOME_TAB))}
+                />
+              </div>
+              {neridaOpen && <NeridaPanel pageId={null} pdf={{ id: activePageId.slice(4), name: "this PDF" }} />}
+            </div>
           ) : activePageId === LIBRARY ? (
             <LibraryView
               pages={allLivePages}
@@ -1390,7 +1595,11 @@ export default function App() {
               onNewPage={() => createPage(null)}
             />
           ) : activePageId === HOME ? (
-            settings.homeStyle === "student" ? (
+            <div className="relative flex h-full min-h-0 flex-col">
+            <HomeSwitch />
+            {neridaHome ? (
+              <NeridaPanel pageId={null} home />
+            ) : homeMode === "dashboard" ? (
             <StudyHome
               key={homeKey}
               userName={settings.userName}
@@ -1428,9 +1637,11 @@ export default function App() {
               onImport={() => void importNotes()}
               onChangeView={setView}
             />
-            )
+            )}
+            </div>
           ) : activePage ? (
-            <>
+            <div className="flex min-h-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
               <PageHeader
                 font={pageFonts[activePage.id] ?? "default"}
                 onFont={setPageFont}
@@ -1459,7 +1670,9 @@ export default function App() {
                   />
                 )}
               </div>
-            </>
+            </div>
+            {neridaOpen && <NeridaPanel pageId={activePage.id} />}
+            </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <kbd className="rounded-md border border-neutral-800 bg-neutral-800/50 px-2 py-1 font-sans text-xs text-neutral-300">
@@ -1509,6 +1722,9 @@ export default function App() {
 
       <UpdateUI />
       <SpellUI />
+      <NeridaCardsHost />
+      <NeridaEditUI />
+      <NeridaOutlineUI />
       {savePrompt && (
         <SavePrompt
           path={savePrompt.path}
@@ -1548,7 +1764,7 @@ export default function App() {
               icon: <FileText className="size-4" />,
               children: [
                 { label: "Document", icon: <FileText className="size-4" />, checked: view === "document", onSelect: () => setView("document") },
-                { label: "Spatial canvas", icon: <Network className="size-4" />, checked: view === "canvas", onSelect: () => setView("canvas") },
+                { label: "Atlas", icon: <Network className="size-4" />, checked: view === "atlas", onSelect: () => setView("atlas") },
                 { label: "Calendar", icon: <CalendarDays className="size-4" />, checked: view === "calendar", onSelect: () => setView("calendar") },
               ],
             },
@@ -1650,8 +1866,26 @@ export default function App() {
         );
       }} onDone={() => setAppLoading(null)} />}
       <DeleteConfirmHost />
+      {embedding && (
+        <EmbedInNoteModal
+          sourceName={embedding.name}
+          notes={livePages.map((p) => ({ id: p.id, title: p.title }))}
+          onPick={(id) => void embedInto(id)}
+          onCreate={(title, parentId) => void createNoteForEmbed(title, parentId)}
+          onClose={() => setEmbedding(null)}
+        />
+      )}
+      {appSearchOpen && (
+        <SearchModal
+          pages={allLivePages}
+          workspaces={workspaces}
+          onOpenPage={(id) => (setView("document"), openPage(id))}
+          onOpenInNewTab={(id) => (setView("document"), openInNewTab(id))}
+          onClose={() => setAppSearchOpen(false)}
+        />
+      )}
       {settingsOpen && (
-        <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}
       {loaded && askName && (
         <NamePrompt

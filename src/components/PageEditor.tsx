@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ImageAnnotator } from "./ImageAnnotator";
 import { copyImageToClipboard } from "../lib/clipboard";
-import { CheckSquare, Network } from "lucide-react";
+import { CheckSquare, Layers, Network } from "lucide-react";
+import { ReviewModal } from "./ReviewModal";
+import { blockText, dueCards, useSrs } from "../lib/srs";
 import { api } from "../data/api";
 import { PageOutline } from "./PageOutline";
 import { importAudioFile, insertTimestamp, isAudioFile, uploadFile } from "../editor/audio";
@@ -16,9 +18,14 @@ import {
   SideMenu,
   SideMenuController,
   SuggestionMenuController,
+  useBlockNoteEditor,
   useCreateBlockNote,
   useSelectedBlocks,
 } from "@blocknote/react";
+import { NeridaMark } from "./NeridaOrb";
+import { openNeridaCards } from "./NeridaCards";
+import { openNeridaEdit } from "../lib/neridaEdit";
+import { TextSelection } from "prosemirror-state";
 import { BlockNoteView } from "@blocknote/mantine";
 import type { Block, PartialBlock } from "@blocknote/core";
 import { en } from "@blocknote/core/locales";
@@ -83,13 +90,83 @@ function SelectionToolbar() {
       <FontButton key="font" />
       <ColorStyleButton key="color" />
       <span key="d4" className="oc-toolbar-divider" />
+      <EditWithNerida key="nerida-edit" />
+      <CardsFromSelection key="nerida" />
       <ToolbarOverflow key="more" />
     </FormattingToolbar>
   );
 }
 
 
+/** Selection toolbar: Nerida rewrites / fixes / custom-edits the selection, previewed before it replaces it. */
+function EditWithNerida() {
+  const editor = useBlockNoteEditor();
+  return (
+    <button type="button" title="Edit with Nerida" className="oc-toolbar-btn flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12.5px] text-neutral-300 hover:bg-white/[0.08]"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        const view = editor.prosemirrorView;
+        const text = editor.getSelectedText().trim();
+        if (!view || !text) return;
+        const { from, to } = view.state.selection;
+        const r = e.currentTarget.getBoundingClientRect();
+        // Re-select the original range first: the popup steals focus.
+        const select = () => (editor.focus(), view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, Math.min(to, view.state.doc.content.size)))));
+        openNeridaEdit({
+          text, x: r.left, y: r.bottom + 6,
+          replace: (t) => (select(), editor.pasteMarkdown(t)),
+          insertBelow: (t) => {
+            select();
+            const blocks = editor.tryParseMarkdownToBlocks(t);
+            const sel = editor.getSelection()?.blocks;
+            if (blocks.length) editor.insertBlocks(blocks as never, sel?.[sel.length - 1] ?? editor.getTextCursorPosition().block, "after");
+          },
+        });
+      }}>
+      <NeridaMark size={15} /> Edit
+    </button>
+  );
+}
+
+/** Selection toolbar: Nerida flashcards from the selected text (PageEditor adds the page id). */
+function CardsFromSelection() {
+  const editor = useBlockNoteEditor();
+  return (
+    <button type="button" title="Make flashcards from selection (Nerida)" className="oc-toolbar-btn flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12.5px] text-neutral-300 hover:bg-white/[0.08]"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => window.dispatchEvent(new CustomEvent("oc-nerida-selection-cards", { detail: editor.getSelectedText() }))}>
+      <NeridaMark size={15} /> Flashcards
+    </button>
+  );
+}
+
 const handledDrops = new WeakSet<DataTransfer>();
+
+/** Nerida replies → note: "$…$" becomes inline math, a "$$…$$" paragraph a math block. */
+type MdText = { type: string; text?: string; styles?: object };
+export type MdBlock = { type: string; content?: MdText[] | unknown; children?: MdBlock[] };
+const MATH = /\$(?!\s)([^$\n]+?)(?<!\s)\$/g;
+export function withMath(blocks: MdBlock[]): MdBlock[] {
+  return blocks.map((b) => {
+    const content = Array.isArray(b.content) ? (b.content as MdText[]) : null;
+    const whole = content?.length === 1 && content[0].type === "text" ? content[0].text!.trim().match(/^\$\$([\s\S]+)\$\$$/) : null;
+    if (whole) return { type: "math", props: { latex: whole[1].trim() } } as MdBlock;
+    const next = content?.flatMap((c) => {
+      if (c.type !== "text" || !c.text?.includes("$")) return [c];
+      const out: unknown[] = [];
+      let last = 0;
+      for (const m of c.text.matchAll(MATH)) {
+        if (m.index! > last) out.push({ ...c, text: c.text.slice(last, m.index) });
+        // Plain numbers ("$6.53$") stay text.
+        out.push(/^-?[\d.,]+$/.test(m[1]) ? { ...c, text: m[1] } : { type: "inlineMath", props: { latex: m[1] } });
+        last = m.index! + m[0].length;
+      }
+      if (last < c.text.length) out.push({ ...c, text: c.text.slice(last) });
+      return out as MdText[];
+    });
+    return { ...b, ...(next ? { content: next } : {}), ...(b.children?.length ? { children: withMath(b.children) } : {}) };
+  });
+}
 
 export function PageEditor({
   page,
@@ -119,6 +196,56 @@ export function PageEditor({
   // Picture annotation: hover button (top-right of an image) or right-click → Annotate….
   const [annotating, setAnnotating] = useState<{ id: string; url: string } | null>(null);
   const [hoverImg, setHoverImg] = useState<{ id: string; url: string; x: number; y: number } | null>(null);
+  // Nerida "Insert into note": Markdown reply goes in after the caret's block.
+  useEffect(() => {
+    const onInsert = (e: Event) => {
+      const blocks = withMath(editor.tryParseMarkdownToBlocks((e as CustomEvent<string>).detail) as unknown as MdBlock[]);
+      if (blocks.length) editor.insertBlocks(blocks as never, editor.getTextCursorPosition().block, "after");
+    };
+    window.addEventListener("oc-nerida-insert", onInsert);
+    return () => window.removeEventListener("oc-nerida-insert", onInsert);
+  }, [editor]);
+
+  // Nerida flashcards: selection → generator for this page; saved cards → the "Flashcards" toggle at the end.
+  useEffect(() => {
+    const onSel = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail?.trim();
+      if (text && editor.isFocused?.() !== false) openNeridaCards({ pageId: page.id, selection: text });
+    };
+    const onSave = (e: Event) => {
+      const detail = (e as CustomEvent<{ pageId: string; cards: string[]; handled?: boolean }>).detail;
+      const { pageId, cards } = detail;
+      if (pageId !== page.id || detail.handled) return;
+      detail.handled = true;
+      const doc = editor.document as Block[];
+      const toggle = doc.find((b) => b.type === "toggleListItem" && blockText(b).trim() === "Flashcards");
+      const have = new Set((toggle?.children ?? []).map((c) => blockText(c).split(" :: ")[0].trim().toLowerCase()));
+      const fresh = cards.filter((c) => !have.has(c.split(" :: ")[0].trim().toLowerCase()));
+      if (!fresh.length) return;
+      const items = fresh.map((t) => ({ type: "bulletListItem", content: t }));
+      if (!toggle) editor.insertBlocks([{ type: "toggleListItem", content: "Flashcards", children: items }] as never, doc[doc.length - 1], "after");
+      else if (toggle.children.length) editor.insertBlocks(items as never, toggle.children[toggle.children.length - 1], "after");
+      else editor.updateBlock(toggle, { children: items } as never);
+    };
+    window.addEventListener("oc-nerida-selection-cards", onSel);
+    window.addEventListener("oc-nerida-cards", onSave);
+    return () => (window.removeEventListener("oc-nerida-selection-cards", onSel), window.removeEventListener("oc-nerida-cards", onSave));
+  }, [editor, page.id]);
+
+  // Flashcard "Open in note": caret + scroll to the block once it's in this editor.
+  useEffect(() => {
+    const jump = () => setTimeout(() => {
+      const id = pendingJump;
+      if (!id || !editor.getBlock(id)) return;
+      pendingJump = null;
+      editor.setTextCursorPosition(id, "end");
+      editor.focus();
+      document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 50);
+    jump();
+    window.addEventListener("oc-open-block", jump);
+    return () => window.removeEventListener("oc-open-block", jump);
+  }, [editor]);
   useEffect(() => {
     const on = (e: Event) => setAnnotating((e as CustomEvent).detail);
     window.addEventListener("oc-annotate", on);
@@ -268,12 +395,13 @@ export function PageEditor({
         {/* Notion: "N backlinks" sits right under the title */}
         {properties}
         <Backlinks pageId={page.id} version={linksVersion} />
+        <PageFlashcards page={page} />
         <div className="mb-2" />
 
         {/* BlockNote canvas (dark); right-click opens Oceanic's block menu */}
         <div
           onContextMenu={(e) => {
-            const items = editorContextMenu(editor, e);
+            const items = editorContextMenu(editor, e, page.id);
             if (items) openContextMenu(e, items);
           }}
         >
@@ -374,5 +502,41 @@ function StartPill({ icon, label, onClick }: { icon: ReactNode; label: string; o
       <span className="text-neutral-400">{icon}</span>
       {label}
     </button>
+  );
+}
+
+/** Block to jump to once its page's editor mounts (set before App switches tabs). */
+let pendingJump: string | null = null;
+window.addEventListener("oc-open-block", (e) => (pendingJump = (e as CustomEvent<{ blockId: string }>).detail.blockId));
+
+/** "🃏 5 cards due · Study" under the title, when the page has flashcards. */
+function PageFlashcards({ page }: { page: PageMeta }) {
+  const { cards, marked } = useSrs();
+  const [open, setOpen] = useState<null | "due" | "practice">(null);
+  const all = Object.values(cards).filter((c) => c.pageId === page.id);
+  // 🃏 in the left margin of every card / marked block.
+  const ids = [...new Set([...marked, ...all.map((c) => c.blockId)])];
+  const sel = (after = "") => ids.map((id) => `[data-id="${id}"]>.bn-block>.bn-block-content${after}`).join(",");
+  const marker = ids.length ? <style>{`${sel()}{position:relative}${sel("::before")}{content:"🃏";position:absolute;left:-1.6em;font-size:.8em;opacity:.6}`}</style> : null;
+  if (!all.length) return marker;
+  const due = dueCards(cards, page.id).length;
+  return (
+    <>
+      {marker}
+      <div className="mb-1 flex items-center">
+      <button
+        type="button"
+        disabled={!due}
+        onClick={() => setOpen("due")}
+        className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md disabled:cursor-default px-1.5 py-0.5 text-[12px] text-neutral-500 hover:bg-white/5 hover:text-neutral-300"
+      >
+        <Layers className="size-3.5" /> {all.length} flashcard{all.length === 1 ? "" : "s"} · {due ? <span className="text-emerald-400">{due} due · Study</span> : "none due"}
+      </button>
+      <button type="button" onClick={() => setOpen("practice")} className="cursor-pointer rounded-md px-1.5 py-0.5 text-[12px] text-neutral-500 hover:bg-white/5 hover:text-neutral-300">
+        · Practice
+      </button>
+      </div>
+      {open && <ReviewModal pages={[page]} pageId={page.id} practice={open === "practice"} onClose={() => setOpen(null)} />}
+    </>
   );
 }

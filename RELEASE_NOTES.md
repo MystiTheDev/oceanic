@@ -1,3 +1,18 @@
+# 🌊 Oceanic v2.0.0: Meet Nerida, your study AI
+
+- ✨ Meet Nerida, Oceanic's built-in AI. Chat about your notes from any page or from the new Nerida view on Home.
+- 🔒 Nerida runs privately on your own computer. The model downloads once, on first use. Cloud models are optional, and they send your note text to an outside company.
+- 🧠 Pick your model: Nerida Lite, Nerida Plus, Ollama models on your PC, or your own provider. Manage them in Settings → Nerida AI.
+- ✍️ Select text to improve it, fix grammar or give your own instruction. Type /continue or /outline in Docs to keep writing or plan an essay.
+- 🃏 Nerida makes flashcards from your notes or PDFs, summarizes PDFs into a new note, and turns a topic into a mindmap.
+- 📅 Ask Nerida to add a task or deadline. You check it on a card before anything is saved.
+- 🔁 Flashcards with spaced review: write "Question :: Answer" or a {{cloze}} bullet, or right-click any block and choose Make flashcard.
+- 📝 Practice tests: pick classes or notes, question count, types and a timer, then see your score and every mistake. Missed cards come back in review.
+- 📎 Embed a live preview of a Doc or Sketch inside a note. Press Ctrl+Shift+M to add the open item to a note.
+- 🗺️ Atlas: link related ideas on the spatial canvas.
+- 🎨 A refreshed sidebar, home screen and splash screen.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v1.0.3: PDFs, spellcheck and page banners
 
 - 📄 Import PDFs into your notes. Each one shows as a preview card that opens a full PDF reader.
