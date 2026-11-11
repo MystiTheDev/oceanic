@@ -6,7 +6,7 @@
 </p>
 
 <h1 align="center">Oceanic</h1>
-<p align="center"><b>Your calm, all-in-one study space.</b><br/>Free, offline-first, and made for students.</p>
+<p align="center"><b>Your calm, all-in-one study space, now with Nerida AI.</b><br/>Free, offline-first, and made for students.</p>
 
 <p align="center">
   <a href="https://github.com/MystiTheDev/oceanic/releases/latest"><img src="branding/pill-version.svg" alt="Latest version" height="28" /></a>
@@ -22,6 +22,24 @@
 ---
 
 Oceanic brings your notes, writing, mind maps, sketches and calendar into one app, so you can stop switching between tools and just study. There's no account, no cloud lock-in, and no subscription.
+
+## 🐚 Meet Nerida, your study buddy
+
+Nerida is the AI built right into Oceanic. She reads your notes so you don't have to copy-paste anything.
+
+- 💬 **Ask anything.** Chat with Nerida about the page you're on, and she uses your related notes for context.
+- ✍️ **Edit with Nerida.** Select text and ask her to rewrite, shorten, explain or fix it.
+- 🃏 **Quizzes & flashcards.** Turn any note or selection into flashcards and practice questions.
+- 📑 **Ask your PDFs.** Highlight part of a PDF and ask Nerida about it, or turn it into a note.
+- 🧠 **Grow mind maps.** Give Nerida a topic and she branches it out for you.
+- 📅 **Spots your deadlines.** Mention "essay due Friday" and Nerida offers to add it to your calendar.
+
+**Private by default.** Nerida runs on your own computer with a local model (llama.cpp or Ollama), so your notes never leave your device and it works offline. Want a bigger model? You can optionally connect OpenAI, Gemini, Groq or OpenRouter with your own API key.
+
+<p align="center">
+  <img src="branding/screenshots/nerida.jpg" alt="Nerida AI in Oceanic" width="720" /><br/>
+  <sub><b>🐚 Nerida:</b> ask, edit and study with AI, right next to your notes</sub>
+</p>
 
 ## 🧰 Four apps in one
 
@@ -63,6 +81,7 @@ Oceanic brings your notes, writing, mind maps, sketches and calendar into one ap
 - 📤 **No lock-in.** Export to **PDF**, **Markdown** or **HTML** anytime, or as an **.ocean** file that keeps everything. Send it to a friend and they can double-click it to open.
 - 🎨 **Make it yours.** Pick an accent colour and profile picture, change the text size, and choose which day your week starts on.
 - 🛟 **Hard to lose work.** Deleted pages go to the Trash first.
+- 🐚 **AI that respects you.** Nerida is optional, local-first, and never needs an account.
 
 ## ⬇️ Download
 
@@ -85,6 +104,26 @@ Oceanic updates itself when a new version is out. You can see what's new on the 
 1. Install and open Oceanic.
 2. Pick a folder for your notes.
 3. Start studying. ✨
+
+## ❓ FAQ
+
+**Is Oceanic really free?**
+Yes. No account, no subscription, no ads.
+
+**Does Nerida need the internet?**
+No. With a local model (llama.cpp or Ollama) she works fully offline. Only cloud providers you choose to connect need internet.
+
+**Do my notes get sent anywhere?**
+Not unless you connect a cloud AI provider yourself. Otherwise everything stays in the folder you picked.
+
+**Where are my files?**
+In the notes folder you chose on first launch. They're yours, and you can export them anytime.
+
+## 🛣️ What's next
+
+- 📱 **Oceanic on mobile**, once the desktop features are finished.
+- 🃏 More study tools around flashcards and spaced practice.
+- 💡 Have an idea? **[Suggest it](https://github.com/MystiTheDev/oceanic/issues)**.
 
 ## 💬 Feedback and bugs
 
