@@ -192,6 +192,18 @@ export function PageEditor({
   // Notion's "Get started with" bar shows while the body is empty.
   const [empty, setEmpty] = useState(() => isEmptyDoc(editor.document as Block[]));
   const scroller = useRef<HTMLDivElement>(null);
+  // Restore last scroll spot; retry briefly while content lays out.
+  useEffect(() => {
+    const y = Number(localStorage.getItem(`oc-scroll:${page.id}`)) || 0;
+    if (!y) return;
+    let n = 0;
+    const t = window.setInterval(() => {
+      const el = scroller.current;
+      if (el) el.scrollTop = y;
+      if (++n > 20 || (el && Math.abs(el.scrollTop - y) < 2)) window.clearInterval(t);
+    }, 50);
+    return () => window.clearInterval(t);
+  }, [page.id]);
 
   // Picture annotation: hover button (top-right of an image) or right-click → Annotate….
   const [annotating, setAnnotating] = useState<{ id: string; url: string } | null>(null);
@@ -355,7 +367,10 @@ export function PageEditor({
       ref={scroller}
       onMouseMove={trackImage}
       onMouseLeave={(e) => !(e.relatedTarget as HTMLElement | null)?.closest?.("button") && setHoverImg(null)}
-      onScroll={() => setHoverImg(null)}
+      onScroll={(e) => {
+        setHoverImg(null);
+        localStorage.setItem(`oc-scroll:${page.id}`, String(Math.round(e.currentTarget.scrollTop)));
+      }}
       className="oc-page-in oc-page-font scrollbar-thin h-full overflow-y-auto overflow-x-hidden"
       style={{ "--oc-page-font": fontStack(font) } as React.CSSProperties}
     >

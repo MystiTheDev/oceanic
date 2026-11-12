@@ -6,9 +6,9 @@ import { pageDirectory } from "../editor/pageDirectory";
 /* Nerida — Oceanic's AI. Built-in engine (llama.cpp) runs locally; chats are
  * shared between the in-note panel and the Home "Nerida" view. */
 
-export type ModelId = "lite" | "plus";
-export const MODEL_NAMES: Record<ModelId, string> = { lite: "Nerida Lite", plus: "Nerida Plus" };
-/** "nerida:lite" | "nerida:plus" | "ollama:<model>" | "custom:<providerId>:<model>" */
+export type ModelId = "plus";
+export const MODEL_NAMES: Record<ModelId, string> = { plus: "Nerida AI" };
+/** "nerida:plus" | "ollama:<model>" | "custom:<providerId>:<model>" */
 export type ModelRef = string;
 export type Provider = { id: string; name: string; baseUrl: string; models: string[] };
 export const OLLAMA_URL = "http://127.0.0.1:11434/v1";
@@ -47,11 +47,11 @@ export const setDefaultModel = (model: ModelRef) => {
 
 export type Msg = { role: "user" | "assistant"; content: string };
 export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number };
-export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null };
+export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean };
 
 /* ------------------------------------------------------------------ store */
-type State = { settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "dashboard" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean };
-let state: State = { settingsFocus: null, homeMode: (() => { try { return (localStorage.getItem("oc-home-mode") as State["homeMode"]) || "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:lite", providers: [], cloudOk: false };
+type State = { settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "dashboard" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null };
+let state: State = { settingsFocus: null, homeMode: (() => { try { return (localStorage.getItem("oc-home-mode") as State["homeMode"]) || "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const persist = () => api.setSetting("neridaChats", JSON.stringify(state.chats.slice(0, 100))).catch(() => {});
@@ -69,17 +69,30 @@ export const nerida = {
     emit();
     if (save) persist();
   },
+  rename(id: string, title: string) {
+    state = { ...state, chats: state.chats.map((c) => (c.id === id ? { ...c, title } : c)) };
+    emit();
+    persist();
+  },
   remove(id: string) {
     state = { ...state, chats: state.chats.filter((c) => c.id !== id), activeId: state.activeId === id ? null : state.activeId };
     emit();
     persist();
   },
 };
+/** Chats bucketed by last activity: Today / Yesterday / Previous 7 days / Older (empty groups dropped). */
+export function chatGroups(chats: Chat[]): [string, Chat[]][] {
+  const day = new Date().setHours(0, 0, 0, 0);
+  const label = (t: number) => (t >= day ? "Today" : t >= day - 864e5 ? "Yesterday" : t >= day - 7 * 864e5 ? "Previous 7 days" : "Older");
+  const out = new Map<string, Chat[]>();
+  for (const c of chats) out.set(label(c.updatedAt), [...(out.get(label(c.updatedAt)) ?? []), c]);
+  return [...out];
+}
 export const useNerida = () => useSyncExternalStore(nerida.subscribe, nerida.get, nerida.get);
 
 void api.getSettings().then((s) => {
   try {
-    const m = s.neridaModel ?? "nerida:lite";
+    const m = (s.neridaModel ?? "nerida:plus").replace(/^(nerida:)?lite$/, "nerida:plus"); // Lite retired
     nerida.set({
       chats: JSON.parse(s.neridaChats ?? "[]"),
       model: m.includes(":") ? m : `nerida:${m}`,
@@ -119,6 +132,21 @@ export const engine = {
   },
   stop: () => invoke<void>("ai_stop"),
 };
+
+/** App-wide download: survives Settings/chat closing; the pill reads `dl`. Resolves "" or an error. */
+export async function downloadModel(model: ModelId, needServer: boolean, engineOnly = false): Promise<string> {
+  if (state.dl) return "";
+  const step = (label: string) => (got: number, total: number) => nerida.set({ dl: { model, label, got, total } });
+  let err = "";
+  try {
+    if (needServer) { step("Nerida engine")(0, 1); await engine.download("server", step("Nerida engine")); }
+    if (!engineOnly) { step(MODEL_NAMES[model])(0, 1); await engine.download(model, step(MODEL_NAMES[model])); }
+  } catch (e) {
+    if (String(e) !== "cancelled") err = String(e);
+  }
+  nerida.set({ dl: null });
+  return err;
+}
 
 /* ---------------------------------------------------------------- context */
 type Node = { type?: string; text?: string; content?: Node[] | string; children?: Node[]; props?: { level?: number; checked?: boolean } };
@@ -195,20 +223,12 @@ export async function buildContext(notes: ContextNote[], question: string): Prom
   return { text, parts: chosen.length };
 }
 
-/** Canned reply for "what can you do / who are you": small models parrot the system prompt instead. */
-export const FEATURES_REPLY = `I'm Nerida, your study buddy in Oceanic! I can:
-
-- **Answer from your notes**: the open note, its sub-pages, linked notes, and any note you @-mention
-- **Summarize and explain** notes or tricky ideas simply
-- **Rewrite and brainstorm**: fix grammar, reword, or come up with ideas
-- **Make flashcards and tests** from your notes
-- **Read files you attach**: PDF, Word, text and more
-- **Insert my replies** straight into your note
-
-- **Do exact maths, unit and date sums**, and look up word meanings
-- **Search the web** (Nerida Plus: turn on the globe)
-
-I can make mistakes, so double-check important facts.`;
+/** What Nerida can do; the model describes it in its own words when asked. */
+const FEATURES =
+  "Your features: answer from the user's notes (open note, sub-pages, linked and @-mentioned notes), summarize and explain, " +
+  "rewrite, fix grammar and brainstorm, make flashcards and quizzes, read attached PDF/Word/text files, insert replies into the note, " +
+  "exact maths, unit and date sums, word meanings, and web search (globe button). Typing / shows quick actions. " +
+  "When asked who you are or what you can do, answer naturally in your own words, fitted to the exact question; don't recite the whole list every time.";
 
 /** True for short "what are your features / who are you" questions. */
 export const isFeaturesQuestion = (text: string) =>
@@ -231,7 +251,7 @@ const STYLE =
   "If you don't know something and it isn't in the notes or results, say so instead of guessing.";
 
 
-export const SYSTEM = `${IDENTITY} ${STYLE}`;
+export const SYSTEM = `${IDENTITY} ${FEATURES} ${STYLE}`;
 
 const WHY: Record<ContextNote["why"], string> = {
   current: "the note the user has open now",
@@ -243,13 +263,15 @@ const WHY: Record<ContextNote["why"], string> = {
 
 /** Small models follow notes best when they sit right next to the question, so they go into the last user message (not shown in the chat). */
 export const withNotes = (question: string, context: string) =>
-  context ? `Here are my notes:\n\n${context}\n\nUsing my notes above, answer: ${question}` : question;
+  context ? `Here are my notes:\n\n${context}\n\nUsing only my notes above${taskHint(question)}, answer: ${question}` : question;
 
-/** One worked example. Tiny local models copy its shape: they answer "can you…" with the result, not "yes". */
-export const EXAMPLE = [
-  { role: "user" as const, content: withNotes("Can you check my list?", 'Note "Groceries" (the note the user has open now):\n- Milk [done]\n- Eggs [not done]\n(end of note)') },
-  { role: "assistant" as const, content: "Your list:\n- Milk (done)\n- Eggs (not done)\n\nStill to do: **Eggs**." },
-];
+/** Extra steering for common study tasks, so answers follow the note's real topic. */
+const taskHint = (q: string) =>
+  /\bsummar/i.test(q)
+    ? ". Start with one sentence on what the note is about, then 3-7 bullets of its main points in order, then a bold one-line takeaway. Skip filler and don't add facts that aren't in the notes"
+    : /\b(quiz|questions?|test me|ask me)\b/i.test(q)
+      ? ". Base every question on a specific point in the notes, cover different sections, and number them. Don't ask about the note's title or what the user wants. Unless the user asks for answers, give none"
+      : "";
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 

@@ -139,6 +139,8 @@ export function isKnown(word: string) {
   if (dialectFix(w) && !state.user.includes(w)) return false;
   if (words.has(w) || words.has(norm(word))) return true;
   if (MODERN.has(w)) return true;
+  // Contractions: don't, shouldn't, they're, we'll, I'd… (the dictionary has no apostrophes).
+  if (w.includes("'") && ([...contractions.values()].includes(w) || /^(can't|won't|shan't|ain't)$/.test(w) || (/(n't|'re|'ve|'ll|'d|'m)$/.test(w) && isKnown(w.replace(/n't$|'re$|'ve$|'ll$|'d$|'m$/, ""))))) return true;
   // Common words the dictionary lacks (names, newer words), but not typos or "dont"-style contractions.
   if (rankOf(w) < 20000 && !TYPOS[w] && !contractions.has(w)) return true;
   if (state.user.includes(w) || (state.learned[w] ?? 0) >= 3) return true;

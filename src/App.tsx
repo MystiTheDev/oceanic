@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { TitleBar, type TabInfo } from "./components/TitleBar";
 import { PageHeader } from "./components/PageHeader";
-import { NeridaPanel } from "./components/NeridaPanel";
+import { NeridaDownloadPill, NeridaPanel } from "./components/NeridaPanel";
 import { HomeSwitch, NeridaSidebar } from "./components/NeridaHome";
 import { NeridaCardsHost } from "./components/NeridaCards";
 import { NeridaEditUI } from "./components/NeridaEditUI";
@@ -35,7 +35,7 @@ import { BlockNoteEditor } from "@blocknote/core";
 import { schema } from "./editor/schema";
 import { withMath, type MdBlock } from "./components/PageEditor";
 import { withCards, type SaveCardsDetail } from "./lib/neridaStudy";
-import { nerida, useNerida } from "./lib/nerida";
+import { engine, nerida, useNerida } from "./lib/nerida";
 import { PageEditor } from "./components/PageEditor";
 import { Toast } from "./components/Toast";
 import { SpatialCanvas } from "./components/SpatialCanvas";
@@ -56,6 +56,7 @@ import { SearchModal } from "./components/SearchModal";
 import { OPEN_EMBED_FILE, saveOpenEditor, type FileEmbedKind } from "./lib/embedSource";
 import { AppLoader, AppSwitcher, type AppId } from "./components/AppSwitcher";
 import { ImportMetaDialog, type MetaChoice } from "./components/ImportMetaDialog";
+type DupChoice = "open" | "copy" | "replace" | "cancel";
 import { setBanner } from "./lib/banners";
 import { DeleteConfirmHost, loadConfirmDeleteSettings, requestDelete, setOpenProbe } from "./lib/confirmDelete";
 import type { OpenItem } from "./components/OpenNowRow";
@@ -238,6 +239,7 @@ export default function App() {
   const [savePrompt, setSavePrompt] = useState<{ path: string; proceed: () => void } | null>(null);
   const [tagLibrary, setTagLibrary] = useState<string[]>([]);
   const [metaAsk, setMetaAsk] = useState<{ titles: string[]; existingTags: string[]; newTags: string[]; resolve: (c: MetaChoice) => void } | null>(null);
+  const [dupAsk, setDupAsk] = useState<{ title: string; resolve: (c: DupChoice) => void } | null>(null);
   const [mindmapTitles, setMindmapTitles] = useState<Record<string, string>>({});
   const [mindmaps, setMindmaps] = useState<MindmapRecord[]>([]);
   /** Mindmap ids by last opened, for Home's "Maps". */
@@ -691,31 +693,29 @@ export default function App() {
         return rec.id;
       };
       let first: string | null = null;
-      // A page with the same title already exists: skip it (no duplicates).
+      // Same title + same content already exists: ask what to do.
       const norm = (t: string) => t.trim().toLowerCase();
-      const dupes: PageMeta[] = [];
+      const body = (b: unknown) => JSON.stringify(b, (k, v) => (k === "id" ? undefined : v));
+      let opened: string | null = null;
       for (const p of parsed) {
-        const existing = allLivePagesRef.current.find((x) => norm(x.title) === norm(p.title));
+        let existing: PageMeta | undefined;
+        for (const x of allLivePagesRef.current.filter((x) => norm(x.title) === norm(p.title)))
+          if (body(await loadBlocks(x.id)) === body(p.blocks)) { existing = x; break; }
         if (existing) {
-          dupes.push(existing);
-          continue;
+          const c = await new Promise<DupChoice>((resolve) => setDupAsk({ title: p.title || "Untitled", resolve }));
+          setDupAsk(null);
+          if (c === "open") opened ??= existing.id;
+          if (c !== "copy" && c !== "replace") continue;
+          if (c === "replace") trashPage(existing.id);
         }
         const id = await create(p, null);
         first ??= id;
       }
-      if (dupes.length) {
-        if (fromExplorer && !first) return openPage(dupes[0].id);
-        const names = dupes.map((d) => `“${d.title || "Untitled"}”`).join(", ");
-        setNotice({
-          text: `${names} already ${dupes.length === 1 ? "exists" : "exist"} in Oceanic, so ${dupes.length === 1 ? "it wasn't" : "they weren't"} imported`,
-          key: Date.now() + 1,
-          action: { label: "Open existing", run: () => openPage(dupes[0].id) },
-        });
-      }
+      void fromExplorer;
       const list = await api.getPages();
       setPages(list.map(toMeta));
-      if (first) openPage(first);
-      if (count && !dupes.length) setNotice({ text: `Imported ${count} page${count === 1 ? "" : "s"}`, key: Date.now() });
+      if (first ?? opened) openPage((first ?? opened)!);
+      if (count) setNotice({ text: `Imported ${count} page${count === 1 ? "" : "s"}`, key: Date.now() });
       if (failed.length) setImportFailures({ count, failed });
     } catch (e) {
       report("Import")(e);
@@ -1208,6 +1208,10 @@ export default function App() {
       }
       else void keys.current.importNotes([new File([bytes as BlobPart], name)], true);
     };
+    void engine.status().then((s) => s.lite_removed && setNotice({
+      text: "Nerida Lite is discontinued and was removed from this PC. Nerida AI is now the only built-in model.",
+      key: Date.now(),
+    })).catch(() => {});
     void invoke<string | null>("launch_file").then((p) => { if (p) void openFile(p); }).catch(() => {});
     const offFile = listen<string>("open-file", ({ payload }) => void openFile(payload));
     const offPage = listen<string>("tray-open-page", ({ payload }) => {
@@ -1735,6 +1739,7 @@ export default function App() {
           onCancel={() => setSavePrompt(null)}
         />
       )}
+      <NeridaDownloadPill hidden={!!settingsOpen || neridaOpen} />
       <ContextMenuHost
         fallback={(e): MenuItem[] => {
           if (isTextField(e.target)) return textFieldMenu(e.target);
@@ -1836,6 +1841,18 @@ export default function App() {
       )}
       <Tooltip />
       {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} />}
+      {dupAsk && (
+        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5">
+          <h2 className="text-[15px] font-semibold text-neutral-100">“{dupAsk.title}” is already in Oceanic</h2>
+          <p className="mt-1 text-[13px] text-neutral-400">An identical note exists. What should happen?</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <ModalButton onClick={() => dupAsk.resolve("cancel")}>Cancel</ModalButton>
+            <ModalButton onClick={() => dupAsk.resolve("replace")}>Replace existing</ModalButton>
+            <ModalButton onClick={() => dupAsk.resolve("copy")}>Import as copy</ModalButton>
+            <ModalButton variant="primary" onClick={() => dupAsk.resolve("open")}>Open existing</ModalButton>
+          </div>
+        </Modal>
+      )}
       {importFailures && (
         <Modal onClose={() => setImportFailures(null)} className="w-[440px] p-5">
           <h2 className="text-[15px] font-semibold text-neutral-100">

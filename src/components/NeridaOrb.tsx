@@ -86,7 +86,7 @@ export function NeridaMark({ busy = false, size = 18 }: { busy?: boolean; size?:
 
 /** "Beta" tag shown next to Nerida's name while it's in beta. */
 export const BetaPill = () => (
-  <span className="ml-1.5 inline-flex shrink-0 items-center rounded-full bg-gradient-to-r from-sky-400 to-violet-500 px-1.5 py-px align-middle text-[9.5px] font-bold uppercase leading-[14px] tracking-[0.06em] text-white">Beta</span>
+  <span className="oc-beta ml-1.5 inline-flex shrink-0 items-center rounded-full px-1.5 py-px align-middle text-[9.5px] font-bold uppercase leading-[14px] tracking-[0.08em]">Beta</span>
 );
 
 /* Beta notice: shown the first time Nerida is opened in each app launch. */

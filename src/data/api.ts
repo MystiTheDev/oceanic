@@ -213,6 +213,8 @@ export type Api = {
   ): Promise<CanvasEdge>;
   deleteCanvasEdge(sourceId: string, targetId: string): Promise<void>;
   listConcepts(workspaceId: string): Promise<Concept[]>;
+  /** Read-only plain text of pages (from the search index), cut to `maxChars` when given. */
+  getPagePreviews(ids: string[], maxChars?: number): Promise<{ id: string; text: string }[]>;
   createConcept(workspaceId: string, title: string): Promise<Concept>;
   updateConcept(id: string, patch: Pick<Concept, "title" | "description" | "tags" | "state">): Promise<Concept>;
   /** Also removes its edges, position and resource links; the resources stay. */
@@ -280,6 +282,7 @@ const tauriApi: Api = {
     invoke("update_canvas_edge", { sourceId, targetId, ...edge }),
   deleteCanvasEdge: (sourceId, targetId) => invoke("delete_canvas_edge", { sourceId, targetId }),
   listConcepts: (workspaceId) => invoke("list_concepts", { workspaceId }),
+  getPagePreviews: (ids, maxChars) => invoke("get_page_previews", { ids, maxChars }),
   createConcept: (workspaceId, title) => invoke("create_concept", { workspaceId, title }),
   updateConcept: (id, patch) => invoke("update_concept", { id, ...patch }),
   deleteConcept: (id) => invoke("delete_concept", { id }),
@@ -580,6 +583,15 @@ const localApi: Api = {
       s.edges = s.edges!.filter((e) => !(e.sourceId === sourceId && e.targetId === targetId));
     }),
   listConcepts: (workspaceId) => tx((s) => s.concepts!.filter((c) => c.workspaceId === workspaceId)),
+  getPagePreviews: (ids, maxChars) =>
+    tx((s) =>
+      s.pages
+        .filter((p) => ids.includes(p.id))
+        .map((p) => {
+          const text = p.content ? [...p.content.matchAll(/"text":"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join(" ") : "";
+          return { id: p.id, text: maxChars && text.length > maxChars ? `${text.slice(0, maxChars).trimEnd()}…` : text };
+        }),
+    ),
   createConcept: (workspaceId, title) =>
     tx((s) => {
       if (!title.trim()) throw new Error("A concept needs a title");

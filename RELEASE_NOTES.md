@@ -1,3 +1,16 @@
+# 🌊 Oceanic v2.0.1: A smarter Atlas and a smoother Nerida
+
+- 🗺️ Atlas zooms smartly: dots when far out, cards in the middle, and note previews up close.
+- 🔎 Click a concept to see its details, relationships and linked pages, docs and mind maps in a new side panel.
+- 🎯 Focus View highlights a concept and its neighbours, and "What should I understand first?" shows the path of prerequisites.
+- 🎨 A color key for Atlas, plus a filter to hide relationship types.
+- ✨ Nerida's answers now fade in word by word as they arrive.
+- 🧠 A redesigned model picker with status badges and keyboard controls.
+- 💬 Type "/" in Nerida's chat for quick commands, and attach notes with @. Each chat keeps its own attachments.
+- ⬇️ A download pill shows model download progress while Settings is closed.
+- 🧹 Nerida Lite is retired and its files are removed automatically. Nerida AI is now the built-in model.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.0: Meet Nerida, your study AI
 
 - ✨ Meet Nerida, Oceanic's built-in AI. Chat about your notes from any page or from the new Nerida view on Home.

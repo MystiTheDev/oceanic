@@ -16,7 +16,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, builtin, engine, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, withNotes, EXAMPLE, uid, useNerida, FEATURES_REPLY, isFeaturesQuestion,
+  buildContext, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion,
   type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
@@ -32,16 +32,19 @@ function MathSpan({ tex, display = false }: { tex: string; display?: boolean }) 
   const html = katex.renderToString(tex, { displayMode: display, throwOnError: false, output: "html" });
   return display ? <div className="my-2 overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} /> : <span dangerouslySetInnerHTML={{ __html: html }} />;
 }
-function inline(t: string): ReactNode[] {
+function inlineRaw(t: string, stream = false): ReactNode[] {
   return t.split(/(\$(?!\s)[^$\n]+?(?<!\s)\$|\*\*.+?\*\*|`.+?`|\*.+?\*)/g).map((s, i) =>
     s.startsWith("$") && s.length > 2 ? <MathSpan key={i} tex={s.slice(1, -1)} />
     : s.startsWith("**") && s.length > 4 ? <b key={i}>{s.slice(2, -2)}</b>
     : s.startsWith("`") && s.length > 2 ? <code key={i} className="rounded bg-white/[0.08] px-1 text-[0.9em]">{s.slice(1, -1)}</code>
     : s.startsWith("*") && s.length > 2 ? <i key={i}>{s.slice(1, -1)}</i>
+    // Streaming: one span per word, so only newly arrived words mount (and fade in).
+    : stream ? <Fragment key={i}>{s.split(/(\s+)/).map((w, j) => <span key={j} className="oc-word">{w}</span>)}</Fragment>
     : <Fragment key={i}>{s}</Fragment>,
   );
 }
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, stream = false }: { text: string; stream?: boolean }) {
+  const inline = (t: string) => inlineRaw(t, stream);
   const out: ReactNode[] = [];
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -49,7 +52,7 @@ export function Markdown({ text }: { text: string }) {
     if (l.startsWith("```")) {
       const code: string[] = [];
       while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
-      out.push(<pre key={i} className="my-2 overflow-x-auto rounded-lg bg-black/30 p-2.5 text-[12px]">{code.join("\n")}</pre>);
+      out.push(<pre key={i} className="my-2.5 overflow-x-auto rounded-lg border border-white/[0.06] bg-black/35 p-3 font-mono text-[12px] leading-relaxed text-neutral-200">{code.join("\n")}</pre>);
     } else if (/^\s*\$\$.*\$\$\s*$/.test(l)) out.push(<MathSpan key={i} tex={l.trim().slice(2, -2)} display />);
     else if (/^#{1,3} /.test(l)) out.push(<p key={i} className="mt-3 mb-1 font-semibold text-neutral-100">{inline(l.replace(/^#+ /, ""))}</p>);
     else if (/^\s*([-*]|\d+\.) /.test(l))
@@ -63,19 +66,14 @@ export function Markdown({ text }: { text: string }) {
 const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
 
 function Setup({ status, model, auto, onDone }: { status: AiStatus; model: ModelId; auto: boolean; onDone: () => void }) {
-  const [prog, setProg] = useState<{ label: string; got: number; total: number } | null>(null);
+  const prog = useNerida().dl;
   const [err, setErr] = useState("");
   const size = status.models.find((m) => m.id === model)?.size ?? 0;
   const run = async () => {
     setErr("");
-    try {
-      if (!status.server) await engine.download("server", (got, total) => setProg({ label: "Nerida engine", got, total }));
-      if (!status.models.find((m) => m.id === model)?.installed) await engine.download(model, (got, total) => setProg({ label: MODEL_NAMES[model], got, total }));
-      onDone();
-    } catch (e) {
-      setErr(String(e) === "cancelled" ? "" : String(e));
-    }
-    setProg(null);
+    const e = await downloadModel(model, !status.server, !!status.models.find((m) => m.id === model)?.installed);
+    setErr(e);
+    if (!e) onDone();
   };
   useEffect(() => {
     if (auto) void run();
@@ -121,17 +119,14 @@ function Setup({ status, model, auto, onDone }: { status: AiStatus; model: Model
 
 /** The previous model version is still in use: offer the smarter one. Chat keeps working meanwhile. */
 function UpdateBanner({ model, size, onDone }: { model: ModelId; size: number; onDone: () => void }) {
-  const [prog, setProg] = useState<number | null>(null);
+  const dl = useNerida().dl;
+  const prog = dl?.model === model ? dl.got / dl.total : null;
   const [err, setErr] = useState("");
   const run = async () => {
     setErr("");
-    try {
-      await engine.download(model, (got, total) => setProg(got / total));
-      onDone();
-    } catch (e) {
-      if (String(e) !== "cancelled") setErr(String(e));
-    }
-    setProg(null);
+    const e = await downloadModel(model, false);
+    setErr(e);
+    if (!e) onDone();
   };
   return (
     <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.05] p-3 text-[12.5px]">
@@ -150,8 +145,39 @@ function UpdateBanner({ model, size, onDone }: { model: ModelId; size: number; o
   );
 }
 
+/** Bottom-right download pill while Settings and chat are closed. Click opens Settings → Nerida. */
+export function NeridaDownloadPill({ hidden }: { hidden: boolean }) {
+  const dl = useNerida().dl;
+  if (!dl || hidden) return null;
+  const pct = Math.round((dl.got / dl.total) * 100);
+  return (
+    <button type="button" onClick={() => openNeridaSettings()} title="Open Nerida settings"
+      className="oc-pop-in fixed bottom-4 right-4 z-50 flex w-56 cursor-pointer items-center gap-2.5 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] px-3 py-2 text-left shadow-xl shadow-black/40">
+      <NeridaMark size={18} busy />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12px] text-neutral-200">Downloading {dl.label} · {pct}%</p>
+        <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.08]">
+          <div className="h-full rounded-full bg-gradient-to-r from-teal-300 to-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
 /* ------------------------------------------------------------------ panel */
 type Step = { label: string; done: boolean };
+
+/** "/" menu. `note`: needs a note (@ or the open one) before it runs. */
+type Cmd = { k: string; label: string; note: boolean; prompt: string };
+const CMDS: Cmd[] = [
+  { k: "quiz", label: "Quiz me on a note", note: true, prompt: "Quiz me: ask 5 questions about the main ideas in my notes. Number them. Don't give the answers." },
+  { k: "flashcards", label: "Make flashcards", note: true, prompt: "" },
+  { k: "summarize", label: "Summarize a note", note: true, prompt: "Summarize my notes: a one-line overview, then the key points as a short list." },
+  { k: "explain", label: "Explain simply", note: true, prompt: "Explain the key ideas in my notes simply, like I'm new to the topic." },
+  { k: "plan", label: "Plan my study week", note: false, prompt: "Help me plan my study week." },
+  { k: "mindmap", label: "Make a mindmap", note: false, prompt: "" },
+];
+const openNewMindmap = () => void createMindmap("").then((id) => (sessionStorage.setItem(MAP_FLAG, id), window.dispatchEvent(new CustomEvent(OPEN_MINDMAP, { detail: id }))));
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; };
 
@@ -177,10 +203,45 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const mentionHits = mentionQuery === undefined ? [] : [...pages.values()].filter((p) => (p.title || "Untitled").toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 6);
   const addMention = (id: string) => {
     const p = pages.get(id);
+    setExcluded((s) => { const x = new Set(s); x.delete(id); return x; });
     if (p && !notes.some((n) => n.id === id) && !mentions.some((n) => n.id === id)) setMentions((m) => [...m, { id, title: p.title || "Untitled", icon: p.icon, why: "mention" }]);
     setInput((v) => v.replace(/@[^\s@]*$/, ""));
+    if (cmd) pendingCmd.current = cmd.k; // the waiting /command runs once the note lands
   };
-  const allNotes = [...notes, ...mentions];
+  // Deleted notes drop out of context.
+  const allNotes = [...notes, ...mentions].filter((n) => pages.has(n.id));
+  const [cmd, setCmd] = useState<Cmd | null>(null);
+  const [pick, setPick] = useState(0);
+  const slashQuery = cmd ? undefined : /^\/(\w*)$/.exec(input)?.[1];
+  const slashHits = slashQuery === undefined ? [] : CMDS.filter((c) => c.k.startsWith(slashQuery.toLowerCase()));
+  /** Runs `c` (now, or once a note is attached). `withNote` = a note just picked for it. */
+  const runCmd = (c: Cmd, withNote?: string) => {
+    const note = withNote ?? allNotes.find((n) => !excluded.has(n.id))?.id;
+    setInput("");
+    if (c.note && !note) return setCmd(c); // chip waits for @note
+    setCmd(null);
+    if (c.k === "mindmap") return openNewMindmap();
+    if (c.k === "flashcards") return openNeridaCards({ pageId: note! });
+    void send(c.prompt);
+  };
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => {
+    if (home) void api.getSettings().then((s) => setRecent(JSON.parse(s.recentPages ?? "[]"))).catch(() => {});
+  }, [home]);
+  const recentNotes = recent.filter((id) => pages.has(id)).slice(0, 5);
+  /** Recent-note button: attach the note, then run the command. */
+  const quick = (id: string, k: string) => {
+    const p = pages.get(id)!;
+    setMentions([{ id, title: p.title || "Untitled", icon: p.icon, why: "mention" }]);
+    pendingCmd.current = k;
+  };
+  const pendingCmd = useRef<string | null>(null);
+  useEffect(() => {
+    const k = pendingCmd.current;
+    if (!k || !mentions.length) return;
+    pendingCmd.current = null;
+    runCmd(CMDS.find((c) => c.k === k)!, mentions[0].id);
+  }, [mentions]); // eslint-disable-line react-hooks/exhaustive-deps
   const [files, setFiles] = useState<Attachment[]>([]);
   const [reading, setReading] = useState(0);
   // "Essay due Friday" → confirm card; the chat (with the user's message) it answers into.
@@ -199,6 +260,15 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     }
   };
   const scroller = useRef<HTMLDivElement>(null);
+  // Each chat keeps its own attachments; a new chat starts empty.
+  const lastChat = useRef(activeId);
+  useEffect(() => {
+    if (lastChat.current === null && activeId) return void (lastChat.current = activeId); // first message created this chat
+    lastChat.current = activeId;
+    setMentions([]);
+    setFiles([]);
+    setExcluded(new Set());
+  }, [activeId]);
 
   const refresh = () =>
     isTauri() ? engine.status().then(setStatus).catch((e) => setErr(String(e))) : setErr("Nerida runs in the Oceanic desktop app.");
@@ -246,7 +316,6 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     const base: Chat = chat ?? { id: uid(), title: text.slice(0, 60), messages: [], updatedAt: Date.now() };
     const messages: Msg[] = [...history, { role: "user", content: text }];
     nerida.upsert({ ...base, messages, updatedAt: Date.now() });
-    if (isFeaturesQuestion(text)) return nerida.upsert({ ...base, messages: [...messages, { role: "assistant", content: FEATURES_REPLY }], updatedAt: Date.now() });
     const draft = detectTask(text);
     if (draft) return setTask({ draft, base: { ...base, messages } });
     setBusy(true);
@@ -306,7 +375,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         void refresh();
       }
       mark(b ? "Writing answer" : `Asking ${modelLabel(model)}`);
-      await engine.chat(model, [{ role: "system", content: SYSTEM }, ...(b ? EXAMPLE : []), ...history, { role: "user", content: withNotes(text, context) }], (t) => {
+      await engine.chat(model, [{ role: "system", content: SYSTEM }, ...history, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context) }], (t) => {
         reply += t;
         setDraft(reply);
       });
@@ -335,10 +404,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       <div className="relative">
         <input ref={filePicker} type="file" multiple accept={ATTACH_ACCEPT} className="hidden"
           onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
+        <div className="flex flex-col gap-1 rounded-2xl border border-white/[0.09] bg-white/[0.035] p-2 shadow-lg shadow-black/20 transition-[border-color,box-shadow] duration-300 focus-within:border-teal-300/35 focus-within:shadow-[0_0_0_3px_rgba(45,212,191,0.08),0_10px_30px_-10px_rgba(0,0,0,0.5)]">
         {(files.length > 0 || reading > 0) && (
-          <div className="mb-2 flex flex-wrap gap-1">
+          <div className="mb-1 flex flex-wrap gap-1">
             {files.map((f) => (
-              <span key={f.name} title={f.truncated ? "Long file: only the first part is used" : f.name} className="flex max-w-[180px] items-center gap-1 rounded-md border border-sky-300/20 bg-sky-300/[0.05] px-1.5 py-0.5 text-[11.5px] text-neutral-300">
+              <span key={f.name} title={f.truncated ? "Long file: only the first part is used" : f.name} className="oc-chip-in flex max-w-[180px] items-center gap-1 rounded-full border border-sky-300/20 bg-sky-300/[0.05] px-1.5 py-0.5 text-[11.5px] text-neutral-300">
                 <FileText className="size-3 shrink-0 text-sky-300" /><span className="truncate">{f.name}</span>
                 <button type="button" title="Remove" className="cursor-pointer text-neutral-500 hover:text-neutral-200" onClick={() => setFiles((x) => x.filter((y) => y !== f))}><X className="size-3" /></button>
               </span>
@@ -347,14 +417,14 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           </div>
         )}
         {allNotes.some((n) => !excluded.has(n.id)) && (
-          <div className="mb-2 flex flex-wrap gap-1">
+          <div className="mb-1 flex flex-wrap gap-1">
             {allNotes.filter((n) => !excluded.has(n.id)).map((n) => {
               const off = false;
               return (
-                <span key={n.id} title={n.why} className={`flex max-w-[160px] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11.5px] ${off ? "border-white/[0.05] text-neutral-600 line-through" : "border-white/[0.1] text-neutral-300"}`}>
+                <span key={n.id} title={n.why} className={`oc-chip-in flex max-w-[160px] items-center gap-1 rounded-full border bg-white/[0.03] px-2 py-0.5 text-[11.5px] ${off ? "border-white/[0.05] text-neutral-600 line-through" : "border-white/[0.1] text-neutral-300"}`}>
                   <span>{n.icon}</span><span className="truncate">{n.title}</span>
                   <button type="button" title={off ? "Include" : "Exclude"} className="cursor-pointer text-neutral-500 hover:text-neutral-200"
-                    onClick={() => setExcluded((s) => { const x = new Set(s); if (off) x.delete(n.id); else x.add(n.id); return x; })}>
+                    onClick={() => n.why === "mention" ? setMentions((m) => m.filter((x) => x.id !== n.id)) : setExcluded((s) => { const x = new Set(s); if (off) x.delete(n.id); else x.add(n.id); return x; })}>
                     {off ? <Plus className="size-3" /> : <X className="size-3" />}
                   </button>
                 </span>
@@ -362,33 +432,61 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             })}
           </div>
         )}
-        {mentionHits.length > 0 && (
-          <div className="absolute bottom-full left-0 z-20 mb-1 w-64 rounded-lg border border-white/[0.08] bg-neutral-900 p-1 shadow-xl">
-            {mentionHits.map((p) => (
-              <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); addMention(p.id); }} className="flex w-full cursor-pointer items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-[12.5px] text-neutral-300 hover:bg-white/[0.06]">
+        {(mentionHits.length > 0 || slashHits.length > 0) && (
+          <div className="oc-menu-pop absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1 shadow-2xl shadow-black/50 backdrop-blur">
+            {slashHits.map((c, i) => (
+              <button key={c.k} type="button" onMouseEnter={() => setPick(i)} onMouseDown={(e) => { e.preventDefault(); runCmd(c); }}
+                className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12.5px] ${i === pick % slashHits.length ? "bg-white/[0.07] text-neutral-100" : "text-neutral-300"}`}>
+                <span className="w-[86px] font-mono text-[12px] text-teal-300">/{c.k}</span>
+                <span className="flex-1 truncate">{c.label}</span>
+                {i === pick % slashHits.length && <span className="text-[11px] text-neutral-500">⏎</span>}
+              </button>
+            ))}
+            {mentionHits.map((p, i) => (
+              <button key={p.id} type="button" onMouseEnter={() => setPick(i)} onMouseDown={(e) => { e.preventDefault(); addMention(p.id); }}
+                className={`flex w-full cursor-pointer items-center gap-1.5 truncate rounded-lg px-2 py-1.5 text-left text-[12.5px] ${i === pick % mentionHits.length ? "bg-white/[0.07] text-neutral-100" : "text-neutral-300"}`}>
                 <span>{p.icon}</span><span className="truncate">{p.title || "Untitled"}</span>
               </button>
             ))}
           </div>
         )}
-        <div className="flex flex-col gap-1 rounded-2xl border border-white/[0.1] bg-white/[0.03] p-2 focus-within:border-teal-300/40">
+          <div className="flex items-start gap-1">
+          {cmd && (
+            <span className="oc-chip-in mt-1 flex shrink-0 items-center gap-1 rounded-md bg-teal-400/15 px-1.5 py-0.5 text-[12px] font-medium text-teal-200">
+              {cmd.label} ▸
+              <button type="button" title="Cancel" onClick={() => setCmd(null)} className="cursor-pointer text-teal-300/70 hover:text-teal-100"><X className="size-3" /></button>
+            </span>
+          )}
           <textarea
             value={input}
             disabled={!ready}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); setPick(0); }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && mentionHits.length) {
+              const hits = slashHits.length || mentionHits.length;
+              if (hits && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
                 e.preventDefault();
-                addMention(mentionHits[0].id);
+                setPick((p) => (p + (e.key === "ArrowDown" ? 1 : hits - 1)) % hits);
+              } else if (e.key === "Escape" && (hits || cmd)) {
+                e.preventDefault();
+                if (cmd) setCmd(null); else setInput("");
+              } else if (e.key === "Backspace" && cmd && !input) {
+                setCmd(null);
+              } else if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && slashHits.length) {
+                e.preventDefault();
+                runCmd(slashHits[pick % slashHits.length]);
+              } else if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey && mentionHits.length) {
+                e.preventDefault();
+                addMention(mentionHits[pick % mentionHits.length].id);
               } else if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                void send(input);
+                if (cmd) runCmd(cmd); else void send(input);
               }
             }}
             rows={Math.min(6, input.split("\n").length)}
-            placeholder={ready ? "Ask Nerida… (type @ to add a note)" : "Download Nerida to start"}
-            className="max-h-40 min-h-[40px] w-full resize-none bg-transparent px-1.5 pt-1 text-[13.5px] text-neutral-100 outline-none placeholder:text-neutral-600"
+            placeholder={!ready ? "Download Nerida to start" : cmd ? "Type @ to pick a note" : "Ask Nerida anything…"}
+            className="max-h-40 min-h-[40px] w-full resize-none bg-transparent px-1.5 pt-1 text-[13.5px] text-neutral-100 outline-none placeholder:text-neutral-500"
           />
+          </div>
           <div className="flex items-center gap-1">
           <button type="button" disabled={!ready || busy} title="Attach PDF, Word or text files" onClick={() => filePicker.current?.click()} className="grid size-7 cursor-pointer place-items-center rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:text-neutral-600"><Paperclip className="size-4" /></button>
           {b === "plus" && <button type="button" disabled={busy} title={online ? "Web search on" : "Search the web"} aria-pressed={online} onClick={() => setOnline((v) => !v)} className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] ${online ? "text-sky-400" : "text-neutral-400 hover:text-neutral-200"}`}><Globe className="size-4" /></button>}
@@ -397,10 +495,14 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           {busy ? (
             <button type="button" title="Stop" onClick={() => void engine.stop()} className="grid size-7 cursor-pointer place-items-center rounded-lg bg-white/[0.1] text-neutral-200 hover:bg-white/[0.15]"><Square className="size-3" fill="currentColor" /></button>
           ) : (
-            <button type="button" title="Send" disabled={!input.trim() || !ready} onClick={() => void send(input)} className="grid size-7 cursor-pointer place-items-center rounded-lg bg-teal-400/90 text-neutral-950 hover:bg-teal-300 disabled:cursor-default disabled:bg-white/[0.08] disabled:text-neutral-500"><ArrowUp className="size-4" /></button>
+            <button type="button" title="Send" disabled={!(input.trim() || cmd) || !ready} onClick={() => (cmd ? runCmd(cmd) : void send(input))} className="oc-send grid size-7 cursor-pointer place-items-center rounded-lg bg-teal-400/90 text-neutral-950 transition-transform hover:bg-teal-300 active:scale-90 disabled:cursor-default disabled:bg-white/[0.08] disabled:text-neutral-500"><ArrowUp className="size-4" /></button>
           )}
           </div>
         </div>
+        {ready && <p className="mt-1.5 flex justify-between px-1 text-[11px] text-neutral-600">
+          <span><kbd className="text-neutral-400">/</kbd> for actions · <kbd className="text-neutral-400">@</kbd> to add a note</span>
+          {home && <span>🔒 Runs on this PC. Your notes stay here.</span>}
+        </p>}
       </div>
   );
   const lastAssistant = msgs.map((m) => m.role).lastIndexOf("assistant");
@@ -422,7 +524,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       {home ? (
         <div className="h-12 shrink-0" />
       ) : (
-      <div className="relative flex h-11 shrink-0 items-center gap-1.5 px-3">
+      <div className="relative flex h-12 shrink-0 items-center gap-1.5 border-b border-white/[0.05] px-3">
         <NeridaMark busy={busy} />
         <button type="button" onClick={() => setHistoryOpen((o) => !o)} className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[13.5px] font-medium text-neutral-100 hover:bg-white/[0.06]">
           <span className="truncate">{chat?.title ?? "Nerida"}</span>
@@ -433,12 +535,17 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         <button type="button" title="New chat" disabled={busy} onClick={() => nerida.set({ activeId: null })} className="grid size-7 cursor-pointer place-items-center rounded-md text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"><Plus className="size-4" /></button>
         <button type="button" title="Close (Ctrl+J)" onClick={() => nerida.set({ open: false })} className="grid size-7 cursor-pointer place-items-center rounded-md text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"><X className="size-4" /></button>
         {historyOpen && (
-          <div className="absolute left-3 top-10 z-20 max-h-72 w-72 overflow-y-auto rounded-lg border border-white/[0.08] bg-neutral-900 p-1 shadow-xl">
+          <div className="oc-menu-pop absolute left-3 top-11 z-20 max-h-80 w-72 overflow-y-auto rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1 shadow-2xl shadow-black/50 backdrop-blur">
             {chats.length === 0 && <p className="px-2 py-1.5 text-[12.5px] text-neutral-500">No chats yet</p>}
-            {chats.map((c) => (
-              <div key={c.id} className="group flex items-center rounded-md hover:bg-white/[0.06]">
-                <button type="button" onClick={() => { nerida.set({ activeId: c.id }); setHistoryOpen(false); }} className="min-w-0 flex-1 cursor-pointer truncate px-2 py-1.5 text-left text-[12.5px] text-neutral-300">{c.title}</button>
-                <button type="button" title="Delete chat" onClick={() => nerida.remove(c.id)} className="mr-1 hidden cursor-pointer text-neutral-500 hover:text-red-400 group-hover:block"><X className="size-3.5" /></button>
+            {chatGroups(chats).map(([group, list]) => (
+              <div key={group}>
+                <p className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold text-neutral-500">{group}</p>
+                {list.map((c) => (
+                  <div key={c.id} className={`group flex items-center rounded-md hover:bg-white/[0.06] ${c.id === activeId ? "bg-white/[0.06]" : ""}`}>
+                    <button type="button" onClick={() => { nerida.set({ activeId: c.id }); setHistoryOpen(false); }} className="min-w-0 flex-1 cursor-pointer truncate px-2 py-1.5 text-left text-[12.5px] text-neutral-300">{c.title}</button>
+                    <button type="button" title="Delete chat" onClick={() => nerida.remove(c.id)} className="mr-1 hidden cursor-pointer text-neutral-500 hover:text-red-400 group-hover:block"><X className="size-3.5" /></button>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -452,21 +559,36 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         {b && status && !ready && !intro && <Setup key={b} status={status} model={b} auto={auto} onDone={() => void refresh()} />}
         {b && ready && status?.models.find((m) => m.id === b)?.outdated && <UpdateBanner model={b} size={status.models.find((m) => m.id === b)!.size} onDone={() => void refresh()} />}
         {ready && !msgs.length && !busy && home && (
-          <div className="mt-[16vh] text-center">
-            <div className="mx-auto mb-4 grid place-items-center"><NeridaMark size={64} /></div>
-            <p className="text-[28px] font-semibold tracking-tight text-neutral-100">{greeting()}</p>
-            <p className="mt-1 text-[15px] text-neutral-400">How can Nerida help you today?</p>
-            <div className="mx-auto mt-6 max-w-2xl text-left">{composer}</div>
-            <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-              {["Summarize a note", "Make flashcards from my notes", "Quiz me on a topic", "Help me plan my study week", "Make a mindmap"].map((s) => (
-                <button key={s} type="button" onClick={() => (s === "Make a mindmap" ? void createMindmap("").then((id) => (sessionStorage.setItem(MAP_FLAG, id), window.dispatchEvent(new CustomEvent(OPEN_MINDMAP, { detail: id })))) : setInput(s.includes("note") ? s + " @" : s))} className="cursor-pointer rounded-full border border-white/[0.08] px-3 py-1 text-[12.5px] text-neutral-300 hover:bg-white/[0.06]">{s}</button>
-              ))}
-            </div>
+          <div className="oc-stagger mx-auto mt-[12vh] max-w-xl">
+            <div className="mb-4 grid place-items-center"><NeridaMark size={64} /></div>
+            <p className="text-center text-[28px] font-semibold tracking-tight text-neutral-100">{greeting()}</p>
+            <p className="mt-1 text-center text-[15px] text-neutral-400">How can Nerida help you today?</p>
+            {recentNotes.length > 0 ? (
+              <>
+                <p className="mb-1.5 mt-10 px-2 text-[11.5px] font-semibold uppercase tracking-wider text-neutral-500">Start from a recent note</p>
+                {recentNotes.map((id) => {
+                  const p = pages.get(id)!;
+                  return (
+                    <div key={id} className="oc-tilt group flex items-center gap-2.5 rounded-xl px-3 py-2 hover:bg-white/[0.04]">
+                      <span className="w-5 text-center">{p.icon || "📄"}</span>
+                      <span className="min-w-0 flex-1 truncate text-[13.5px] text-neutral-200">{p.title || "Untitled"}</span>
+                      {(["quiz", "summarize"] as const).map((k) => (
+                        <button key={k} type="button" onClick={() => quick(id, k)} className="cursor-pointer rounded-full border border-white/[0.08] px-2.5 py-0.5 text-[12px] text-neutral-400 transition-colors hover:border-teal-300/40 hover:bg-teal-400/10 hover:text-teal-200">
+                          {k === "quiz" ? "Quiz" : "Summary"}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+              <p className="mt-10 text-center text-[13px] text-neutral-500">Type <kbd className="text-neutral-300">/</kbd> below to quiz, summarize or explain a note.</p>
+            )}
           </div>
         )}
         {ready && !msgs.length && !busy && !home && (
           <div className="mt-10 text-center">
-            <div className="mx-auto mb-3 grid size-11 place-items-center rounded-full bg-white/[0.05]"><NeridaMark size={24} /></div>
+            <div className="mx-auto mb-3 grid place-items-center"><NeridaMark size={48} /></div>
             <p className="text-[15px] font-medium text-neutral-100">How can I help?</p>
             <div className="mt-4 flex flex-col items-center gap-1.5">
               {(pdf ? ["Summarize this PDF", "What are the key ideas?", "Explain the hardest part simply"] : pageId ? ["Summarize this note", "Explain the key ideas simply", "Make flashcards from this note"] : ["Help me plan my study week", "Explain a concept simply"]).map((s) => (
@@ -477,14 +599,17 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         )}
         {msgs.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="mt-4 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-white/[0.07] px-3 py-2 text-[13.5px] text-neutral-100">{m.content}</div></div>
+            <div key={i} className="oc-msg-in oc-msg-user mt-6 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/15 bg-gradient-to-br from-teal-400/[0.16] to-sky-400/[0.08] px-3.5 py-2 text-[13.5px] leading-relaxed text-neutral-100">{m.content}</div></div>
           ) : (
-            <div key={i} className="group mt-4">
+            <div key={i} className="group oc-msg-in mt-6 flex gap-3">
+              <div className="mt-0.5 shrink-0"><NeridaMark size={20} /></div>
+              <div className="min-w-0 flex-1 leading-relaxed">
               <Markdown text={m.content} />
-              <div className="mt-1 flex gap-0.5 text-neutral-500 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className={`mt-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
                 <Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act>
                 {pageId && <Act title="Insert into note" onClick={() => window.dispatchEvent(new CustomEvent("oc-nerida-insert", { detail: m.content }))}><FileInput className="size-3.5" /></Act>}
                 {i === lastAssistant && <Act title="Retry" onClick={retry}><RotateCcw className="size-3.5" /></Act>}
+              </div>
               </div>
             </div>
           ),
@@ -518,7 +643,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
                 )}
               </div>
             )}
-            {draft && <Markdown text={draft} />}
+            {draft && <Markdown text={draft} stream />}
           </div>
         )}
         {err && <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-[12.5px] text-red-300">{err}</p>}
@@ -526,7 +651,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       </div>
 
       {/* composer */}
-      {!(home && ready && !msgs.length && !busy) && <div className={home ? "mx-auto w-full max-w-3xl px-4 pb-4" : "shrink-0 p-3 pt-0"}>{composer}</div>}
+      <div className={home ? "mx-auto w-full max-w-3xl px-4 pb-4" : "shrink-0 p-3 pt-0"}>{composer}</div>
     </aside>
     </>
   );
@@ -548,7 +673,7 @@ export function ModelSelect({ value, onChange, disabled, compact }: { value: Mod
     <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} title="Model"
       className={compact ? "max-w-[130px] cursor-pointer truncate rounded-md bg-transparent px-1 py-1 text-[12px] text-neutral-400 outline-none hover:bg-white/[0.06]" : "h-8 cursor-pointer rounded-md border border-white/[0.08] bg-white/[0.04] px-2 text-[13px] text-neutral-100 outline-none"}>
       <optgroup label="Nerida" className="bg-neutral-900">
-        {(["lite", "plus"] as ModelId[]).map((m) => <option key={m} value={`nerida:${m}`}>{MODEL_NAMES[m]}</option>)}
+        {(["plus"] as ModelId[]).map((m) => <option key={m} value={`nerida:${m}`}>{MODEL_NAMES[m]}</option>)}
       </optgroup>
       {ollama.length > 0 && (
         <optgroup label="Ollama" className="bg-neutral-900">

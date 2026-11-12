@@ -36,15 +36,8 @@ const SERVER: Asset = Asset {
 
 // Chosen by benchmark on real notes (Nov 2026): Qwen3.5 replaced Qwen2.5, which
 // copied notes back or stopped after the first section.
-const MODELS: [Asset; 2] = [
-    Asset {
-        id: "lite",
-        file: "nerida-lite-q35-0.8b.gguf",
-        legacy: "nerida-lite.gguf", // Qwen2.5-0.5B
-        url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
-        sha256: "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
-        size: 532_517_120,
-    },
+// Nerida Lite (Qwen3.5-0.8B) was retired; only Nerida AI remains.
+const MODELS: [Asset; 1] = [
     Asset {
         id: "plus",
         file: "nerida-plus-q35-2b.gguf",
@@ -112,12 +105,21 @@ pub struct AiStatus {
     server: bool,
     models: Vec<ModelInfo>,
     running: Option<String>,
+    /// Nerida Lite files were found and deleted during this call.
+    lite_removed: bool,
 }
 
 #[tauri::command]
 pub fn ai_status(app: AppHandle, state: State<Ai>) -> Result<AiStatus, String> {
     let d = dir(&app)?;
+    // Nerida Lite is retired: delete its files and tell the app once.
+    let lite_removed = ["nerida-lite-q35-0.8b.gguf", "nerida-lite.gguf"]
+        .iter()
+        .filter(|f| std::fs::remove_file(d.join(f)).is_ok())
+        .count()
+        > 0;
     Ok(AiStatus {
+        lite_removed,
         server: server_exe(&app).is_some(),
         models: MODELS
             .iter()
@@ -127,7 +129,7 @@ pub fn ai_status(app: AppHandle, state: State<Ai>) -> Result<AiStatus, String> {
     })
 }
 
-/// Downloads `item` ("server", "lite" or "plus"), verifies its SHA-256 and
+/// Downloads `item` ("server" or "plus"), verifies its SHA-256 and
 /// installs it. Progress is sent as `[received, total]`.
 #[tauri::command]
 pub async fn ai_download(app: AppHandle, state: State<'_, Ai>, item: String, on_progress: Channel<(u64, u64)>) -> Result<(), String> {
@@ -353,7 +355,7 @@ pub fn shutdown(state: &Ai) {
     }
 }
 
-/// GET an https page as text (web search for Nerida Plus; avoids CORS in the webview).
+/// GET an https page as text (web search for Nerida AI; avoids CORS in the webview).
 #[tauri::command]
 pub async fn web_get(url: String) -> Result<String, String> {
     if !url.starts_with("https://") {

@@ -88,3 +88,48 @@
 .oc-orb-busy .oc-orb-ring { animation: oc-orb-ring 1.6s ease-out infinite; }
 .oc-orb-small .oc-orb-waves { animation: none; }
 @media (prefers-reduced-motion: reduce) { .oc-orb * { animation: none !important; } }
+
+/* ---- Nerida: BETA pill (orb colours, glass + slow shine) ---- */
+.oc-beta {
+  position: relative; overflow: hidden; color: #e0e7ff;
+  background: linear-gradient(135deg, rgba(56,189,248,.18), rgba(139,92,246,.24)) padding-box,
+              linear-gradient(135deg, #38bdf8, #a78bfa) border-box;
+  border: 1px solid transparent;
+  box-shadow: inset 0 0 6px rgba(167,139,250,.25), 0 0 8px -2px rgba(129,140,248,.45);
+}
+.oc-beta::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-120%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%);
+  animation: oc-beta-shine 4s ease-in-out 1s infinite;
+}
+@keyframes oc-beta-shine { 0%, 70% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+
+/* ---- Nerida chat motion ---- */
+.oc-msg-in { animation: oc-msg-in .38s cubic-bezier(.2,.8,.2,1) both; }
+.oc-msg-user { animation-name: oc-msg-in-user; }
+@keyframes oc-msg-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes oc-msg-in-user { from { opacity: 0; transform: translate(12px, 6px) scale(.97); } }
+.oc-word { animation: oc-word .45s ease-out both; }
+@keyframes oc-word { from { opacity: 0; filter: blur(3px); } }
+.oc-chip-in { animation: oc-chip-in .25s cubic-bezier(.3,1.4,.5,1) both; }
+@keyframes oc-chip-in { from { opacity: 0; transform: scale(.8); } }
+.oc-menu-pop { transform-origin: bottom left; animation: oc-menu-pop .18s cubic-bezier(.2,.9,.3,1.2) both; }
+.top-11.oc-menu-pop { transform-origin: top left; }
+@keyframes oc-menu-pop { from { opacity: 0; transform: translateY(4px) scale(.96); } }
+.oc-stagger > * { animation: oc-msg-in .5s cubic-bezier(.2,.8,.2,1) both; }
+.oc-stagger > :nth-child(2) { animation-delay: .06s; } .oc-stagger > :nth-child(3) { animation-delay: .12s; }
+.oc-stagger > :nth-child(4) { animation-delay: .2s; }  .oc-stagger > :nth-child(5) { animation-delay: .26s; }
+.oc-stagger > :nth-child(6) { animation-delay: .32s; } .oc-stagger > :nth-child(7) { animation-delay: .38s; }
+.oc-stagger > :nth-child(8) { animation-delay: .44s; } .oc-stagger > :nth-child(9) { animation-delay: .5s; }
+.oc-tilt { transition: transform .25s ease, background-color .2s; }
+.oc-tilt:hover { transform: perspective(600px) rotateX(2deg) translateY(-1px); }
+.oc-send { position: relative; }
+.oc-send:not(:disabled):active::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 12px;
+  border: 2px solid rgba(45,212,191,.7); animation: oc-burst .45s ease-out forwards;
+}
+@keyframes oc-burst { to { inset: -12px; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .oc-beta::after, .oc-msg-in, .oc-word, .oc-chip-in, .oc-menu-pop, .oc-stagger > *, .oc-send::after { animation: none !important; }
+  .oc-tilt:hover { transform: none; }
+}

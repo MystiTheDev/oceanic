@@ -380,11 +380,8 @@ fn toggle_main(app: &AppHandle) {
 /// splash (main hidden), tell the user it's already starting instead of
 /// yanking the main window out from under the splash sequence.
 fn handoff_existing_app(app: &AppHandle) {
-    let visible = app
-        .get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
-    if visible {
+    // Only the splash means "still starting"; hidden in tray → bring it back.
+    if app.get_webview_window("splash").is_none() {
         show_main(app);
         return;
     }
@@ -664,6 +661,7 @@ pub fn run() {
             db::update_canvas_edge,
             db::delete_canvas_edge,
             db::list_concepts,
+            db::get_page_previews,
             db::create_concept,
             db::update_concept,
             db::delete_concept,

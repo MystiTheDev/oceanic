@@ -1187,6 +1187,37 @@ pub(crate) fn resources_of(conn: &Connection, workspace_id: &str) -> CmdResult<V
     rows.collect::<Result<_, _>>().map_err(err)
 }
 
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PagePreview {
+    id: String,
+    text: String,
+}
+
+/// Plain text of each page from the search index, cut to `max_chars` when given.
+/// Unknown ids are skipped.
+pub(crate) fn previews(conn: &Connection, ids: &[String], max_chars: Option<usize>) -> CmdResult<Vec<PagePreview>> {
+    let mut stmt = conn.prepare("SELECT body FROM page_search WHERE page_id = ?1").map_err(err)?;
+    let mut out = Vec::new();
+    for id in ids {
+        let body: Option<String> = stmt.query_row([id], |r| r.get(0)).optional().map_err(err)?;
+        if let Some(body) = body {
+            let text = match max_chars {
+                Some(n) if body.chars().count() > n => format!("{}…", body.chars().take(n).collect::<String>().trim_end()),
+                _ => body,
+            };
+            out.push(PagePreview { id: id.clone(), text });
+        }
+    }
+    Ok(out)
+}
+
+/// Read-only note text for Atlas page cards (zoomed in) and Peek (`max_chars: None`).
+#[tauri::command]
+pub fn get_page_previews(db: State<Db>, ids: Vec<String>, max_chars: Option<usize>) -> CmdResult<Vec<PagePreview>> {
+    previews(&db.0.lock().unwrap(), &ids, max_chars)
+}
+
 #[tauri::command]
 pub fn list_concepts(db: State<Db>, workspace_id: String) -> CmdResult<Vec<Concept>> {
     concepts_in(&db.0.lock().unwrap(), &workspace_id)
@@ -1938,5 +1969,12 @@ mod tests {
         assert_eq!(left, 1); // only the Field -> Welcome edge
         assert!(node_exists(&c, "welcome").unwrap());
         assert_eq!(concepts_in(&c, "general").unwrap().len(), 1);
+
+        // Previews: truncated text from the search index, unknown ids skipped.
+        c.execute("INSERT INTO page_search (page_id, title, body) VALUES ('welcome', 'Welcome', 'abcdefghij')", []).unwrap();
+        let p = previews(&c, &["welcome".into(), "nope".into()], Some(4)).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].text, "abcd…");
+        assert_eq!(previews(&c, &["welcome".into()], None).unwrap()[0].text, "abcdefghij");
     }
 }

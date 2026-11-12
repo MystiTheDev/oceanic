@@ -20,6 +20,22 @@ export const REL_LABELS: Record<RelType, string> = {
   related: "Related to",
 };
 
+/** Default line color per relationship type (a color picked on the edge still wins). */
+export const REL_COLORS: Record<RelType, string> = {
+  depends_on: "#f59e0b",
+  explains: "#38bdf8",
+  part_of: "#a78bfa",
+  example_of: "#2dd4bf",
+  applied_in: "#4ade80",
+  contrasts: "#fb7185",
+  causes: "#fb923c",
+  extends: "#818cf8",
+  related: "#a3a3a3",
+};
+
+/** Lines of a relationship type switched off in the filter. */
+export const MUTED_STROKE = "#525252";
+
 export const isConceptId = (id: string) => id.startsWith("concept:");
 
 /** Every node directly connected to `id`, in either direction. */
@@ -47,16 +63,17 @@ export function prerequisites(edges: CanvasEdge[], target: string): { order: str
   const order: string[] = [];
   const cycle = new Set<string>();
   const done = new Set<string>();
-  const onPath = new Set<string>();
+  const stack: string[] = [];
   const visit = (id: string) => {
     if (done.has(id)) return;
-    if (onPath.has(id)) {
-      cycle.add(id);
+    const at = stack.indexOf(id);
+    if (at >= 0) {
+      stack.slice(at).forEach((x) => cycle.add(x)); // every node on the loop
       return;
     }
-    onPath.add(id);
+    stack.push(id);
     for (const d of deps.get(id) ?? []) visit(d);
-    onPath.delete(id);
+    stack.pop();
     done.add(id);
     if (id !== target) order.push(id);
   };

@@ -11,7 +11,10 @@ import {
   AppWindow,
   FileText,
   FolderInput,
+  Crosshair,
+  Filter,
   Lightbulb,
+  Search,
   Maximize2,
   Minus,
   Palette,
@@ -30,11 +33,15 @@ import {
   type EdgeColor,
   type EdgeStyle,
   type Concept,
+  type ConceptResource,
   type LinkEdge,
   type RelType,
   REL_TYPES,
 } from "../data/api";
-import { isConceptId, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
+import { isConceptId, prerequisites, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
+import { ConceptInspector } from "./ConceptInspector";
+import { AtlasLegend } from "./AtlasLegend";
+import { MUTED_STROKE, REL_COLORS } from "../data/atlas";
 import type { PageMeta } from "../data/workspace";
 import { tagColor } from "../lib/colors";
 
@@ -122,6 +129,9 @@ const edgeKey = (s: string, t: string) => `${s}>${t}`;
  * dot onto another card to connect them, click a line to label or style it,
  * double-click a card to open it.
  */
+/** Restored when Atlas re-opens (e.g. coming back from a resource). */
+let lastView: { camera: Camera; selected: string | null } | null = null;
+
 export function SpatialCanvas({
   pages: pageList,
   activePageId,
@@ -136,10 +146,32 @@ export function SpatialCanvas({
   workspaceId,
 }: SpatialCanvasProps) {
   const [concepts, setConcepts] = useState<Concept[]>([]);
+  const [resources, setResources] = useState<ConceptResource[]>([]);
+  /** Focus View: the card in the middle, plus the trail that led here. */
+  const [focusTrail, setFocusTrail] = useState<string[]>([]);
+  const focus = focusTrail[focusTrail.length - 1] ?? null;
+  /** Relationship types hidden by the filter. */
+  const [hiddenTypes, setHiddenTypes] = useState<Set<RelType>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  /** Prerequisite pathway shown for this concept ("What should I understand first?"). */
+  const [pathFor, setPathFor] = useState<string | null>(null);
+  /** Read-only note text per page, fetched once the map is zoomed in far enough. */
+  const [previews, setPreviews] = useState<Map<string, string>>(new Map());
+  /** True briefly while the camera eases to a programmatic target (fit, search, focus). */
+  const [glide, setGlide] = useState(false);
+  const glideTimer = useRef<number>(0);
+  const glideTo = (cam: Camera) => {
+    setGlide(true);
+    setCamera(cam);
+    clearTimeout(glideTimer.current);
+    glideTimer.current = window.setTimeout(() => setGlide(false), 450);
+  };
   /** Concept card whose title is being typed. */
   const [renaming, setRenaming] = useState<string | null>(null);
   useEffect(() => {
     api.listConcepts(workspaceId).then(setConcepts).catch((e) => console.error("Loading concepts failed", e));
+    api.listConceptResources(workspaceId).then(setResources).catch((e) => console.error("Loading resources failed", e));
   }, [workspaceId, version]);
   /** Pages and concepts are both cards; concepts never orbit. */
   const pages = useMemo<PageMeta[]>(
@@ -154,7 +186,27 @@ export function SpatialCanvas({
   const [docLinks, setDocLinks] = useState<LinkEdge[]>([]);
   const [canvasEdges, setCanvasEdges] = useState<CanvasEdge[]>([]);
   const [linksLoaded, setLinksLoaded] = useState(false);
-  const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, k: 1 });
+  const [camera, setCamera] = useState<Camera>(lastView?.camera ?? { x: 0, y: 0, k: 1 });
+  /** Semantic zoom: dots when far out, cards in the middle, note previews when close. */
+  const level: "dot" | "card" | "preview" = camera.k < 0.6 ? "dot" : camera.k > 1.2 ? "preview" : "card";
+  useEffect(() => {
+    if (level !== "preview") return;
+    const missing = pageList.map((p) => p.id).filter((id) => !previews.has(id));
+    if (!missing.length) return;
+    api
+      .getPagePreviews(missing, 300)
+      .then((rows) =>
+        setPreviews((prev) => {
+          const next = new Map(prev);
+          for (const id of missing) next.set(id, rows.find((r) => r.id === id)?.text ?? "");
+          return next;
+        }),
+      )
+      .catch((e) => console.error("Loading previews failed", e));
+  }, [level, pageList, previews]);
+  // Saved notes change their text: refetch on the next zoom-in.
+  useEffect(() => setPreviews(new Map()), [version]);
+
   const [hovered, setHovered] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [orbitT, setOrbitT] = useState(0);
@@ -185,13 +237,16 @@ export function SpatialCanvas({
     return () => cancelAnimationFrame(raf);
   }, []);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(activePageId);
+  const [selected, setSelected] = useState<string | null>(lastView ? lastView.selected : activePageId);
   const [editingEdge, setEditingEdge] = useState<string | null>(null);
   /** In-progress connection: from a card's side to the cursor (world coords). */
   const [draft, setDraft] = useState<{ from: string; side: Side; to: Point; target: string | null } | null>(
     null,
   );
-  const fitted = useRef(false);
+  const fitted = useRef(!!lastView);
+  useEffect(() => {
+    lastView = { camera, selected };
+  }, [camera, selected]);
   /** "New page here": where the next new card should land (world coords). */
   const pendingPlacement = useRef<Point | null>(null);
   /** Set after the first layout pass; later arrivals are new pages. */
@@ -296,7 +351,7 @@ export function SpatialCanvas({
     const minY = Math.min(...pts.map((p) => p.y)) - CARD_H / 2 - 60;
     const maxY = Math.max(...pts.map((p) => p.y)) + CARD_H / 2 + 60;
     const k = clamp(Math.min(el.clientWidth / (maxX - minX), el.clientHeight / (maxY - minY)), MIN_ZOOM, 1.2);
-    setCamera({
+    glideTo({
       k,
       x: el.clientWidth / 2 - ((minX + maxX) / 2) * k,
       y: el.clientHeight / 2 - ((minY + maxY) / 2) * k,
@@ -482,24 +537,52 @@ export function SpatialCanvas({
       })
       .catch((e) => console.error("Creating concept failed", e));
 
+  const saveConcept = (id: string, patch: Pick<Concept, "title" | "description" | "tags" | "state">) =>
+    api
+      .updateConcept(id, patch)
+      .then((u) => setConcepts((prev) => prev.map((x) => (x.id === id ? u : x))))
+      .catch((e) => console.error("Saving concept failed", e));
+
   const renameConcept = (id: string, title: string) => {
     setRenaming(null);
     const c = concepts.find((x) => x.id === id);
-    if (!c || !title.trim() || title.trim() === c.title) return;
-    api
-      .updateConcept(id, { title, description: c.description, tags: c.tags, state: c.state })
-      .then((u) => setConcepts((prev) => prev.map((x) => (x.id === id ? u : x))))
-      .catch((e) => console.error("Renaming concept failed", e));
+    if (c && title.trim() && title.trim() !== c.title) saveConcept(id, { ...c, title });
   };
+
+  const attachResource = (conceptId: string, entryId: string) =>
+    api
+      .attachResource(conceptId, entryId)
+      .then(() => setResources((prev) => [...prev, { conceptId, entryId, createdAt: new Date().toISOString() }]))
+      .catch((e) => console.error("Attaching resource failed", e));
+
+  const detachResource = (conceptId: string, entryId: string) =>
+    api
+      .detachResource(conceptId, entryId)
+      .then(() => setResources((prev) => prev.filter((r) => !(r.conceptId === conceptId && r.entryId === entryId))))
+      .catch((e) => console.error("Removing resource link failed", e));
 
   const deleteConcept = (id: string) =>
     api
       .deleteConcept(id)
       .then(() => {
         setConcepts((prev) => prev.filter((c) => c.id !== id));
+        setResources((prev) => prev.filter((r) => r.conceptId !== id));
         setCanvasEdges((prev) => prev.filter((e) => e.sourceId !== id && e.targetId !== id));
       })
       .catch((e) => console.error("Deleting concept failed", e));
+
+  /** Centers the camera on a card and selects it. */
+  const panTo = (id: string) => {
+    const p = positions?.get(id);
+    const el = viewport.current;
+    if (p && el) glideTo({ k: camera.k, x: el.clientWidth / 2 - p.x * camera.k, y: el.clientHeight / 2 - p.y * camera.k });
+    setSelected(id);
+  };
+
+  const enterFocus = (id: string) => {
+    setFocusTrail((t) => (t[t.length - 1] === id ? t : [...t, id]));
+    panTo(id);
+  };
 
   /** "Tidy up": forget every position and lay the whole graph out again. */
   const relayout = () => {
@@ -518,6 +601,10 @@ export function SpatialCanvas({
       gesture.current = null;
       setDraft(null);
       setEditingEdge(null);
+      if (!(e.target as HTMLElement).closest("input, textarea")) {
+        setPathFor(null);
+        setFocusTrail((t) => t.slice(0, -1));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -545,6 +632,7 @@ export function SpatialCanvas({
 
   const cardMenu = (e: React.MouseEvent, page: PageMeta) =>
     openContextMenu(e, isConceptId(page.id) ? [
+      { label: "Focus", icon: <Crosshair className="size-4" />, onSelect: () => enterFocus(page.id) },
       { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(page.id) },
       "divider",
       { label: "Delete concept", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => deleteConcept(page.id) },
@@ -654,6 +742,26 @@ export function SpatialCanvas({
   if (positions) for (const p of pages) if (!orbiting(p.id) && positions.has(p.id)) place(p.id, positions.get(p.id)!);
   const tint = (id: string) => tagColor(id);
 
+  /** Every edge is drawn; types switched off in the filter are greyed out and ignored by Focus. */
+  const shownEdges = edges;
+  const activeEdges = edges.filter((e) => !hiddenTypes.has(e.relType));
+  /** In Focus View, only the focused card and its direct neighbours stay bright. */
+  const inFocus = focus
+    ? new Set([focus, ...activeEdges.flatMap((e) => (e.source === focus ? [e.target] : e.target === focus ? [e.source] : []))])
+    : null;
+  const path = pathFor ? prerequisites(canvasEdges, pathFor) : null;
+  const inPath = path ? new Set([pathFor!, ...path.order]) : null;
+  /** Cards kept bright: the pathway wins over Focus View. */
+  const bright = inPath ?? inFocus;
+  const q = query.trim().toLowerCase();
+  const hits = q
+    ? pages
+        .filter((p) => {
+          const c = concepts.find((x) => x.id === p.id);
+          return [p.title, c?.description, ...(c?.tags ?? [])].some((t) => t?.toLowerCase().includes(q));
+        })
+        .slice(0, 8)
+    : [];
   const focusCards = new Set<string>(
     hoverPair
       ? [hoverPair.source, hoverPair.target]
@@ -664,6 +772,11 @@ export function SpatialCanvas({
     if (draft.target) focusCards.add(draft.target);
   }
   const degree = (id: string) => edges.filter((e) => e.source === id || e.target === id).length;
+  /** Dot radius in world units: constant on screen, a little bigger for well-connected nodes. */
+  const dotR = (id: string) => (9 + Math.min(degree(id), 6) * 1.5) / camera.k;
+  /** Edge geometry for the current zoom level. */
+  const curveOf = (s: string, t: string, a: Point, b: Point) =>
+    level === "dot" ? connector(a, b, dotR(s), dotR(t)) : connector(a, b);
   const editing = editingEdge ? edges.find((e) => e.key === editingEdge) : undefined;
   const pageTitle = (id: string) => {
     const p = pages.find((x) => x.id === id);
@@ -679,6 +792,7 @@ export function SpatialCanvas({
         backgroundImage: "radial-gradient(var(--oc-canvas-dot) 1px, transparent 1px)",
         backgroundSize: `${GRID * camera.k}px ${GRID * camera.k}px`,
         backgroundPosition: `${camera.x}px ${camera.y}px`,
+        transition: glide ? "background-position 420ms cubic-bezier(0.22, 1, 0.36, 1), background-size 420ms cubic-bezier(0.22, 1, 0.36, 1)" : undefined,
       }}
       onPointerDown={onBackgroundDown}
       onPointerMove={onPointerMove}
@@ -686,17 +800,30 @@ export function SpatialCanvas({
       onPointerCancel={onPointerUp}
       onContextMenu={backgroundMenu}
     >
+      {/* Soft glow in the middle of the map */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{ background: "radial-gradient(ellipse 60% 55% at 50% 50%, rgba(56, 189, 248, 0.07), transparent 70%)" }}
+      />
       {/* World layer: everything inside moves with the camera */}
       <div
         className="absolute left-0 top-0 origin-top-left"
-        style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.k})` }}
+        style={{
+          transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.k})`,
+          transition: glide ? "transform 420ms cubic-bezier(0.22, 1, 0.36, 1)" : undefined,
+        }}
       >
         <svg
           className="pointer-events-none absolute"
           style={{ left: -SVG_OFFSET, top: -SVG_OFFSET, width: SVG_OFFSET * 2, height: SVG_OFFSET * 2 }}
         >
           <defs>
-            {[...Object.entries(EDGE_COLORS).map(([id, c]) => [id, c.stroke]), ["focus", FOCUS_STROKE]].map(
+            {[
+              ...Object.entries(EDGE_COLORS).map(([id, c]) => [id, c.stroke]),
+              ...Object.entries(REL_COLORS).map(([id, c]) => [`rel-${id}`, c]),
+              ["focus", FOCUS_STROKE],
+              ["muted", MUTED_STROKE],
+            ].map(
               ([id, fill]) => (
                 <marker
                   key={id}
@@ -723,23 +850,35 @@ export function SpatialCanvas({
               ) : null;
             })}
             {positions &&
-              edges.map((edge) => {
+              shownEdges.map((edge) => {
                 const a = shown.get(edge.source);
                 const b = shown.get(edge.target);
                 if (!a || !b) return null;
-                const curve = connector(a, b);
+                const curve = curveOf(edge.source, edge.target, a, b);
                 const lit = edge.key === hoveredEdge || edge.key === editingEdge ||
                   (!hoverPair && (focusCards.has(edge.source) || focusCards.has(edge.target)));
-                const base = EDGE_COLORS[edge.color].stroke;
-                const stroke = lit && edge.color === "default" ? FOCUS_STROKE : base;
-                const marker = `url(#oc-arrow-${lit && edge.color === "default" ? "focus" : edge.color})`;
+                const muted = hiddenTypes.has(edge.relType);
+                // A hand-picked color wins; otherwise the relationship type sets it.
+                const custom = edge.color !== "default";
+                const stroke = muted ? MUTED_STROKE : custom ? EDGE_COLORS[edge.color].stroke : REL_COLORS[edge.relType];
+                const marker = `url(#oc-arrow-${muted ? "muted" : custom ? edge.color : `rel-${edge.relType}`})`;
                 return (
-                  <g key={edge.key}>
+                  <g
+                    key={edge.key}
+                    opacity={
+                      bright && !(bright.has(edge.source) && bright.has(edge.target) && (!inPath || edge.relType === "depends_on"))
+                        ? 0.08
+                        : muted
+                          ? 0.35
+                          : 1
+                    }
+                    style={{ transition: "opacity 300ms" }}
+                  >
                     <path
                       d={curve.d}
                       fill="none"
                       stroke={stroke}
-                      strokeWidth={lit ? 2 : 1.5}
+                      strokeWidth={muted ? 1 : lit ? 2.25 : 1.5}
                       strokeDasharray={DASH[edge.style]}
                       strokeLinecap="round"
                       markerEnd={SYMMETRIC_TYPES.has(edge.relType) ? undefined : marker}
@@ -780,14 +919,14 @@ export function SpatialCanvas({
 
         {/* Edge labels sit on the curve's midpoint */}
         {positions &&
-          edges.map((edge) => {
+          shownEdges.map((edge) => {
             const a = shown.get(edge.source);
             const b = shown.get(edge.target);
             if (!a || !b) return null;
-            const text = edgeText(edge);
+            const text = hiddenTypes.has(edge.relType) ? "" : edgeText(edge);
             const showGhost = !text && edge.key === hoveredEdge;
             if (!text && !showGhost) return null;
-            const mid = connector(a, b).mid;
+            const mid = curveOf(edge.source, edge.target, a, b).mid;
             return (
               <button
                 key={`label-${edge.key}`}
@@ -843,20 +982,22 @@ export function SpatialCanvas({
                   setHovered((h) => (h === page.id ? null : h));
                   pausedRef.current = false;
                 }}
-                onDoubleClick={() => (concept ? setRenaming(page.id) : onOpenPage(page.id))}
+                onDoubleClick={() => (concept ? enterFocus(page.id) : onOpenPage(page.id))}
                 onContextMenu={(e) => cardMenu(e, page)}
-                title={concept ? "Concept · double-click to rename" : "Double-click to open"}
+                title={concept ? "Concept · double-click to focus" : "Double-click to open"}
                 style={{
                   left: p.x - CARD_W / 2,
                   top: p.y - CARD_H / 2,
                   width: CARD_W,
                   height: CARD_H,
                   scale: scale < 1 ? String(scale) : undefined,
-                  opacity: out < 1 ? out : undefined,
+                  opacity: bright && !bright.has(page.id) ? 0.12 : out < 1 ? out : undefined,
+                  outline: level !== "dot" && page.id === (pathFor ?? focus) ? "2px solid #a78bfa" : "2px solid transparent",
+                  outlineOffset: 3,
                   zIndex: child ? undefined : 1,
-                  ...(t && !lit && !isDropTarget ? { borderColor: `color-mix(in srgb, ${t.solid} 55%, transparent)`, background: `color-mix(in srgb, ${t.solid} 14%, var(--oc-raised))` } : {}),
+                  ...(level !== "dot" && t && !lit && !isDropTarget ? { borderColor: `color-mix(in srgb, ${t.solid} 55%, transparent)`, background: `color-mix(in srgb, ${t.solid} 14%, var(--oc-raised))` } : {}),
                 }}
-                className={`oc-pop-in absolute flex cursor-pointer flex-col justify-center border ${concept ? "rounded-full px-5 ring-1 ring-violet-400/40" : "rounded-xl px-3"} shadow-lg shadow-black/40 transition-[border-color,background-color,box-shadow] duration-150 ${
+                className={level === "dot" ? "absolute cursor-pointer transition-opacity duration-300" : `oc-pop-in absolute flex cursor-pointer flex-col justify-center border ${concept ? "rounded-full px-5 ring-1 ring-violet-400/40" : "rounded-xl px-3"} shadow-lg shadow-black/40 transition-[border-color,background-color,box-shadow,opacity,outline-color] duration-300 ${
                   isDropTarget
                     ? "border-sky-400 bg-sky-500/10 ring-2 ring-sky-500/40"
                     : lit
@@ -866,6 +1007,33 @@ export function SpatialCanvas({
                         : "border-white/[0.08] bg-[var(--oc-raised)] hover:border-white/20"
                 }`}
               >
+                {level === "dot" ? (() => {
+                  const r = dotR(page.id);
+                  const color = concept ? STATE_DOT[concept.state] : tint(page.id).solid;
+                  const ring = page.id === (pathFor ?? focus) || page.id === selected || lit;
+                  return (
+                    <>
+                      <span
+                        className="oc-pop-in absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[box-shadow,outline-color] duration-300"
+                        style={{
+                          width: r * 2,
+                          height: r * 2,
+                          borderRadius: concept ? "9999px" : r * 0.4,
+                          background: `radial-gradient(circle at 35% 30%, color-mix(in srgb, ${color} 60%, white), ${color})`,
+                          boxShadow: `0 0 ${r * 1.2}px color-mix(in srgb, ${color} 55%, transparent)`,
+                          outline: `${2 / camera.k}px solid ${ring ? "#a78bfa" : "transparent"}`,
+                          outlineOffset: 2 / camera.k,
+                        }}
+                      />
+                      <span
+                        className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-neutral-900/80 font-medium text-neutral-200"
+                        style={{ top: CARD_H / 2 + r + 4 / camera.k, fontSize: 11 / camera.k, padding: `${1 / camera.k}px ${5 / camera.k}px` }}
+                      >
+                        {page.title || "Untitled"}
+                      </span>
+                    </>
+                  );
+                })() : (<>
                 <div className="flex min-w-0 items-center gap-2">
                   {concept ? (
                     <span className="size-2.5 shrink-0 rounded-full" title={concept.state} style={{ backgroundColor: STATE_DOT[concept.state] }} />
@@ -891,6 +1059,11 @@ export function SpatialCanvas({
                     </span>
                   )}
                 </div>
+                {path && path.order.includes(page.id) && (
+                  <span className="oc-pop-in absolute -left-2 -top-2 grid size-5 place-items-center rounded-full bg-violet-500 text-[11px] font-semibold text-white shadow shadow-black/40">
+                    {path.order.indexOf(page.id) + 1}
+                  </span>
+                )}
                 {glow && (
                   <span
                     className="pointer-events-none absolute inset-0 rounded-xl"
@@ -928,6 +1101,14 @@ export function SpatialCanvas({
                       style={HANDLE_POS[side]}
                     />
                   ))}
+
+                {/* Zoomed in: the start of the note, read-only */}
+                {level === "preview" && !concept && previews.get(page.id) && (
+                  <div className="oc-fade-in pointer-events-none absolute left-0 right-0 top-full mt-1.5 line-clamp-6 rounded-lg border border-white/[0.06] bg-[var(--oc-raised)]/95 px-3 py-2 text-[11px] leading-relaxed text-neutral-400 shadow-lg shadow-black/40">
+                    {previews.get(page.id)}
+                  </div>
+                )}
+                </>)}
               </div>
             );
           })}
@@ -938,7 +1119,7 @@ export function SpatialCanvas({
         const a = positions.get(editing.source);
         const b = positions.get(editing.target);
         if (!a || !b) return null;
-        const mid = connector(a, b).mid;
+        const mid = curveOf(editing.source, editing.target, a, b).mid;
         const el = viewport.current;
         const sx = clamp(camera.x + mid.x * camera.k, 150, (el?.clientWidth ?? 800) - 150);
         const sy = clamp(camera.y + mid.y * camera.k + 18, 8, (el?.clientHeight ?? 600) - 300);
@@ -957,15 +1138,127 @@ export function SpatialCanvas({
         );
       })()}
 
+      {/* Concept inspector (screen space) */}
+      {(() => {
+        const c = concepts.find((x) => x.id === selected);
+        return c ? (
+          <ConceptInspector
+            key={c.id}
+            concept={c}
+            edges={canvasEdges.filter((e) => e.manual && (e.sourceId === c.id || e.targetId === c.id))}
+            titleOf={pageTitle}
+            attached={resources.filter((r) => r.conceptId === c.id).map((r) => r.entryId)}
+            pages={pageList}
+            onChange={(patch) => saveConcept(c.id, patch)}
+            onAttach={(entryId) => attachResource(c.id, entryId)}
+            onDetach={(entryId) => detachResource(c.id, entryId)}
+            onOpen={onOpenPage}
+            onSelect={setSelected}
+            onClose={() => (setSelected(null), setPathFor(null))}
+            path={pathFor === c.id ? path : null}
+            onTogglePath={() => setPathFor((p) => (p === c.id ? null : c.id))}
+          />
+        ) : null;
+      })()}
+
       {/* Hint */}
-      <div className="pointer-events-none absolute left-4 top-3 text-[11px] text-neutral-500">
-        Drag to pan · scroll to zoom · drag a card's edge dot onto another card to connect · click a line
-        to set its relationship · right-click for a new concept
+      <div className="pointer-events-none absolute bottom-5 left-4 max-w-[45%] text-[11px] text-neutral-500">
+        Drag a card's edge dot onto another card to connect · click a line to set its relationship ·
+        double-click a concept to focus
+      </div>
+
+      {/* Toolbar: search, filter, focus trail */}
+      <div onPointerDown={(e) => e.stopPropagation()} className="absolute left-4 top-3 z-10 flex flex-col gap-1.5">
+        <div className="flex items-center gap-1">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-neutral-500" />
+            <input
+              value={query}
+              placeholder="Search concepts & pages"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setQuery("");
+                if (e.key === "Enter" && hits[0]) (panTo(hits[0].id), setQuery(""));
+              }}
+              className="h-8 w-56 rounded-lg border border-white/[0.08] bg-neutral-800/90 pl-7 pr-2 text-[13px] text-neutral-100 outline-none backdrop-blur placeholder:text-neutral-500 focus:border-sky-500/60"
+            />
+            {hits.length > 0 && (
+              <div className="absolute left-0 top-9 w-56 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-xl shadow-black/50">
+                {hits.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => (panTo(h.id), setQuery(""))}
+                    className="block w-full cursor-pointer truncate rounded px-2 py-1 text-left text-[12px] text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"
+                  >
+                    {h.icon} {h.title || "Untitled"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            title="Filter relationship types"
+            onClick={() => setFilterOpen((o) => !o)}
+            className={`grid size-8 cursor-pointer place-items-center rounded-lg border bg-neutral-800/90 backdrop-blur ${
+              hiddenTypes.size ? "border-sky-500/60 text-sky-300" : "border-white/[0.08] text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            <Filter className="size-3.5" />
+          </button>
+        </div>
+        {filterOpen && (
+          <div className="flex w-[264px] flex-wrap gap-1 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1.5 shadow-xl shadow-black/50">
+            {REL_TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() =>
+                  setHiddenTypes((h) => (h.has(t) ? new Set([...h].filter((x) => x !== t)) : new Set([...h, t])))
+                }
+                className={`h-6 cursor-pointer rounded-md border px-1.5 text-[11px] transition-colors duration-100 ${
+                  hiddenTypes.has(t)
+                    ? "border-white/[0.06] text-neutral-600 line-through"
+                    : "border-sky-500/50 bg-sky-500/10 text-neutral-200"
+                }`}
+              >
+                {REL_LABELS[t]}
+              </button>
+            ))}
+          </div>
+        )}
+        {focus && (
+          <div className="flex max-w-[420px] items-center gap-1 rounded-lg border border-violet-400/30 bg-neutral-800/90 px-2 py-1 text-[12px] backdrop-blur">
+            <Crosshair className="size-3.5 shrink-0 text-violet-300" />
+            {focusTrail.map((id, i) => (
+              <span key={`${id}-${i}`} className="flex min-w-0 items-center gap-1">
+                {i > 0 && <span className="text-neutral-600">›</span>}
+                <button
+                  type="button"
+                  onClick={() => (setFocusTrail((t) => t.slice(0, i + 1)), panTo(id))}
+                  className={`cursor-pointer truncate hover:text-neutral-100 ${id === focus ? "text-violet-200" : "text-neutral-400"}`}
+                >
+                  {pageTitle(id)}
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => setFocusTrail([])}
+              className="ml-1 shrink-0 cursor-pointer rounded px-1.5 text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
+            >
+              Exit
+            </button>
+          </div>
+        )}
       </div>
 
       {pages.length === 0 && (
         <div className="absolute inset-0 grid place-items-center text-sm text-neutral-500">No pages or concepts yet</div>
       )}
+
+      <AtlasLegend muted={hiddenTypes} />
 
       {/* Controls */}
       <div
@@ -1204,8 +1497,16 @@ function bezier(s: Point, n1: Point, t: Point, n2: Point) {
   };
 }
 
-/** Smooth S-curve between two cards, leaving and entering through facing sides. */
-function connector(a: Point, b: Point) {
+/**
+ * Smooth S-curve between two cards, leaving and entering through facing sides.
+ * With radii (zoomed-out dots), it runs nearly straight from circle edge to circle edge.
+ */
+function connector(a: Point, b: Point, ra?: number, rb?: number) {
+  if (ra !== undefined && rb !== undefined) {
+    const d = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+    const u = { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
+    return bezier({ x: a.x + u.x * ra, y: a.y + u.y * ra }, u, { x: b.x - u.x * rb, y: b.y - u.y * rb }, { x: -u.x, y: -u.y });
+  }
   const [sa, sb] = facingSides(a, b);
   return bezier(anchor(a, sa), NORMAL[sa], anchor(b, sb), NORMAL[sb]);
 }

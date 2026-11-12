@@ -4,10 +4,6 @@ import { MODEL_NAMES, type ModelId } from "../lib/nerida";
 import { Modal } from "./Modal";
 import { NeridaMark } from "./NeridaOrb";
 
-const MODELS: { id: ModelId; size: string; pros: string }[] = [
-  { id: "lite", size: "~560 MB", pros: "Fast and light. Runs well on any PC, great for summaries and quick questions." },
-  { id: "plus", size: "~1.3 GB", pros: "Smarter answers, better explanations, flashcards and quizzes. Best with 8 GB+ RAM." },
-];
 
 const FEATURES = [
   { icon: MessageSquareText, text: "Ask questions and get answers from your own notes" },
@@ -41,7 +37,7 @@ function Preview() {
 }
 
 export function NeridaIntro({ onDownload, onLater }: { onDownload: (m: ModelId) => void; onLater: () => void }) {
-  const [model, setModel] = useState<ModelId>("lite");
+  const model: ModelId = "plus";
   return (
     <Modal onClose={onLater} className="w-[480px]">
       <div className="p-6">
@@ -59,20 +55,6 @@ export function NeridaIntro({ onDownload, onLater }: { onDownload: (m: ModelId) 
           ))}
         </ul>
 
-        <p className="mt-4 mb-2 text-[12px] font-medium uppercase tracking-wide text-neutral-500">Choose a model</p>
-        <div className="grid grid-cols-2 gap-2">
-          {MODELS.map((m) => (
-            <button key={m.id} type="button" onClick={() => setModel(m.id)}
-              className={`cursor-pointer rounded-xl border p-3 text-left transition-colors ${model === m.id ? "border-teal-300/50 bg-teal-300/[0.06]" : "border-white/[0.08] hover:bg-white/[0.03]"}`}>
-              <div className="flex items-baseline justify-between">
-                <span className="text-[13.5px] font-medium text-neutral-100">{MODEL_NAMES[m.id]}</span>
-                <span className="text-[11.5px] text-neutral-500">{m.size}</span>
-              </div>
-              <p className="mt-1 text-[11.5px] leading-snug text-neutral-400">{m.pros}</p>
-            </button>
-          ))}
-        </div>
-
         <p className="mt-4 flex items-center justify-center gap-1.5 text-[12px] text-neutral-500">
           <ShieldCheck className="size-3.5" /> Free forever. Runs on your PC, so your notes never leave it.
         </p>
@@ -81,7 +63,7 @@ export function NeridaIntro({ onDownload, onLater }: { onDownload: (m: ModelId) 
           <button type="button" onClick={onLater} className="flex-1 cursor-pointer rounded-lg px-3 py-2 text-[13px] text-neutral-400 hover:bg-white/[0.05]">Maybe later</button>
           <button type="button" onClick={() => onDownload(model)}
             className="flex flex-[2] cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-teal-400/90 px-3 py-2 text-[13px] font-medium text-neutral-950 hover:bg-teal-300">
-            <Download className="size-4" /> Download {MODEL_NAMES[model]}
+            <Download className="size-4" /> Download {MODEL_NAMES[model]} (~1.3 GB)
           </button>
         </div>
       </div>

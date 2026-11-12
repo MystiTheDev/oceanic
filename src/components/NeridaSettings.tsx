@@ -2,13 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
-  engine, isLocalUrl, nerida, listModels, MODEL_NAMES, OLLAMA_URL, PRESETS, saveProviders, setKey, uid, useNerida,
+  downloadModel, engine, isLocalUrl, nerida, listModels, MODEL_NAMES, OLLAMA_URL, PRESETS, saveProviders, setKey, uid, useNerida,
   type AiStatus, type ModelId, type Provider,
 } from "../lib/nerida";
 import { ModelMenu } from "./NeridaModelMenu";
 
 const ABOUT: Record<ModelId, string> = {
-  lite: "Fast and light. Runs well on any PC, great for summaries and quick questions.",
   plus: "Smarter answers, better explanations, flashcards and quizzes. Best with 8 GB+ RAM.",
 };
 const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`);
@@ -16,7 +15,7 @@ const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.r
 /** Settings → Nerida AI: download / delete models and pick the default. */
 export function NeridaSettings() {
   const [status, setStatus] = useState<AiStatus | null>(null);
-  const [prog, setProg] = useState<{ id: ModelId; got: number; total: number } | null>(null);
+  const prog = useNerida().dl;
   const [err, setErr] = useState("");
   const refresh = () => engine.status().then(setStatus).catch((e) => setErr(String(e)));
   useEffect(() => {
@@ -28,13 +27,7 @@ export function NeridaSettings() {
 
   const download = async (id: ModelId, engineOnly = false) => {
     setErr("");
-    try {
-      if (!status.server) await engine.download("server", (got, total) => setProg({ id, got, total }));
-      if (!engineOnly) await engine.download(id, (got, total) => setProg({ id, got, total }));
-    } catch (e) {
-      if (String(e) !== "cancelled") setErr(String(e));
-    }
-    setProg(null);
+    setErr(await downloadModel(id, !status.server, engineOnly));
     void refresh();
   };
   const remove = async (id: ModelId) => {
@@ -58,7 +51,7 @@ export function NeridaSettings() {
         </div>
       )}
       {status.models.map((m) => {
-        const busy = prog?.id === m.id;
+        const busy = prog?.model === m.id;
         return (
           <div key={m.id} className="border-b border-white/[0.05] py-3">
             <div className="flex items-center gap-4">

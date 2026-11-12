@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { House, LayoutDashboard, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
-import { nerida, useNerida } from "../lib/nerida";
+import { House, LayoutDashboard, MessageSquare, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { chatGroups, nerida, useNerida } from "../lib/nerida";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { openContextMenu } from "./ContextMenu";
 
@@ -41,6 +41,7 @@ export function HomeSwitch() {
 export function NeridaSidebar({ footer }: { footer: ReactNode }) {
   const { chats, activeId } = useNerida();
   const [q, setQ] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
   const shown = chats.filter((c) => c.title.toLowerCase().includes(q.toLowerCase()));
   return (
     <aside className="oc-fade-in flex h-full w-[256px] shrink-0 flex-col overflow-hidden border-r border-white/[0.06]">
@@ -53,24 +54,39 @@ export function NeridaSidebar({ footer }: { footer: ReactNode }) {
         <button type="button" onClick={() => nerida.set({ activeId: null })} className={`${ROW} text-neutral-300 hover:bg-white/5`}>
           <Plus className="size-4 shrink-0 text-neutral-500" /> New chat
         </button>
-        <label className="flex h-8 items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.03] px-2">
+        <label className="flex h-8 items-center gap-2 rounded-lg bg-white/[0.04] px-2 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(45,212,191,0.35)]">
           <Search className="size-3.5 shrink-0 text-neutral-500" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-200 outline-none placeholder:text-neutral-600" />
         </label>
       </div>
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
-        <p className="mt-3 px-2 pb-1 text-[12px] font-semibold text-neutral-500">Chats</p>
-        {shown.length === 0 && <p className="px-2 py-1 text-[13px] text-neutral-600">{q ? "No matching chats" : "No chats yet"}</p>}
-        {shown.map((c) => (
-          <button key={c.id} type="button" onClick={() => nerida.set({ activeId: c.id })}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              openContextMenu(e, [{ label: "Delete chat", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => nerida.remove(c.id) }]);
-            }}
-            className={`${ROW} ${c.id === activeId ? "bg-white/10 font-medium text-neutral-100" : "text-neutral-300 hover:bg-white/5"}`}>
-            <MessageSquare className="size-3.5 shrink-0 text-neutral-500" />
-            <span className="min-w-0 flex-1 truncate text-left">{c.title}</span>
-          </button>
+        {shown.length === 0 && (q
+          ? <p className="mt-3 px-2 py-1 text-[13px] text-neutral-500">No chats match “{q}”</p>
+          : <p className="mt-3 px-2 py-1 text-[12.5px] leading-relaxed text-neutral-500">Your chats will show up here. Start one on the right, or type <kbd className="text-neutral-300">/</kbd> for study actions.</p>)}
+        {chatGroups(shown).map(([group, list]) => (
+          <div key={group}>
+            <p className="mt-3 px-2 pb-1 text-[11.5px] font-semibold text-neutral-500">{group}</p>
+            {list.map((c) => editing === c.id ? (
+              <input key={c.id} autoFocus defaultValue={c.title} className={`${ROW} bg-white/10 text-neutral-100 outline-none`}
+                onBlur={(e) => { if (e.target.value.trim()) nerida.rename(c.id, e.target.value.trim()); setEditing(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(null); }} />
+            ) : (
+              <div key={c.id} role="button" tabIndex={0} onClick={() => nerida.set({ activeId: c.id })} onDoubleClick={() => setEditing(c.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  openContextMenu(e, [
+                    { label: "Rename", icon: <Pencil className="size-4" />, onSelect: () => setEditing(c.id) },
+                    { label: "Delete chat", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => nerida.remove(c.id) },
+                  ]);
+                }}
+                className={`group oc-msg-in relative ${ROW} ${c.id === activeId ? "bg-white/[0.08] font-medium text-neutral-100 before:absolute before:inset-y-1.5 before:left-0 before:w-[2px] before:rounded-full before:bg-teal-300" : "text-neutral-300 hover:bg-white/5"}`}>
+                <MessageSquare className="size-3.5 shrink-0 text-neutral-500" />
+                <span className="min-w-0 flex-1 truncate text-left">{c.title}</span>
+                <button type="button" title="Rename" onClick={(e) => { e.stopPropagation(); setEditing(c.id); }} className="hidden cursor-pointer text-neutral-500 hover:text-neutral-200 group-hover:block"><Pencil className="size-3.5" /></button>
+                <button type="button" title="Delete chat" onClick={(e) => { e.stopPropagation(); nerida.remove(c.id); }} className="hidden cursor-pointer text-neutral-500 hover:text-red-400 group-hover:block"><Trash2 className="size-3.5" /></button>
+              </div>
+            ))}
+          </div>
         ))}
       </div>
       {footer}
