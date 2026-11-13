@@ -1,3 +1,14 @@
+# 🌊 Oceanic v2.0.2: Faster, smarter Nerida
+
+- 🧠 Pick how hard Nerida thinks: Fast, Balanced or Deep. Deep shows its reasoning in a collapsible "Thought for Xs" line.
+- ✍️ Ask Nerida to edit your note. Changes appear as highlighted suggestions you can accept or reject one by one, or all at once.
+- ❓ If your request doesn't say where to edit, Nerida asks instead of guessing.
+- ⚡ Nerida now uses your graphics card. Choose a GPU in Settings → Nerida AI.
+- 🟩 NVIDIA PCs can add an optional NVIDIA engine (~680 MB) for extra speed.
+- 🎯 Fewer made-up facts and repeated loops in answers.
+- 🗂️ A compact sidebar with icon tooltips, and Home opens in the mode you choose.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.1: A smarter Atlas and a smoother Nerida
 
 - 🗺️ Atlas zooms smartly: dots when far out, cards in the middle, and note previews up close.
