@@ -26,8 +26,7 @@ import { TitleBar, type TabInfo } from "./components/TitleBar";
 import { PageHeader } from "./components/PageHeader";
 import { NeridaDownloadPill, NeridaPanel } from "./components/NeridaPanel";
 import { HomeSwitch, NeridaSidebar } from "./components/NeridaHome";
-import { NeridaCardsHost } from "./components/NeridaCards";
-import { NeridaEditUI } from "./components/NeridaEditUI";
+import { NeridaCardsHost } from "./components/NeridaCards";import { NeridaEditUI } from "./components/NeridaEditUI";
 import { NeridaOutlineUI } from "./components/NeridaOutlineUI";
 import { NERIDA_TASK, type TaskRequest } from "./lib/neridaTask";
 import { NERIDA_NOTE, type NoteRequest } from "./lib/neridaPdf";
@@ -157,7 +156,7 @@ const toMeta = (r: PageRecord): PageMeta => ({
   tags: r.tags,
 });
 
-const DEFAULT_SETTINGS: AppSettings = { userName: "", avatar: "", theme: "dark", accent: "#2383e2", closeToTray: true, startup: "home", homeStyle: "classic", weekStart: "sunday", editorSize: "default", studyChime: true, appLoader: true, sidebarIcons: "subtle", sidebarColors: "" };
+const DEFAULT_SETTINGS: AppSettings = { userName: "", avatar: "", theme: "dark", accent: "#2383e2", closeToTray: true, startup: "last", homeStyle: "classic", weekStart: "sunday", editorSize: "default", studyChime: true, appLoader: true, sidebarIcons: "subtle", sidebarColors: "" };
 
 /** Recolors Tailwind's sky scale (the app's accent) from one hex value. */
 const systemDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -212,6 +211,7 @@ export default function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [railTip, setRailTip] = useState<{ text: string; x: number; y: number } | null>(null);
   /** Document editor, or the workspace-wide spatial canvas. */
   const [view, setView] = useState<AppView>("document");
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
@@ -298,7 +298,7 @@ export default function App() {
         theme: stored.theme === "light" || stored.theme === "system" ? stored.theme : "dark",
         accent: stored.accent ?? DEFAULT_SETTINGS.accent,
         closeToTray: stored.closeToTray !== "false",
-        startup: stored.startup === "last" ? "last" : "home",
+        startup: stored.startup === "home" || stored.startup === "nerida" ? stored.startup : "last",
         homeStyle: stored.homeStyle === "student" ? "student" : "classic",
         avatar: stored.avatar ?? "",
         weekStart: stored.weekStart === "monday" ? "monday" : "sunday",
@@ -347,7 +347,9 @@ export default function App() {
       void scanAll(all.map((p) => p.id));
       let front = restored.find((t) => t.id === savedActive)?.id ?? restored[0]?.id ?? null;
       // "Open on startup: Home" keeps every restored tab and puts Home in front.
-      if (next.startup === "home" || !front || restored.length === 4) front = HOME_TAB;
+      if (next.startup !== "last" || !front) front = HOME_TAB;
+      // Home opens in its plain mode unless the user chose Nerida; "last" keeps the remembered mode.
+      if (next.startup !== "last") nerida.set({ homeMode: next.startup === "nerida" ? "nerida" : "home" });
       setTabs(restored);
       setActiveTabId(front);
       setLoaded(true);
@@ -1386,7 +1388,7 @@ export default function App() {
       onEditWorkspace={setWsDialog}
       onDeleteWorkspace={setWsToDelete}
       onReorderWorkspaces={reorderWorkspaces}
-      onOpenSettings={() => setSettingsOpen(true)}
+      onOpenSettings={(page?: string) => setSettingsOpen(page || true)}
       onToggleTheme={() => changeSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" })}
     />
   );
@@ -1416,11 +1418,29 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1">
-        {/* ---- Collapsible navigation sidebar (animated width) ---- */}
+        {/* ---- Navigation sidebar: full, compact icon card, or hidden in the editor ---- */}
         <div
+          onClickCapture={(e) => {
+            // Compact: clicking the header logo expands the sidebar.
+            if (sidebarCollapsed && (e.target as Element).closest("aside > div:first-child")) {
+              e.stopPropagation();
+              setSidebarCollapsed(false);
+            }
+          }}
+          onMouseOver={(e) => {
+            // Compact: icons have no visible label, so show it in a custom tooltip.
+            const b = sidebarCollapsed ? (e.target as Element).closest("button, a") : null;
+            if (!b) return setRailTip(null);
+            if (b.hasAttribute("title")) (b.setAttribute("data-tip", b.getAttribute("title")!), b.removeAttribute("title"));
+            const text = b.querySelector("span:not(.oc-keep)")?.textContent?.trim() || b.getAttribute("data-tip");
+            const r = b.getBoundingClientRect();
+            setRailTip(text ? { text, x: r.right + 10, y: r.top + r.height / 2 } : null);
+          }}
+          onMouseLeave={() => setRailTip(null)}
           className={`h-full min-w-0 shrink-0 overflow-clip transition-all duration-200 ease-in-out ${
-            sidebarCollapsed ? "max-w-0" : "max-w-[480px]"
-          }`}
+            // Inside a note or editor, collapsing hides the sidebar fully; Home keeps the compact card.
+            sidebarCollapsed && (inDocEditor || (view === "document" && !!activePage)) ? "max-w-0" : "max-w-[480px]"
+          } oc-sidebar-wrap ${sidebarCollapsed ? "oc-compact" : ""}`}
         >
           {inSketchApp ? (
             <SketchSidebar
@@ -1726,6 +1746,11 @@ export default function App() {
 
       <UpdateUI />
       <SpellUI />
+      {railTip && sidebarCollapsed && (
+        <div key={railTip.text} style={{ left: railTip.x, top: railTip.y }} className="oc-rail-tip">
+          {railTip.text}
+        </div>
+      )}
       <NeridaCardsHost />
       <NeridaEditUI />
       <NeridaOutlineUI />

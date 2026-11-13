@@ -293,14 +293,6 @@ export function Sidebar({
       <div className="flex h-16 items-center gap-2.5 px-3 pt-2">
         <img src={logoRaw} alt="Oceanic logo" className="oc-brand-logo size-10 shrink-0 rounded-lg object-contain" />
         <div className="oc-brand-word flex-1 truncate text-[20px] font-extrabold tracking-[-0.02em]">Oceanic</div>
-        <button
-          type="button"
-          title="New page (Ctrl+N)"
-          onClick={() => onCreatePage(null)}
-          className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-neutral-400 transition-colors hover:bg-white/[0.06] hover:text-neutral-200"
-        >
-          <Plus className="size-[18px]" />
-        </button>
       </div>
 
       {/* ---- Search: Notion's bordered box with the shortcut badge ---- */}
@@ -353,7 +345,7 @@ export function Sidebar({
             const el = e.currentTarget;
             setTrashAnchor((a) => (a ? null : el));
           }}
-          className={`flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
+          className={`relative flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
             trashAnchor
               ? "bg-white/[0.07] text-neutral-200"
               : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
@@ -362,7 +354,7 @@ export function Sidebar({
           <TrashIcon className="size-4 text-neutral-500 oc-ic-trash" />
           <span className="flex-1 text-left">Trash</span>
           {trashedPages.length > 0 && (
-            <span className="text-[11px] text-neutral-500">{trashedPages.length}</span>
+            <span className="oc-keep oc-badge text-[11px] text-neutral-500">{trashedPages.length}</span>
           )}
         </button>
         <button
@@ -376,7 +368,9 @@ export function Sidebar({
         </button>
       </div>
 
-      <ViewSwitcher view={view} onChange={onChangeView} />
+      <div className="oc-rail-hide">
+        <ViewSwitcher view={view} onChange={onChangeView} />
+      </div>
 
       {/* ---- Scrollable body: Favorites + Private page tree ---- */}
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">

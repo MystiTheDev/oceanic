@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ThinkingStatus } from "./NeridaEffort";
 import { gatherText, generateQuestions, saveCards, stopGenerating, type AiQuestion, type Difficulty } from "../lib/neridaStudy";
 import { modelLabel, useNerida } from "../lib/nerida";
 import { NeridaMark } from "./NeridaOrb";
@@ -120,6 +121,7 @@ export function TestSetup({ pages, onClose }: { pages: PageMeta[]; onClose: () =
     return (
       <Modal className="w-[420px] p-6 text-center">
         <div className="mx-auto mb-3 grid place-items-center"><NeridaMark size={48} busy /></div>
+        <ThinkingStatus />
         <p className="oc-nerida-shimmer text-[14px]">Nerida is writing questions… {gen.n} / {count}</p>
         <p className="mt-1 text-[12px] text-neutral-500">Each question is checked against your notes.</p>
         <div className="mt-4"><ModalButton onClick={() => (stopGenerating(), setGen(null))}>Cancel</ModalButton></div>

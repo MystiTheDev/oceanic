@@ -25,6 +25,7 @@ import {
 import { NeridaMark } from "./NeridaOrb";
 import { openNeridaCards } from "./NeridaCards";
 import { openNeridaEdit } from "../lib/neridaEdit";
+import { NOTE_BLOCKS, PROPOSE, setPending, usePending, type NoteBlock, type Proposal } from "../lib/neridaChatEdit";
 import { TextSelection } from "prosemirror-state";
 import { BlockNoteView } from "@blocknote/mantine";
 import type { Block, PartialBlock } from "@blocknote/core";
@@ -140,6 +141,23 @@ function CardsFromSelection() {
   );
 }
 
+/** Pending Nerida edits (blue blocks below): accept or reject each, or all. */
+function NeridaChangesBar({ n }: { n: number }) {
+  const p = usePending();
+  const btn = "cursor-pointer rounded px-1.5 hover:bg-white/[0.08]";
+  return (
+    <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 py-1.5 text-[12.5px] text-sky-100">
+      <NeridaMark size={14} /> Nerida suggested {n} change{n > 1 ? "s" : ""} (highlighted in blue).
+      {n > 1 && Array.from({ length: n }, (_, i) => (
+        <span key={i} className="text-sky-200/80">#{i + 1} <button type="button" className={btn} onClick={() => p.accept(i)}>Accept</button><button type="button" className={btn} onClick={() => p.reject(i)}>Reject</button></span>
+      ))}
+      <span className="ml-auto" />
+      <button type="button" className={btn + " text-emerald-300"} onClick={() => p.accept()}>Accept all</button>
+      <button type="button" className={btn + " text-rose-300"} onClick={() => p.reject()}>Reject all</button>
+    </div>
+  );
+}
+
 const handledDrops = new WeakSet<DataTransfer>();
 
 /** Nerida replies → note: "$…$" becomes inline math, a "$$…$$" paragraph a math block. */
@@ -217,6 +235,49 @@ export function PageEditor({
     window.addEventListener("oc-nerida-insert", onInsert);
     return () => window.removeEventListener("oc-nerida-insert", onInsert);
   }, [editor]);
+
+  // Nerida chat edits: new text goes in as blue (Nerida-colour) blocks; a replaced block stays until accepted.
+  const [changes, setChanges] = useState<{ newId: string; oldId?: string }[]>([]);
+  useEffect(() => {
+    const onBlocks = (e: Event) => {
+      (e as CustomEvent<{ blocks: NoteBlock[] }>).detail.blocks = (editor.document as Block[]).map((b) => ({ id: b.id, text: blockText(b), type: b.type }));
+    };
+    const onPropose = (e: Event) => {
+      const d = (e as CustomEvent<{ proposals: Proposal[]; applied: number }>).detail;
+      const doc = editor.document as Block[];
+      const added: { newId: string; oldId?: string }[] = [];
+      for (const p of d.proposals) {
+        const ref = p.id ? editor.getBlock(p.id) : doc[0];
+        if (!ref) continue;
+        const [b] = editor.insertBlocks([{ type: "paragraph", content: p.text, props: { backgroundColor: "blue" } }] as never, ref, p.id ? "after" : "before");
+        added.push({ newId: b.id, oldId: p.kind === "replace" ? ref.id : undefined });
+      }
+      d.applied = added.length;
+      setChanges((c) => [...c, ...added]);
+    };
+    window.addEventListener(NOTE_BLOCKS, onBlocks);
+    window.addEventListener(PROPOSE, onPropose);
+    return () => (window.removeEventListener(NOTE_BLOCKS, onBlocks), window.removeEventListener(PROPOSE, onPropose));
+  }, [editor]);
+  useEffect(() => {
+    const pick = (i?: number) => (i === undefined ? changes : [changes[i]]);
+    const done = (list: typeof changes) => setChanges((c) => c.filter((x) => !list.includes(x)));
+    const accept = (i?: number) => {
+      const list = pick(i);
+      for (const c of list) {
+        if (c.oldId && editor.getBlock(c.oldId)) editor.removeBlocks([c.oldId]);
+        if (editor.getBlock(c.newId)) editor.updateBlock(c.newId, { props: { backgroundColor: "default" } } as never);
+      }
+      done(list);
+    };
+    const reject = (i?: number) => {
+      const list = pick(i);
+      editor.removeBlocks(list.map((c) => c.newId).filter((id) => editor.getBlock(id)));
+      done(list);
+    };
+    setPending({ count: changes.length, accept, reject });
+  }, [changes, editor]);
+  useEffect(() => () => setPending({ count: 0, accept: () => {}, reject: () => {} }), []);
 
   // Nerida flashcards: selection → generator for this page; saved cards → the "Flashcards" toggle at the end.
   useEffect(() => {
@@ -412,6 +473,7 @@ export function PageEditor({
         <Backlinks pageId={page.id} version={linksVersion} />
         <PageFlashcards page={page} />
         <div className="mb-2" />
+        {changes.length > 0 && <NeridaChangesBar n={changes.length} />}
 
         {/* BlockNote canvas (dark); right-click opens Oceanic's block menu */}
         <div

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { ThinkingStatus } from "./NeridaEffort";
+import { nerida } from "../lib/nerida";
 import { createPortal } from "react-dom";
 import { Check, CornerDownLeft, Replace, RotateCcw, Sparkles, SpellCheck, Square, Wand2, X } from "lucide-react";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -18,6 +20,7 @@ export function NeridaEditUI() {
     const open = (e: Event) => {
       const d = (e as CustomEvent<NeridaEditDetail>).detail;
       setPop(d);
+      nerida.set({ think: null }); // no thinking left over from an earlier chat
       setPhase(d.continue ? "run" : "pick");
       setOut("");
       setErr("");
@@ -118,6 +121,7 @@ export function NeridaEditUI() {
           </div>
         ) : (
           <div className="p-2">
+            <ThinkingStatus />
             <div className="max-h-56 overflow-auto rounded-lg bg-white/[0.04] px-2.5 py-2 text-[13px] whitespace-pre-wrap text-neutral-100">
               {err && pop.continue && <span className="text-red-300">{err}</span>}
               {out || err || <span className="text-neutral-500">{short ? "Thinking…" : "Writing…"}</span>}

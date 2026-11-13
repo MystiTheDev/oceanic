@@ -122,10 +122,12 @@ export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSett
             </div>
           ))}
 
-          <div className="my-1.5 border-t border-white/[0.06]" />
-          {ollama.length === 0 && <Action icon={<Plus className="size-4" />} label="Add Ollama local model" onClick={() => goSettings("ollama")} />}
-          <Action icon={<KeyRound className="size-4" />} label="Add OpenAI API key" onClick={() => goSettings("openai")} />
-          {!inSettings && <Action icon={<Settings2 className="size-4" />} label="Manage models" onClick={() => goSettings(null)} />}
+          {!inSettings && <>
+            <div className="my-1.5 border-t border-white/[0.06]" />
+            {ollama.length === 0 && <Action icon={<Plus className="size-4" />} label="Add Ollama local model" onClick={() => goSettings("ollama")} />}
+            <Action icon={<KeyRound className="size-4" />} label="Add OpenAI API key" onClick={() => goSettings("openai")} />
+            <Action icon={<Settings2 className="size-4" />} label="Manage models" onClick={() => goSettings(null)} />
+          </>}
         </div>,
         document.body,
       )}

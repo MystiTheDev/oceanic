@@ -30,7 +30,7 @@ export type AppSettings = {
   accent: string;
   closeToTray: boolean;
   /** What's in front at launch. Saved tabs are restored either way. */
-  startup: "home" | "last";
+  startup: "home" | "last" | "nerida";
   /** Home page look: the classic Oceanic Home or the student dashboard. */
   homeStyle: "classic" | "student";
   weekStart: "sunday" | "monday";
@@ -153,7 +153,7 @@ const PAGES: Page[] = [
             description: "Your open tabs are always restored. This picks which one is in front when Oceanic starts.",
             keywords: "launch",
             control: ({ settings, onChange }) => (
-              <Select value={settings.startup} onChange={(startup) => onChange({ startup })} options={[["home", "Home"], ["last", "Last opened page"]]} />
+              <Select value={settings.startup} onChange={(startup) => onChange({ startup })} options={[["last", "Last opened page"], ["home", "Home"], ["nerida", "Nerida AI"]]} />
             ),
           },
           {
@@ -561,7 +561,7 @@ export function Avatar({ name, avatar, size = 22 }: { name: string; avatar?: str
   const style = { width: size, height: size, fontSize: size * 0.48 };
   if (avatar?.startsWith("data:")) return <img src={avatar} alt="" className="shrink-0 rounded-full object-cover" style={style} />;
   return (
-    <span className="grid shrink-0 place-items-center rounded-full bg-neutral-700 font-medium text-neutral-100" style={{ ...style, ...(avatar ? { background: "rgba(255,255,255,0.08)", fontSize: size * 0.6 } : {}) }}>
+    <span className="oc-keep grid shrink-0 place-items-center rounded-full bg-neutral-700 font-medium text-neutral-100" style={{ ...style, ...(avatar ? { background: "rgba(255,255,255,0.08)", fontSize: size * 0.6 } : {}) }}>
       {avatar || (name.trim()[0] ?? "?").toUpperCase()}
     </span>
   );

@@ -67,7 +67,7 @@ export function PageMenu({
   const rect = anchor.getBoundingClientRect();
   const top =
     placement === "below" ? rect.bottom + 4 : Math.min(rect.top, window.innerHeight - 220);
-  const left = placement === "below" ? Math.max(8, rect.right - 240) : rect.right + 6;
+  const left = placement === "below" ? Math.max(8, Math.min(rect.right, window.innerWidth - 8) - 256) : Math.min(rect.right + 6, window.innerWidth - 264);
 
   useEffect(() => inputRef.current?.focus(), []);
   useEffect(() => setCursor(0), [query]);

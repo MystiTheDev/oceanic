@@ -9,6 +9,8 @@ import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
 import { ArrowUp, Check, ChevronDown, Copy, Download, FileInput, FileText, Globe, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 import { usePageDirectory } from "../editor/pageDirectory";
+import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
+import { ASK_WHICH, editPrompt, isEditRequest, targetBlocks, unclearTarget, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
 import { ModelMenu } from "./NeridaModelMenu";
 import { openNeridaCards } from "./NeridaCards";
 import { ATTACH_ACCEPT, attachmentsContext, extractFileText, type Attachment } from "../lib/neridaFiles";
@@ -284,6 +286,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   /** Plus only: search the web before answering. */
   const [online, setOnline] = useState(false);
   const sendRef = useRef<(t: string) => void>(() => {});
+  const pending = usePending();
   useEffect(() => {
     const on = (e: Event) => {
       const d = (e as CustomEvent<AskDetail>).detail;
@@ -325,9 +328,36 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     const mark = (label: string) => setSteps((s) => [...s.map((x) => ({ ...x, done: true })), { label, done: false }]);
     setSteps([]);
     let reply = "";
+    // Deep: thinking streams to onThink; kept on the message as a collapsed "Thought for Xs".
+    let thought = "";
+    const t0 = Date.now();
+    let thoughtSecs = 0;
+    const onThink = (t: string) => {
+      if (!thought) mark("Thinking");
+      thought = t;
+      thoughtSecs = Math.max(1, Math.round((Date.now() - t0) / 1000));
+    };
     let garbled = false;
     let sources: string[] = [];
     try {
+      // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
+      const blocks = pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
+      if (blocks.length && unclearTarget(text, blocks)) {
+        reply = ASK_WHICH;
+        throw null;
+      }
+      if (blocks.length) {
+        if (b) await engine.start(b);
+        mark("Editing your note");
+        let raw = "";
+        await engine.chat(model, [{ role: "system", content: SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (raw += t), onThink);
+        const n = proposeEdits(parseEdits(raw, blocks));
+        reply = n
+          ? `I've made ${n} change${n > 1 ? "s" : ""} to your note, highlighted in blue. They're **pending**: accept or reject them in the note, or with the buttons below.`
+          : ASK_WHICH;
+        setSteps((s) => s.map((x) => ({ ...x, done: true })));
+        throw null; // skip the normal answer; reply is saved below
+      }
       let context = "";
       const tools = await runTools(text);
       if (tools) mark("Working it out");
@@ -378,15 +408,15 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       await engine.chat(model, [{ role: "system", content: SYSTEM }, ...history, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context) }], (t) => {
         reply += t;
         setDraft(reply);
-      });
+      }, onThink);
       setSteps((s) => s.map((x) => ({ ...x, done: true })));
       setStepsOpen(false);
     } catch (e) {
-      setErr(String(e));
+      if (e !== null) setErr(String(e)); // null = note edit finished early
     }
     if (reply && garbled) reply += GARBLED_NOTE;
     if (reply && sources.length) reply += "\n\nSources: " + sources.join(" · ");
-    if (reply) nerida.upsert({ ...base, messages: [...messages, { role: "assistant", content: reply }], updatedAt: Date.now() });
+    if (reply) nerida.upsert({ ...base, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }) }], updatedAt: Date.now() });
     setDraft("");
     setBusy(false);
   };
@@ -404,7 +434,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       <div className="relative">
         <input ref={filePicker} type="file" multiple accept={ATTACH_ACCEPT} className="hidden"
           onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
-        <div className="flex flex-col gap-1 rounded-2xl border border-white/[0.09] bg-white/[0.035] p-2 shadow-lg shadow-black/20 transition-[border-color,box-shadow] duration-300 focus-within:border-teal-300/35 focus-within:shadow-[0_0_0_3px_rgba(45,212,191,0.08),0_10px_30px_-10px_rgba(0,0,0,0.5)]">
+        <div className="relative flex flex-col gap-1 rounded-2xl border border-white/[0.09] bg-white/[0.035] p-2 shadow-lg shadow-black/20 transition-[border-color,box-shadow] duration-300 focus-within:border-teal-300/35 focus-within:shadow-[0_0_0_3px_rgba(45,212,191,0.08),0_10px_30px_-10px_rgba(0,0,0,0.5)]">
+        <DeepSparkles typing={input} />
         {(files.length > 0 || reading > 0) && (
           <div className="mb-1 flex flex-wrap gap-1">
             {files.map((f) => (
@@ -492,11 +523,14 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           {b === "plus" && <button type="button" disabled={busy} title={online ? "Web search on" : "Search the web"} aria-pressed={online} onClick={() => setOnline((v) => !v)} className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] ${online ? "text-sky-400" : "text-neutral-400 hover:text-neutral-200"}`}><Globe className="size-4" /></button>}
           <div className="flex-1" />
           <ModelMenu disabled={busy} />
-          {busy ? (
-            <button type="button" title="Stop" onClick={() => void engine.stop()} className="grid size-7 cursor-pointer place-items-center rounded-lg bg-white/[0.1] text-neutral-200 hover:bg-white/[0.15]"><Square className="size-3" fill="currentColor" /></button>
-          ) : (
-            <button type="button" title="Send" disabled={!(input.trim() || cmd) || !ready} onClick={() => (cmd ? runCmd(cmd) : void send(input))} className="oc-send grid size-7 cursor-pointer place-items-center rounded-lg bg-teal-400/90 text-neutral-950 transition-transform hover:bg-teal-300 active:scale-90 disabled:cursor-default disabled:bg-white/[0.08] disabled:text-neutral-500"><ArrowUp className="size-4" /></button>
-          )}
+          <EffortButton disabled={busy} />
+          {/* One button: the arrow morphs into a stop square while Nerida answers. */}
+          <button type="button" title={busy ? "Stop" : "Send"} data-busy={busy || undefined} disabled={!busy && (!(input.trim() || cmd) || !ready)}
+            onClick={() => (busy ? void engine.stop() : cmd ? runCmd(cmd) : void send(input))}
+            className="oc-send oc-send-morph relative grid size-7 cursor-pointer place-items-center rounded-lg bg-teal-400/90 text-neutral-950 transition-[transform,background-color] hover:bg-teal-300 active:scale-90 disabled:cursor-default disabled:bg-white/[0.08] disabled:text-neutral-500 data-[busy]:bg-white/[0.1] data-[busy]:text-neutral-200">
+            <ArrowUp className="oc-send-arrow absolute size-4" />
+            <Square className="oc-send-stop absolute size-3" fill="currentColor" />
+          </button>
           </div>
         </div>
         {ready && <p className="mt-1.5 flex justify-between px-1 text-[11px] text-neutral-600">
@@ -604,11 +638,18 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             <div key={i} className="group oc-msg-in mt-6 flex gap-3">
               <div className="mt-0.5 shrink-0"><NeridaMark size={20} /></div>
               <div className="min-w-0 flex-1 leading-relaxed">
+              {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
               <Markdown text={m.content} />
               <div className={`mt-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
                 <Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act>
                 {pageId && <Act title="Insert into note" onClick={() => window.dispatchEvent(new CustomEvent("oc-nerida-insert", { detail: m.content }))}><FileInput className="size-3.5" /></Act>}
                 {i === lastAssistant && <Act title="Retry" onClick={retry}><RotateCcw className="size-3.5" /></Act>}
+                {i === lastAssistant && pending.count > 0 && (
+                  <span className="ml-2 flex gap-1 text-[12px]">
+                    <button type="button" className="cursor-pointer rounded px-1.5 text-emerald-300 hover:bg-white/[0.08]" onClick={() => pending.accept()}>Accept all</button>
+                    <button type="button" className="cursor-pointer rounded px-1.5 text-rose-300 hover:bg-white/[0.08]" onClick={() => pending.reject()}>Reject all</button>
+                  </span>
+                )}
               </div>
               </div>
             </div>

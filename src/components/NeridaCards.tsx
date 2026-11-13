@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ThinkingStatus } from "./NeridaEffort";
 import { isTauri } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
 import { builtin, engine, MODEL_NAMES, modelLabel, nerida, useNerida } from "../lib/nerida";
@@ -112,7 +113,10 @@ function NeridaCards({ pageId, selection, pdf, onClose }: Req & { onClose: () =>
               </div>
             ))}
             {busy && (
-              <p className="flex items-center gap-2 px-1 py-2 text-[12.5px]"><NeridaMark busy size={15} /><span className="oc-nerida-shimmer">Writing card {cards.length + 1}…</span></p>
+              <>
+                <ThinkingStatus />
+                <p className="flex items-center gap-2 px-1 py-2 text-[12.5px]"><NeridaMark busy size={15} /><span className="oc-nerida-shimmer">Writing card {cards.length + 1}…</span></p>
+              </>
             )}
             {!busy && !cards.length && !err && <p className="py-4 text-center text-[13px] text-neutral-500">No cards.</p>}
           </div>

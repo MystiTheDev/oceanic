@@ -1,7 +1,7 @@
 import { Avatar } from "./SettingsModal";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronsUpDown, Moon, MoreHorizontal, PenLine, Plus, Settings, Sun, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Moon, HelpCircle, Keyboard, MoreHorizontal, PenLine, Plus, Settings, Sun, Trash2 } from "lucide-react";
 import type { WorkspaceRecord } from "../data/api";
 import { colorOf } from "../lib/colors";
 import { openContextMenu } from "./ContextMenu";
@@ -20,7 +20,7 @@ type SidebarFooterProps = {
   onEditWorkspace: (id: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onReorderWorkspaces: (ids: string[]) => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (page?: string) => void;
   onToggleTheme: () => void;
 };
 
@@ -38,13 +38,14 @@ export function SidebarFooter(props: SidebarFooterProps) {
         ref={wsRef}
         type="button"
         onClick={() => setOpen((o) => (o === "workspaces" ? null : "workspaces"))}
+        style={active && wsGradient(active.color)}
         className={`flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-1.5 text-[14px] transition-colors duration-100 ${
           open === "workspaces" ? "bg-white/[0.07] text-neutral-100" : "text-neutral-300 hover:bg-white/5"
         }`}
       >
         {active && <WorkspaceIcon ws={active} />}
         <span className="flex-1 truncate text-left font-medium">{active?.name ?? "Workspace"}</span>
-        <ChevronsUpDown className="size-3.5 shrink-0 text-neutral-500" />
+        <ChevronsUpDown className="oc-rail-hide size-3.5 shrink-0 text-neutral-500" />
       </button>
 
       <div className="flex items-center gap-1">
@@ -63,7 +64,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
           type="button"
           title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           onClick={props.onToggleTheme}
-          className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-neutral-500 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-200"
+          className="oc-rail-hide grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-neutral-500 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-200"
         >
           {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
         </button>
@@ -84,15 +85,17 @@ export function SidebarFooter(props: SidebarFooterProps) {
             </div>
           </div>
           <div className="my-1 h-px bg-white/[0.06]" />
-          <MenuRow
-            icon={<Settings className="size-4" />}
-            onClick={() => {
-              setOpen(null);
-              props.onOpenSettings();
-            }}
-          >
-            Settings
-          </MenuRow>
+          {(
+            [
+              ["Settings", <Settings className="size-4" />, undefined],
+              ["Keyboard shortcuts", <Keyboard className="size-4" />, "shortcuts"],
+              ["Help & About", <HelpCircle className="size-4" />, "about"],
+            ] as const
+          ).map(([label, icon, page]) => (
+            <MenuRow key={label} icon={icon} onClick={() => (setOpen(null), props.onOpenSettings(page))}>
+              {label}
+            </MenuRow>
+          ))}
           <div className="my-1 h-px bg-white/[0.06]" />
           <p className="px-2.5 py-1 text-[11px] text-neutral-500">Oceanic v{APP_VERSION}</p>
         </Popover>
@@ -157,6 +160,7 @@ function WorkspaceList({
             over === ws.id && dragId !== ws.id ? "ring-1 ring-sky-500/60" : ""
           } ${dragId === ws.id ? "opacity-40" : ""}`}
           onClick={() => (onSelectWorkspace(ws.id), onDone())}
+          style={wsGradient(ws.color)}
         >
           <WorkspaceIcon ws={ws} />
           <span className="flex-1 truncate">{ws.name}</span>
@@ -179,10 +183,15 @@ function WorkspaceList({
   );
 }
 
+/** Light left-to-right tint from the workspace's chosen color. */
+const wsGradient = (color: WorkspaceRecord["color"]) => ({
+  backgroundImage: `linear-gradient(90deg, color-mix(in srgb, ${colorOf(color).bg} 40%, transparent), transparent)`,
+});
+
 export function WorkspaceIcon({ ws }: { ws: Pick<WorkspaceRecord, "icon" | "color"> }) {
   return (
     <span
-      className="grid size-[22px] shrink-0 place-items-center rounded-md text-[12px]"
+      className="oc-keep grid size-[22px] shrink-0 place-items-center rounded-md text-[12px]"
       style={{ backgroundColor: colorOf(ws.color).bg }}
     >
       {ws.icon}
@@ -195,7 +204,7 @@ function MenuRow({ icon, children, onClick }: { icon: ReactNode; children: React
     <button
       type="button"
       onClick={onClick}
-      className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-neutral-300 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-100"
+      className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-neutral-300 transition-all duration-150 hover:-translate-y-px hover:bg-white/[0.06] hover:text-neutral-100 active:scale-[0.97]"
     >
       <span className="text-neutral-400">{icon}</span>
       {children}

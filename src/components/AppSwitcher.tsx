@@ -32,7 +32,7 @@ export function AppSwitcher({ current, onSwitch }: { current: AppId; onSwitch: (
     }
   }, [open]);
   return (
-    <div className="flex flex-col gap-px px-2 pb-1">
+    <div className="oc-rail-hide flex flex-col gap-px px-2 pb-1">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full cursor-pointer items-center gap-1.5 px-2 pb-0.5 pt-3 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-500 hover:text-neutral-400">
         <LayoutGrid className="size-3.5" />
         <span className="flex-1 text-left">More apps</span>

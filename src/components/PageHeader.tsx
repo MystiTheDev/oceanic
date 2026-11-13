@@ -96,7 +96,7 @@ export function PageHeader({
         )}
 
         <IconButton title="Ask Nerida (Ctrl+J)" active={neridaOpen} onClick={() => nerida.toggle()}>
-          <NeridaMark size={16} />
+          <NeridaMark size={20} />
         </IconButton>
 
         <IconButton
