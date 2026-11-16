@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import { MoreHorizontal, Star } from "lucide-react";
+import { HEADINGS_TO_ATLAS } from "./PromoteDialog";
 import type { PageMeta } from "../data/workspace";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
 import { ExportDialog } from "./ExportDialog";
@@ -56,6 +57,7 @@ export function PageHeader({
     else if (action === "trash") onTrash(page.id);
     else if (action === "export") setExportOpen(true);
     else if (action === "flashcards") openNeridaCards({ pageId: page.id });
+    else if (action === "atlas") window.dispatchEvent(new CustomEvent(HEADINGS_TO_ATLAS, { detail: { pageId: page.id } }));
     else if (action === "rename") {
       const title = document.querySelector<HTMLInputElement>("input[data-page-title]");
       title?.focus();

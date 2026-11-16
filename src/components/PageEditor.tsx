@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ImageAnnotator } from "./ImageAnnotator";
 import { copyImageToClipboard } from "../lib/clipboard";
-import { CheckSquare, Layers, Network } from "lucide-react";
+import { Check, CheckSquare, ChevronLeft, ChevronRight, Layers, Network, X } from "lucide-react";
 import { ReviewModal } from "./ReviewModal";
 import { blockText, dueCards, useSrs } from "../lib/srs";
 import { api } from "../data/api";
-import { PageOutline } from "./PageOutline";
+import { headingsOf, PageOutline } from "./PageOutline";
+import { HEADINGS_TO_ATLAS, PromoteDialog, type PromoteItem } from "./PromoteDialog";
 import { importAudioFile, insertTimestamp, isAudioFile, uploadFile } from "../editor/audio";
 import { importPdfFile, isPdfFile } from "../pdf/importPdf";
 import {
@@ -142,18 +143,47 @@ function CardsFromSelection() {
 }
 
 /** Pending Nerida edits (blue blocks below): accept or reject each, or all. */
-function NeridaChangesBar({ n }: { n: number }) {
+function NeridaChangesBar({ n: live }: { n: number }) {
   const p = usePending();
-  const btn = "cursor-pointer rounded px-1.5 hover:bg-white/[0.08]";
+  const [cur, setCur] = useState(0);
+  // Stay mounted briefly after the last change goes, so the bar can slide out.
+  const [n, setN] = useState(live);
+  useEffect(() => {
+    if (live) return setN(live);
+    const t = setTimeout(() => setN(0), 160);
+    return () => clearTimeout(t);
+  }, [live]);
+  if (!n) return null;
+  const i = Math.min(cur, n - 1);
+  // Step to a change and scroll the note to it.
+  const go = (to: number) => {
+    const k = (to + n) % n;
+    setCur(k);
+    document.querySelector(`[data-id="${p.ids?.[k]}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const icon = "grid size-7 cursor-pointer place-items-center rounded-lg text-neutral-400 transition-colors hover:bg-white/[0.07] hover:text-neutral-100";
   return (
-    <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 py-1.5 text-[12.5px] text-sky-100">
-      <NeridaMark size={14} /> Nerida suggested {n} change{n > 1 ? "s" : ""} (highlighted in blue).
-      {n > 1 && Array.from({ length: n }, (_, i) => (
-        <span key={i} className="text-sky-200/80">#{i + 1} <button type="button" className={btn} onClick={() => p.accept(i)}>Accept</button><button type="button" className={btn} onClick={() => p.reject(i)}>Reject</button></span>
-      ))}
+    <div className={`${live ? "oc-bar-in" : "oc-bar-out"} sticky top-2 z-10 mb-3 flex h-11 items-center gap-1 rounded-xl border border-white/[0.08] bg-neutral-900/85 pl-3 pr-1.5 text-[13px] text-neutral-200 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.7)] backdrop-blur-md`}>
+      <NeridaMark size={16} />
+      <span className="ml-1.5 min-w-0 truncate">
+        <span className="font-semibold text-neutral-100 tabular-nums">{n}</span> <span className="text-neutral-400">suggested change{n > 1 ? "s" : ""}</span>
+      </span>
       <span className="ml-auto" />
-      <button type="button" className={btn + " text-emerald-300"} onClick={() => p.accept()}>Accept all</button>
-      <button type="button" className={btn + " text-rose-300"} onClick={() => p.reject()}>Reject all</button>
+      {n > 1 && (
+        <>
+          <div className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.03]">
+            <button type="button" data-tip="Previous change" className={icon} onClick={() => go(i - 1)}><ChevronLeft className="size-4" /></button>
+            <button type="button" data-tip="Show in note" className="cursor-pointer px-1 text-[12px] tabular-nums text-neutral-400 hover:text-neutral-100" onClick={() => go(i)}>{i + 1}/{n}</button>
+            <button type="button" data-tip="Next change" className={icon} onClick={() => go(i + 1)}><ChevronRight className="size-4" /></button>
+          </div>
+          <button type="button" data-tip="Accept this change" className={icon + " hover:text-teal-300"} onClick={() => p.accept(i)}><Check className="size-4" /></button>
+          <button type="button" data-tip="Reject this change" className={icon + " hover:text-rose-300"} onClick={() => p.reject(i)}><X className="size-4" /></button>
+          <span className="mx-1 h-5 w-px bg-white/[0.08]" />
+        </>
+      )}
+      <button type="button" className="h-7 cursor-pointer rounded-lg px-2.5 text-neutral-400 transition-colors hover:bg-white/[0.07] hover:text-neutral-100" onClick={() => p.reject()}>Reject{n > 1 && " all"}</button>
+      <button type="button" className="flex h-7 cursor-pointer items-center gap-1 rounded-lg bg-teal-400 px-3 font-medium text-neutral-950 shadow-[0_0_0_1px_rgba(45,212,191,0.4),0_4px_14px_-4px_rgba(45,212,191,0.5)] transition-colors hover:bg-teal-300"
+        onClick={() => p.accept()}><Check className="size-3.5" />Accept{n > 1 && " all"}</button>
     </div>
   );
 }
@@ -236,21 +266,35 @@ export function PageEditor({
     return () => window.removeEventListener("oc-nerida-insert", onInsert);
   }, [editor]);
 
-  // Nerida chat edits: new text goes in as blue (Nerida-colour) blocks; a replaced block stays until accepted.
-  const [changes, setChanges] = useState<{ newId: string; oldId?: string }[]>([]);
+  // Nerida chat edits: new or changed blocks turn blue (Nerida-colour) until accepted. A replaced block is
+  // changed in place (so its sub-items stay); `old` is what reject puts back.
+  const [changes, setChanges] = useState<{ newId: string; old?: PartialBlock }[]>([]);
   useEffect(() => {
     const onBlocks = (e: Event) => {
-      (e as CustomEvent<{ blocks: NoteBlock[] }>).detail.blocks = (editor.document as Block[]).map((b) => ({ id: b.id, text: blockText(b), type: b.type }));
+      // Nested blocks too (sub-tasks under a list item), in reading order.
+      const flat = (bs: Block[]): Block[] => bs.flatMap((b) => [b, ...flat((b.children ?? []) as Block[])]);
+      (e as CustomEvent<{ blocks: NoteBlock[] }>).detail.blocks = flat(editor.document as Block[]).map((b) => ({ id: b.id, text: blockText(b) + (b.type === "checkListItem" ? ((b.props as { checked?: boolean }).checked ? " [done]" : " [not done]") : ""), type: b.type }));
     };
     const onPropose = (e: Event) => {
       const d = (e as CustomEvent<{ proposals: Proposal[]; applied: number }>).detail;
       const doc = editor.document as Block[];
-      const added: { newId: string; oldId?: string }[] = [];
+      const added: { newId: string; old?: PartialBlock }[] = [];
       for (const p of d.proposals) {
         const ref = p.id ? editor.getBlock(p.id) : doc[0];
         if (!ref) continue;
-        const [b] = editor.insertBlocks([{ type: "paragraph", content: p.text, props: { backgroundColor: "blue" } }] as never, ref, p.id ? "after" : "before");
-        added.push({ newId: b.id, oldId: p.kind === "replace" ? ref.id : undefined });
+        // A replaced block keeps its type (checklists stay checklists; "[done]" ticks the box).
+        const type = p.kind === "replace" && ["paragraph", "heading", "checkListItem", "bulletListItem", "numberedListItem"].includes(ref.type) ? ref.type : "paragraph";
+        const done = /\s*\[(done|not done)\]\s*$/i.exec(p.text);
+        const text = done ? p.text.slice(0, done.index) : p.text;
+        const props = { backgroundColor: "blue", ...(type === "checkListItem" && { checked: done?.[1].toLowerCase() === "done" }), ...(type === "heading" && { level: (ref.props as { level?: number }).level }) };
+        if (p.kind === "replace") {
+          const old = { type: ref.type, content: ref.content, props: ref.props } as PartialBlock;
+          editor.updateBlock(ref, { type, content: text, props } as never);
+          added.push({ newId: ref.id, old });
+          continue;
+        }
+        const [b] = editor.insertBlocks([{ type, content: text, props }] as never, ref, p.id ? "after" : "before");
+        added.push({ newId: b.id });
       }
       d.applied = added.length;
       setChanges((c) => [...c, ...added]);
@@ -263,19 +307,28 @@ export function PageEditor({
     const pick = (i?: number) => (i === undefined ? changes : [changes[i]]);
     const done = (list: typeof changes) => setChanges((c) => c.filter((x) => !list.includes(x)));
     const accept = (i?: number) => {
-      const list = pick(i);
+      const list = pick(i).filter(Boolean);
       for (const c of list) {
-        if (c.oldId && editor.getBlock(c.oldId)) editor.removeBlocks([c.oldId]);
-        if (editor.getBlock(c.newId)) editor.updateBlock(c.newId, { props: { backgroundColor: "default" } } as never);
+        const bg = (c.old?.props as { backgroundColor?: string } | undefined)?.backgroundColor ?? "default";
+        if (editor.getBlock(c.newId)) editor.updateBlock(c.newId, { props: { backgroundColor: bg } } as never);
       }
       done(list);
     };
     const reject = (i?: number) => {
-      const list = pick(i);
-      editor.removeBlocks(list.map((c) => c.newId).filter((id) => editor.getBlock(id)));
-      done(list);
+      const list = pick(i).filter(Boolean);
+      done(list); // first, so the bar always clears even if the editor refuses a step below
+      for (const c of list) {
+        try {
+          if (!editor.getBlock(c.newId)) continue;
+          // Restore type and text, then props on their own (BlockNote can drop props set with a type change).
+          if (c.old) editor.updateBlock(c.newId, { type: c.old.type, content: c.old.content } as never), editor.updateBlock(c.newId, { props: c.old.props } as never);
+          else editor.removeBlocks([c.newId]);
+        } catch (e) {
+          console.error("Nerida reject failed", e);
+        }
+      }
     };
-    setPending({ count: changes.length, accept, reject });
+    setPending({ count: changes.length, ids: changes.map((c) => c.newId), accept, reject });
   }, [changes, editor]);
   useEffect(() => () => setPending({ count: 0, accept: () => {}, reject: () => {} }), []);
 
@@ -303,6 +356,18 @@ export function PageEditor({
     window.addEventListener("oc-nerida-selection-cards", onSel);
     window.addEventListener("oc-nerida-cards", onSave);
     return () => (window.removeEventListener("oc-nerida-selection-cards", onSel), window.removeEventListener("oc-nerida-cards", onSave));
+  }, [editor, page.id]);
+
+  // "Send to Atlas" for this note's headings (page menu, or a heading's block menu).
+  const [atlasPick, setAtlasPick] = useState<string[] | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { pageId, blockId } = (e as CustomEvent<{ pageId?: string; blockId?: string }>).detail;
+      if (pageId === page.id) setAtlasPick([]);
+      else if (blockId && editor.getBlock(blockId)) setAtlasPick([blockId]);
+    };
+    window.addEventListener(HEADINGS_TO_ATLAS, on);
+    return () => window.removeEventListener(HEADINGS_TO_ATLAS, on);
   }, [editor, page.id]);
 
   // Flashcard "Open in note": caret + scroll to the block once it's in this editor.
@@ -473,7 +538,7 @@ export function PageEditor({
         <Backlinks pageId={page.id} version={linksVersion} />
         <PageFlashcards page={page} />
         <div className="mb-2" />
-        {changes.length > 0 && <NeridaChangesBar n={changes.length} />}
+        <NeridaChangesBar n={changes.length} />
 
         {/* BlockNote canvas (dark); right-click opens Oceanic's block menu */}
         <div
@@ -516,6 +581,14 @@ export function PageEditor({
       </div>
     </div>
     <PageOutline editor={editor} scroller={scroller} />
+    {atlasPick && (
+      <PromoteDialog
+        workspaceId={page.workspaceId}
+        items={headingItems(headingsOf(editor), page.id)}
+        preselect={atlasPick}
+        onClose={() => setAtlasPick(null)}
+      />
+    )}
     {hoverImg && !annotating && (
       <button
         type="button"
@@ -583,6 +656,17 @@ function StartPill({ icon, label, onClick }: { icon: ReactNode; label: string; o
 }
 
 /** Block to jump to once its page's editor mounts (set before App switches tabs). */
+/** Headings as "Send to Atlas" items: each nests under the nearest higher-level heading above it. */
+function headingItems(hs: { id: string; level: number; text: string }[], pageId: string): PromoteItem[] {
+  const stack: { id: string; level: number }[] = [];
+  return hs.map((h) => {
+    while (stack.length && stack[stack.length - 1].level >= h.level) stack.pop();
+    const parent = stack[stack.length - 1] ?? null;
+    stack.push(h);
+    return { key: h.id, title: h.text, parentKey: parent?.id ?? null, depth: stack.length - 1, entryIds: [`heading:${pageId}:${h.id}`] };
+  });
+}
+
 let pendingJump: string | null = null;
 window.addEventListener("oc-open-block", (e) => (pendingJump = (e as CustomEvent<{ blockId: string }>).detail.blockId));
 

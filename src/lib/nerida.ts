@@ -47,11 +47,11 @@ export const setDefaultModel = (model: ModelRef) => {
 
 export type Msg = { role: "user" | "assistant"; content: string; /** Deep only */ thought?: string; thoughtSecs?: number };
 export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number };
-export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean };
+export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean };
 
 /* ------------------------------------------------------------------ store */
 export type Effort = "low" | "medium" | "high";
-/** UI names: Fast / Balanced / Deep. Only Deep thinks (built-in engine only). */
+/** UI names: Fast / Balanced / Deep: answer length. Thinking is a separate toggle. */
 export const EFFORTS: { id: Effort; label: string; maxTokens: number; budget: number }[] = [
   { id: "low", label: "Fast", maxTokens: 400, budget: 6_000 },
   { id: "medium", label: "Balanced", maxTokens: 1024, budget: 14_000 },
@@ -59,8 +59,9 @@ export const EFFORTS: { id: Effort; label: string; maxTokens: number; budget: nu
 ];
 const effortOf = () => EFFORTS.find((e) => e.id === state.effort) ?? EFFORTS[1];
 
-type State = { /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "dashboard" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null };
-let state: State = { gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return (localStorage.getItem("oc-home-mode") as State["homeMode"]) || "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null };
+export type ReplyStyle = "short" | "tutor";
+type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "dashboard" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null };
+let state: State = { notify: true, noVision: false, thinking: false, style: "short", gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return (localStorage.getItem("oc-home-mode") as State["homeMode"]) || "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const persist = () => api.setSetting("neridaChats", JSON.stringify(state.chats.slice(0, 100))).catch(() => {});
@@ -79,6 +80,22 @@ export const nerida = {
   setEffort(effort: Effort) {
     nerida.set({ effort });
     void api.setSetting("neridaEffort", effort).catch(() => {});
+  },
+  setNotify(notify: boolean) {
+    nerida.set({ notify });
+    void api.setSetting("neridaNotify", notify ? "1" : "0").catch(() => {});
+  },
+  setThinking(thinking: boolean) {
+    nerida.set({ thinking });
+    void api.setSetting("neridaThinking", thinking ? "1" : "0").catch(() => {});
+  },
+  setNoVision(noVision: boolean) {
+    nerida.set({ noVision });
+    void api.setSetting("neridaNoVision", noVision ? "1" : "0").catch(() => {});
+  },
+  setStyle(style: ReplyStyle) {
+    nerida.set({ style });
+    void api.setSetting("neridaStyle", style).catch(() => {});
   },
   subscribe: (l: () => void) => (listeners.add(l), () => listeners.delete(l)),
   upsert(chat: Chat, save = true) {
@@ -117,6 +134,10 @@ void api.getSettings().then((s) => {
       cloudOk: s.neridaCloudOk === "1",
       gpu: s.neridaGpu ?? "auto",
       effort: (["low", "medium", "high"] as const).find((e) => e === s.neridaEffort) ?? "medium",
+      thinking: s.neridaThinking === "1",
+      notify: s.neridaNotify !== "0",
+      noVision: s.neridaNoVision === "1",
+      style: s.neridaStyle === "tutor" ? "tutor" : "short",
     });
   } catch {
     /* corrupt history: start fresh */
@@ -126,7 +147,7 @@ void api.getSettings().then((s) => {
 /* ----------------------------------------------------------------- engine */
 export const engine = {
   status: () => invoke<AiStatus>("ai_status"),
-  download(item: "server" | "cuda" | "cudart" | ModelId, onProgress: (got: number, total: number) => void) {
+  download(item: "server" | "cuda" | "cudart" | "vision" | ModelId, onProgress: (got: number, total: number) => void) {
     const ch = new Channel<[number, number]>();
     ch.onmessage = ([g, t]) => onProgress(g, t);
     return invoke<void>("ai_download", { item, onProgress: ch });
@@ -136,7 +157,7 @@ export const engine = {
   /** Graphics cards the engine can use. */
   gpus: () => invoke<{ id: string; name: string; mem_mib: number }[]>("ai_gpus"),
   /** Streams the answer to `onToken`; Deep's thinking goes only to `onThink` (never into notes or quizzes). */
-  async chat(ref: ModelRef, messages: { role: string; content: string }[], onToken: (t: string) => void, onThink?: (thought: string) => void) {
+  async chat(ref: ModelRef, messages: { role: string; content: string | unknown[] }[], onToken: (t: string) => void, onThink?: (thought: string) => void) {
     const b = builtin(ref);
     let baseUrl: string, keyId: string | null = null, model: string;
     if (b) [baseUrl, model] = [await engine.start(b), b];
@@ -160,18 +181,43 @@ export const engine = {
       if (p.answer.length > sent) (onToken(p.answer.slice(sent)), (sent = p.answer.length));
     };
     // Qwen3.5 "thinks" before answering by default: off for the built-in engine (much faster replies).
-    // Effort: Deep thinks (built-in only) and gets more tokens. Low temperature + repeat penalty: fewer made-up facts and loops.
+    // Thinking is its own setting (off by default); effort sets token limits. Low temperature + tight top_k/min_p: fewer made-up facts.
     const e = effortOf();
     const extra = b
-      ? { chat_template_kwargs: { enable_thinking: e.id === "high" }, temperature: 0.3, top_p: 0.9, repeat_penalty: 1.1, max_tokens: e.maxTokens }
+      ? { chat_template_kwargs: { enable_thinking: state.thinking }, temperature: 0.2, top_p: 0.9, top_k: 20, min_p: 0.05, repeat_penalty: 1.1, max_tokens: state.thinking ? Math.max(e.maxTokens, 4096) : e.maxTokens }
       : { max_tokens: e.maxTokens };
-    // Fast: short chat answers (only the main chat prompt, not quizzes or edits).
-    if (e.id === "low" && messages[0]?.content === SYSTEM) messages = [{ role: "system", content: SYSTEM + " Answer in 1-3 sentences." }, ...messages.slice(1)];
-    await invoke<void>("ai_chat", { baseUrl, keyId, model, messages, extra, onToken: ch });
-    if (splitThink(raw).thinking) throw new Error("Nerida thought for too long. Try Balanced.");
+    // Main chat prompt only (not quizzes or edits): reply style, and Fast's 1-3 sentence cap.
+    if (messages[0]?.content === SYSTEM) {
+      const add = (state.style === "tutor" ? " " + TUTOR : "") + (e.id === "low" ? " Answer in 1-3 sentences." : "");
+      if (add) messages = [{ role: "system", content: SYSTEM + add }, ...messages.slice(1)];
+    }
+    active++;
+    try {
+      await invoke<void>("ai_chat", { baseUrl, keyId, model, messages, extra, onToken: ch });
+      notifyWhenIdle(splitThink(raw).answer); // only on success: errors show in the app
+    } finally {
+      active--;
+    }
+    if (splitThink(raw).thinking) throw new Error("Nerida thought for too long. Turn off Thinking in the effort menu.");
   },
   stop: () => invoke<void>("ai_stop"),
 };
+
+/* Desktop notification when Nerida finishes while Oceanic is minimised or not focused. Multi-step jobs
+ * (PDF summaries, quizzes) call the model several times: notify once, after the last call. */
+let active = 0;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+function notifyWhenIdle(answer: string) {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (active || !state.notify || (document.hasFocus() && !document.hidden)) return;
+    const text = answer.replace(/[#*_`>$]/g, "").replace(/\s+/g, " ").trim();
+    // Edits and quizzes come back as REPLACE lines or JSON: no useful preview.
+    const structured = !text || /^(\{|\[|REPLACE|ADD AFTER)/i.test(text);
+    const body = structured ? "Done. Open Oceanic to see the result." : text.length > 100 ? text.slice(0, 100) + "…" : text;
+    void invoke("notify", { title: "Nerida replied", body }).catch(() => {});
+  }, 1500);
+}
 
 /** App-wide download: survives Settings/chat closing; the pill reads `dl`. Resolves "" or an error. */
 export async function downloadModel(model: ModelId, needServer: boolean, engineOnly = false): Promise<string> {
@@ -181,6 +227,8 @@ export async function downloadModel(model: ModelId, needServer: boolean, engineO
   try {
     if (needServer) { step("Nerida engine")(0, 1); await engine.download("server", step("Nerida engine")); }
     if (!engineOnly) { step(MODEL_NAMES[model])(0, 1); await engine.download(model, step(MODEL_NAMES[model])); }
+    // Vision add-on: lets Nerida read scanned PDF pages.
+    if (!state.noVision && !(await engine.status()).vision) { step("Nerida vision")(0, 1); await engine.download("vision", step("Nerida vision")); }
   } catch (e) {
     if (String(e) !== "cancelled") err = String(e);
   }
@@ -306,10 +354,13 @@ const STYLE =
   "When the message includes exact results worked out by the app, use those numbers as given. " +
   "If you don't know something and it isn't in the notes or results, say so instead of guessing. Never invent facts, names or numbers. " +
   "Only when the user's latest message says your previous answer was wrong, start by admitting it in a few words (e.g. \"You're right, my mistake.\"), then give the corrected answer. " +
-  "If they are the one who is wrong, say so politely and explain.";
+  "If they are the one who is wrong, say so politely and explain. " +
+  "You can't change notes from this answer: never say you edited, updated or marked anything in a note.";
 
 
 export const SYSTEM = `${IDENTITY} ${FEATURES} ${STYLE}`;
+/** "Detailed tutor" reply style, added after STYLE (overrides its "short"). */
+const TUTOR = "Reply style: detailed tutor. Explain step by step in plain words, give a short example, and end with a one-line recap. Still only use facts from the notes or that you are sure of.";
 
 const WHY: Record<ContextNote["why"], string> = {
   current: "the note the user has open now",

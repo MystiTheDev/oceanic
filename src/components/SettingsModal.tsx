@@ -13,6 +13,7 @@ import {
   AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smile, Trash2, Upload, User, X,
 } from "lucide-react";
 import { api } from "../data/api";
+import { resetAtlasGuide } from "./AtlasGuide";
 import { APP_VERSION } from "./SidebarFooter";
 import { NeridaSettings } from "./NeridaSettings";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -122,6 +123,17 @@ const PAGES: Page[] = [
             control: ({ settings, onChange }) => (
               <Select value={settings.editorSize} onChange={(editorSize) => onChange({ editorSize })} options={[["small", "Small"], ["default", "Default"], ["large", "Large"]]} />
             ),
+          },
+        ],
+      },
+      {
+        heading: "Atlas",
+        rows: [
+          {
+            title: "Atlas tutorial",
+            description: "Show the getting-started checklist again next time you open Atlas.",
+            keywords: "onboarding guide help concepts",
+            control: () => <Btn onClick={resetAtlasGuide}>Restart</Btn>,
           },
         ],
       },
@@ -302,7 +314,7 @@ export function SettingsModal({ settings, onChange, onClose, initialPage = "acco
   }, [q]);
 
   return (
-    <Modal onClose={onClose} className="flex h-[min(720px,88vh)] w-[min(1150px,94vw)]">
+    <Modal onClose={onClose} className="relative flex h-[min(720px,88vh)] w-[min(1150px,94vw)]">
       <nav className="scrollbar-thin flex w-[240px] shrink-0 flex-col overflow-y-auto border-r border-white/[0.06] bg-white/[0.025] px-2 pb-2 pt-3">
         {/* Profile header (Notion: avatar, name, workspace) */}
         <button type="button" onClick={() => (setQuery(""), setPage("account"))} className="mb-2 flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-white/[0.04]">
@@ -341,10 +353,11 @@ export function SettingsModal({ settings, onChange, onClose, initialPage = "acco
         ))}
       </nav>
 
+      {/* Outside the scroll area so it stays put; solid so scrolled text doesn't show through. */}
+      <button type="button" data-tip="Close (Esc)" onClick={onClose} className="absolute right-3 top-3 z-20 grid size-7 cursor-pointer place-items-center rounded-md bg-[var(--oc-surface)] text-neutral-500 shadow-md shadow-black/30 hover:bg-neutral-800 hover:text-neutral-200">
+        <X className="size-4" />
+      </button>
       <div className="scrollbar-thin relative min-w-0 flex-1 overflow-y-auto">
-        <button type="button" data-tip="Close (Esc)" onClick={onClose} className="absolute right-3 top-3 z-10 grid size-7 cursor-pointer place-items-center rounded-md text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-200">
-          <X className="size-4" />
-        </button>
         <div key={q ? "search" : page} className="oc-fade-in mx-auto max-w-[760px] px-14 pb-16 pt-9">
           {q ? (
             <>
@@ -399,7 +412,7 @@ const Btn = ({ children, onClick, disabled }: { children: ReactNode; onClick: ()
 );
 
 /** Notion-style dropdown: a quiet button showing the value; a popover list with a check. */
-function Select<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
+export function Select<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
   const [openUp, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ top: 0, right: 0, up: false });
@@ -437,7 +450,7 @@ function Select<T extends string>({ value, onChange, options }: { value: T; onCh
   );
 }
 
-function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)} className={`relative h-[18px] w-8 cursor-pointer rounded-full transition-colors ${on ? "bg-[var(--color-sky-500)]" : "bg-white/[0.15]"}`}>
       <span className={`absolute left-0.5 top-0.5 size-3.5 rounded-full bg-[#fff] shadow transition-transform duration-150 ${on ? "translate-x-3.5" : "translate-x-0"}`} />

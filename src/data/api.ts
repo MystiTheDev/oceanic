@@ -142,7 +142,11 @@ export type Concept = {
   state: ConceptState;
   createdAt: string;
   updatedAt: string;
+  /** The concept's Atlas group, if any. */
+  groupId?: string | null;
 };
+/** A named Atlas group of concepts; collapsed groups show as one summary card. Ids start with `group:`. */
+export type ConceptGroup = { id: string; workspaceId: string; name: string; collapsed: boolean; createdAt: string };
 /** A concept's link to an existing resource by its app entry id (page id, `doc:…`, `sketch:…`, `mindmap:…`, `pdf:…`). */
 export type ConceptResource = { conceptId: string; entryId: string; createdAt: string };
 export type LinkEdge = { sourceId: string; targetId: string };
@@ -222,6 +226,12 @@ export type Api = {
   listConceptResources(workspaceId: string): Promise<ConceptResource[]>;
   attachResource(conceptId: string, entryId: string): Promise<void>;
   detachResource(conceptId: string, entryId: string): Promise<void>;
+  listConceptGroups(workspaceId: string): Promise<ConceptGroup[]>;
+  createConceptGroup(workspaceId: string, name: string): Promise<ConceptGroup>;
+  updateConceptGroup(id: string, patch: Pick<ConceptGroup, "name" | "collapsed">): Promise<ConceptGroup>;
+  /** Deletes the group; its concepts stay, ungrouped. */
+  deleteConceptGroup(id: string): Promise<void>;
+  setConceptGroup(id: string, groupId: string | null): Promise<Concept>;
   getTabs(): Promise<TabRecord[]>;
   saveTabs(tabs: TabRecord[]): Promise<void>;
 };
@@ -289,6 +299,11 @@ const tauriApi: Api = {
   listConceptResources: (workspaceId) => invoke("list_concept_resources", { workspaceId }),
   attachResource: (conceptId, entryId) => invoke("attach_resource", { conceptId, entryId }),
   detachResource: (conceptId, entryId) => invoke("detach_resource", { conceptId, entryId }),
+  listConceptGroups: (workspaceId) => invoke("list_concept_groups", { workspaceId }),
+  createConceptGroup: (workspaceId, name) => invoke("create_concept_group", { workspaceId, name }),
+  updateConceptGroup: (id, patch) => invoke("update_concept_group", { id, ...patch }),
+  deleteConceptGroup: (id) => invoke("delete_concept_group", { id }),
+  setConceptGroup: (id, groupId) => invoke("set_concept_group", { id, groupId }),
   getTabs: () => invoke("get_tabs"),
   saveTabs: (tabs) => invoke("save_tabs", { tabs }),
 };
@@ -303,6 +318,7 @@ type Store = {
   edges?: CanvasEdge[];
   concepts?: Concept[];
   conceptResources?: ConceptResource[];
+  conceptGroups?: ConceptGroup[];
   workspaces?: (WorkspaceRecord & { sortOrder: number })[];
   settings?: Record<string, string>;
   mindmaps?: MindmapWithNodes[];
@@ -346,6 +362,7 @@ function load(): Store {
       for (const e of store.edges) e.relType ??= "related";
       store.concepts ??= [];
       store.conceptResources ??= [];
+      store.conceptGroups ??= [];
       store.workspaces ??= [GENERAL];
       store.settings ??= {};
       // Rows saved before workspaces / properties existed.
@@ -360,7 +377,7 @@ function load(): Store {
   } catch {
     /* corrupt or blocked storage: start fresh */
   }
-  return { pages: [starter()], tabs: [], links: [], positions: [], edges: [], concepts: [], conceptResources: [], workspaces: [GENERAL], settings: {} };
+  return { pages: [starter()], tabs: [], links: [], positions: [], edges: [], concepts: [], conceptResources: [], conceptGroups: [], workspaces: [GENERAL], settings: {} };
 }
 
 function save(store: Store) {
@@ -631,6 +648,37 @@ const localApi: Api = {
   detachResource: (conceptId, entryId) =>
     tx((s) => {
       s.conceptResources = s.conceptResources!.filter((r) => !(r.conceptId === conceptId && r.entryId === entryId));
+    }),
+  listConceptGroups: (workspaceId) => tx((s) => s.conceptGroups!.filter((g) => g.workspaceId === workspaceId).map((g) => ({ ...g }))),
+  createConceptGroup: (workspaceId, name) =>
+    tx((s) => {
+      if (!name.trim()) throw new Error("A group needs a name");
+      const g: ConceptGroup = { id: `group:${crypto.randomUUID()}`, workspaceId, name: name.trim(), collapsed: false, createdAt: now() };
+      s.conceptGroups!.push(g);
+      return { ...g };
+    }),
+  updateConceptGroup: (id, patch) =>
+    tx((s) => {
+      if (!patch.name.trim()) throw new Error("A group needs a name");
+      const g = s.conceptGroups!.find((x) => x.id === id);
+      if (!g) throw new Error(`No group with id ${id}`);
+      return { ...Object.assign(g, { name: patch.name.trim(), collapsed: patch.collapsed }) };
+    }),
+  deleteConceptGroup: (id) =>
+    tx((s) => {
+      for (const c of s.concepts!) if (c.groupId === id) c.groupId = null;
+      s.conceptGroups = s.conceptGroups!.filter((g) => g.id !== id);
+    }),
+  setConceptGroup: (id, groupId) =>
+    tx((s) => {
+      const c = findConcept(s, id);
+      if (groupId) {
+        const g = s.conceptGroups!.find((x) => x.id === groupId);
+        if (!g) throw new Error(`No group with id ${groupId}`);
+        if (g.workspaceId !== c.workspaceId) throw new Error("Group is in another workspace");
+      }
+      c.groupId = groupId;
+      return { ...c };
     }),
   setPageProperties: (id, props) =>
     tx((s) => Object.assign(find(s, id), props, { updatedAt: now() }).updatedAt),

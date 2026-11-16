@@ -1,6 +1,7 @@
 import { api } from "../data/api";
 import { engine, nerida } from "./nerida";
 import { isKnown } from "./spell/engine";
+import { finishImport, openPdf, renderPageImage } from "../pdf/pdfjs";
 
 /* Nerida + PDFs: chat context from a PDF's extracted text, page-range summaries,
  * and the events the reader uses to reach the Nerida panel and to make notes. */
@@ -9,7 +10,12 @@ const BUDGET = 14_000; // same as notes: ~3.5k tokens of PDF text per question
 
 /** Text of pages from..to (1-based, inclusive), each tagged with its page number. */
 export async function pdfPages(docId: string, from = 1, to = Infinity) {
-  const pages = await api.getPdfText(docId);
+  let pages = await api.getPdfText(docId);
+  // Text never extracted (import interrupted): extract it now.
+  if (!pages.length) {
+    const doc = await api.getPdfDoc(docId);
+    if (doc) (await finishImport(doc), (pages = await api.getPdfText(docId)));
+  }
   return pages.map((text, i) => ({ page: i + 1, text: text.trim() })).filter((p) => p.page >= from && p.page <= to && p.text);
 }
 
@@ -25,8 +31,8 @@ export const GARBLED_NOTE = "\n\n*Note: this PDF's text looks garbled (probably 
 const GARBLED_HINT = "Some of this text is garbled scanner output. Ignore fragments that aren't real words or sentences, never quote them, and say so if you can't tell what a part means.";
 
 /** The PDF's text for a question: whole if it fits, else the pages that best match it. */
-export async function pdfContext(docId: string, name: string, question: string): Promise<{ text: string; parts: number; garbled: boolean }> {
-  const pages = await pdfPages(docId);
+export async function pdfContext(docId: string, name: string, question: string, from = 1, to = Infinity): Promise<{ text: string; parts: number; garbled: boolean }> {
+  const pages = await pdfPages(docId, from, to);
   if (!pages.length) return { text: "", parts: 0, garbled: false };
   let chosen = pages;
   if (pages.reduce((s, p) => s + p.text.length, 0) > BUDGET) {
@@ -43,6 +49,41 @@ export async function pdfContext(docId: string, name: string, question: string):
   return { text, parts: chosen.length, garbled };
 }
 
+/** Scanned pages (no text layer): the vision add-on reads each one once and its text is saved
+ *  like a normal PDF's, so every page is covered and later questions are instant.
+ *  One page per request at ~768 px: bigger or batched images take minutes before the first word. */
+export async function readScanned(docId: string, onPage: (n: number, total: number) => void): Promise<number> {
+  const doc = await api.getPdfDoc(docId);
+  if (!doc) return 0;
+  const pdf = await openPdf(doc);
+  const text = await api.getPdfText(docId);
+  const todo = Array.from({ length: pdf.numPages }, (_, i) => i + 1).filter((n) => (text[n - 1] ?? "").trim().length < 30);
+  for (const [i, n] of todo.entries()) {
+    onPage(i + 1, todo.length);
+    const url = await renderPageImage(await pdf.getPage(n), 768 / Math.min(2, window.devicePixelRatio || 1));
+    let out = "";
+    await engine.chat(nerida.get().model, [{ role: "user", content: [
+      { type: "text", text: "Copy all the text on this page exactly, in reading order. Output only the text, no comments." },
+      { type: "image_url", image_url: { url } },
+    ] }], (t) => {
+      out += t;
+      if (out.length > 4000) void engine.stop();
+    });
+    text[n - 1] = out.trim() || "(blank page)"; // marked, so a blank page isn't read again
+    while (text.length < pdf.numPages) text.push("");
+    await api.savePdfText(docId, text); // after each page: progress survives closing the PDF
+  }
+  return todo.length;
+}
+
+/** "pages 2 to 5", "pages 2-5", "p. 3", "page 4" → [from, to]; null when no pages are named. */
+export function pageRange(q: string): [number, number] | null {
+  const m = /\bp(?:ages?|gs?|p)?\.?\s*(\d+)\s*(?:-|–|to|through|and)\s*(\d+)/i.exec(q) ?? /\bp(?:age|g)?\.?\s*(\d+)\b/i.exec(q);
+  if (!m) return null;
+  const a = Number(m[1]), b = Number(m[2] ?? m[1]);
+  return [Math.min(a, b), Math.max(a, b)];
+}
+
 async function ask(system: string, user: string, cap: number, onText?: (t: string) => void) {
   let out = "";
   await engine.chat(nerida.get().model, [{ role: "system", content: system }, { role: "user", content: user }], (t) => {
@@ -55,7 +96,10 @@ async function ask(system: string, user: string, cap: number, onText?: (t: strin
 
 /** Summary of pages from..to as Markdown. Long ranges are summarized in parts, then combined. */
 export async function summarizePdf(docId: string, from: number, to: number, detailed: boolean, onProgress: (label: string, text: string) => void): Promise<string> {
-  const pages = await pdfPages(docId, from, to);
+  let pages = await pdfPages(docId, from, to);
+  // Scanned: read the pages with the vision add-on first (saved for next time).
+  if ((await engine.status()).vision && (await readScanned(docId, (n, t) => onProgress(`Reading scanned page ${n} of ${t}`, ""))))
+    pages = await pdfPages(docId, from, to);
   if (!pages.length) throw new Error("No text found on those pages. Scanned PDFs (pictures of text) can't be summarized yet.");
   // Parts of ~6000 characters, never splitting a page.
   const parts: { from: number; to: number; text: string }[] = [];

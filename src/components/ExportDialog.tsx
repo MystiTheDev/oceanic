@@ -141,11 +141,11 @@ export function ExportDialog({ page, pages, loadBlocks, onDone, onClose }: Expor
                   style={{ "--tone": tone, animationDelay: `${i * 50}ms` } as React.CSSProperties}
                   className={`oc-export-card relative flex cursor-pointer gap-3 rounded-xl border p-3.5 text-left transition-[border-color,background-color,transform] duration-150 active:scale-[0.98] ${on ? "is-on" : "border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.03]"}`}
                 >
-                  {id === "ocean" && <span className="absolute right-2.5 top-2.5 rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold text-sky-300">Recommended</span>}
                   <span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${tone} ${on ? 26 : 14}%, transparent)`, color: tone }}>
                     <Icon className="size-5" />
                   </span>
                   <span className="min-w-0">
+                    {id === "ocean" && <span className="mb-2 inline-block rounded-full bg-sky-500/20 px-2.5 py-1 text-[10.5px] font-semibold leading-none text-sky-300">Recommended</span>}
                     <span className="block text-[14px] font-semibold text-neutral-100">
                       {label} <span className="text-[11.5px] font-normal text-neutral-500">{hint}</span>
                     </span>

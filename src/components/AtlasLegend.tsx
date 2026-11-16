@@ -9,7 +9,7 @@ export function AtlasLegend({ muted }: { muted: ReadonlySet<RelType> }) {
   return (
     <div
       onPointerDown={(e) => e.stopPropagation()}
-      className="absolute bottom-16 right-4 z-10 w-48 rounded-lg border border-white/[0.08] bg-neutral-800/90 text-[11px] shadow-xl shadow-black/40 backdrop-blur"
+      className="absolute bottom-[4.25rem] right-4 z-10 w-48 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] text-[11px] shadow-lg shadow-black/30"
     >
       <button
         type="button"

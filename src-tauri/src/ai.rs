@@ -53,6 +53,16 @@ const CUDART: Asset = Asset {
     size: 391_443_627,
 };
 
+// Vision add-on for Qwen3.5-2B: lets Nerida read scanned PDF pages (images).
+const VISION: Asset = Asset {
+    id: "vision",
+    file: "nerida-vision-mmproj.gguf",
+    legacy: "",
+    url: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-F16.gguf",
+    sha256: "7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7",
+    size: 668_227_264,
+};
+
 // Chosen by benchmark on real notes (Nov 2026): Qwen3.5 replaced Qwen2.5, which
 // copied notes back or stopped after the first section.
 // Nerida Lite (Qwen3.5-0.8B) was retired; only Nerida AI remains.
@@ -175,6 +185,7 @@ fn asset(id: &str) -> Result<&'static Asset, String> {
         "server" => return Ok(&SERVER),
         "cuda" => return Ok(&CUDA),
         "cudart" => return Ok(&CUDART),
+        "vision" => return Ok(&VISION),
         _ => {}
     }
     MODELS.iter().find(|m| m.id == id).ok_or_else(|| format!("Unknown item {id}"))
@@ -197,6 +208,8 @@ pub struct AiStatus {
     /// NVIDIA GPU present / NVIDIA engine downloaded.
     nvidia: bool,
     cuda: bool,
+    /// Vision add-on downloaded (scanned PDFs).
+    vision: bool,
     /// Nerida Lite files were found and deleted during this call.
     lite_removed: bool,
 }
@@ -215,6 +228,7 @@ pub fn ai_status(app: AppHandle, state: State<Ai>) -> Result<AiStatus, String> {
         server: server_exe(&app).is_some(),
         nvidia: has_nvidia(),
         cuda: cuda_exe(&app).is_some(),
+        vision: d.join(VISION.file).exists(),
         models: MODELS
             .iter()
             .map(|m| ModelInfo { id: m.id, size: m.size, installed: model_file(&d, m).is_some(), outdated: !d.join(m.file).exists() && d.join(m.legacy).exists() })
@@ -274,6 +288,10 @@ pub async fn ai_download(app: AppHandle, state: State<'_, Ai>, item: String, on_
         }
     } else {
         std::fs::rename(&part, d.join(a.file)).map_err(|e| e.to_string())?;
+        if item == "vision" {
+            shutdown(&state); // next start loads the vision add-on
+            return Ok(());
+        }
         // Updated: drop the previous version (stop it first if it's the one running).
         if d.join(a.legacy).exists() {
             if state.server.lock().unwrap().as_ref().is_some_and(|s| s.0.starts_with(&format!("{item}|"))) {
@@ -298,6 +316,9 @@ pub fn ai_delete_model(app: AppHandle, state: State<Ai>, model: String) -> Resul
         return std::fs::remove_dir_all(dir(&app)?.join("cuda")).map_err(|e| e.to_string());
     }
     let a = asset(&model)?;
+    if model == "vision" {
+        shutdown(&state); // the running engine holds the vision file open
+    }
     if state.server.lock().unwrap().as_ref().is_some_and(|s| s.0.starts_with(&format!("{model}|"))) {
         shutdown(&state);
     }
@@ -337,7 +358,14 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
         let gguf = model_file(&dir(&app)?, asset(&model)?).ok_or("This model isn't downloaded yet.")?;
         let port = std::net::TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).map_err(|e| e.to_string())?.port();
         let mut cmd = engine_cmd(&exe);
-        cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "-c", "8192", "--jinja"]);
+        cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "-c", "8192", "--jinja", "-np", "1", "--cache-reuse", "256"]);
+        let mmproj = dir(&app)?.join(VISION.file);
+        if mmproj.exists() {
+            // Cap each image's tokens: Qwen's default reserves a ~4.8 GB GPU buffer for huge images,
+            // which fails on most laptop GPUs and makes scanned pages take minutes.
+            // 512 still reads a page at ~768 px and leaves memory for the answer (1024 ran out mid-answer).
+            cmd.arg("--mmproj").arg(mmproj).args(["--image-max-tokens", "512"]);
+        }
         // Flash attention: fast on CUDA, but on Vulkan it falls back to the CPU (much slower prompt reading).
         match pick.as_str() {
             "cpu" => cmd.args(["-ngl", "0"]),
@@ -453,6 +481,15 @@ pub async fn ai_chat(
                 return Ok(());
             }
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                // The engine reports mid-answer failures (e.g. out of GPU memory) as an error event.
+                if let Some(e) = v.get("error") {
+                    let msg = e["message"].as_str().unwrap_or("unknown error");
+                    return Err(if msg.contains("OutOfDeviceMemory") || msg.contains("out of memory") {
+                        "Your graphics card ran out of memory. In Settings → Nerida AI, set Graphics card to CPU, or close other apps and try again.".into()
+                    } else {
+                        format!("Nerida's engine failed: {msg}")
+                    });
+                }
                 let delta = &v["choices"][0]["delta"];
                 if let Some(t) = delta["reasoning_content"].as_str() {
                     let _ = on_token.send(if thinking { t.to_string() } else { format!("<think>{t}") });

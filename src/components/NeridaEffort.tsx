@@ -7,10 +7,12 @@ import { builtin, EFFORTS, nerida, useNerida } from "../lib/nerida";
 
 const NERIDA_GRADIENT = "linear-gradient(90deg, #38d6ff, #7c3aed)";
 
-export function EffortButton({ disabled }: { disabled?: boolean }) {
-  const { effort, model } = useNerida();
+/** `compact`: narrow side chat, thinking shows as a brain icon instead of text. */
+export function EffortButton({ disabled, compact }: { disabled?: boolean; compact?: boolean }) {
+  const { effort, model, thinking } = useNerida();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const brain = useRef<HTMLSpanElement>(null);
   const i = EFFORTS.findIndex((e) => e.id === effort);
   const deep = effort === "high";
 
@@ -34,11 +36,14 @@ export function EffortButton({ disabled }: { disabled?: boolean }) {
         className={`flex h-7 cursor-pointer items-center gap-1 rounded-lg px-1.5 text-[12px] hover:bg-white/[0.06] disabled:cursor-default ${deep ? "text-violet-200" : "text-neutral-400 hover:text-neutral-200"}`}>
         <Sparkles className="size-3.5" style={deep ? { color: "#a78bfa" } : undefined} />
         {EFFORTS[i].label}
+        {thinking && builtin(model) && (compact
+          ? <Brain aria-label="Thinking on" className="oc-think-icon size-3.5 shrink-0 text-violet-300" />
+          : <span className="oc-think-label inline-block whitespace-nowrap">· Thinking</span>)}
         <ChevronDown className="size-3" />
       </button>
       {open && (
         <div className="oc-menu-pop absolute bottom-full right-0 z-30 mb-2 w-64 rounded-xl border border-white/[0.08] bg-neutral-900/95 p-3 shadow-2xl shadow-black/50 backdrop-blur">
-          <p className="text-[12px] leading-snug text-neutral-400">Higher effort thinks longer for better answers, but replies take more time.</p>
+          <p className="text-[12px] leading-snug text-neutral-400">Higher effort allows longer, fuller answers, but replies take more time.</p>
           <div className="mt-3 flex items-center gap-2 text-[12.5px]">
             <span className="font-medium text-neutral-100">{EFFORTS[i].label}</span>
             {deep && <span className="flex items-center gap-1 rounded-full border border-amber-400/30 px-1.5 text-[10.5px] text-amber-300"><TriangleAlert className="size-3" />Slower</span>}
@@ -60,7 +65,21 @@ export function EffortButton({ disabled }: { disabled?: boolean }) {
             ))}
             <span className="absolute top-1/2 h-4 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow transition-[left] duration-200" style={{ left: `${pct}%` }} />
           </div>
-          {!builtin(model) && <p className="mt-2 text-[11px] text-neutral-500">Thinking needs Nerida AI. With this model, Deep only allows longer answers.</p>}
+          <button type="button" role="switch" disabled={!builtin(model)} aria-checked={thinking}
+            onClick={() => {
+              if (!thinking && !matchMedia("(prefers-reduced-motion: reduce)").matches) brain.current?.animate([{ transform: "scale(1)" }, { transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 320, easing: "ease-out" });
+              nerida.setThinking(!thinking);
+            }}
+            className={`mt-3 flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors duration-200 disabled:cursor-default disabled:opacity-40 ${thinking ? "border-violet-400/40 bg-violet-400/10 text-violet-200" : "border-white/[0.08] text-neutral-400 hover:bg-white/[0.06]"}`}>
+            <span ref={brain} className="inline-flex"><Brain className="size-3.5" /></span> Thinking
+            {thinking && <span className="text-[11px] text-violet-300/70">· slower</span>}
+            {/* Switch: knob slides, track fills with Nerida's gradient. */}
+            <span className="relative ml-auto h-4 w-7 shrink-0 overflow-hidden rounded-full bg-white/[0.12]">
+              <span className={`absolute inset-0 bg-gradient-to-r from-[#38d6ff] to-[#7c3aed] transition-opacity duration-200 ${thinking ? "opacity-100" : "opacity-0"}`} />
+              <span className={`absolute top-0.5 left-0.5 size-3 rounded-full bg-white shadow transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)] motion-reduce:transition-none ${thinking ? "translate-x-3" : ""}`} />
+            </span>
+          </button>
+          {!builtin(model) && <p className="mt-2 text-[11px] text-neutral-500">Thinking needs Nerida AI.</p>}
         </div>
       )}
     </div>

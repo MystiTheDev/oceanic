@@ -38,6 +38,12 @@ export const MUTED_STROKE = "#525252";
 
 export const isConceptId = (id: string) => id.startsWith("concept:");
 
+/** Fired to show a concept in Atlas: detail `{ id, workspaceId }`. */
+export const OPEN_CONCEPT = "oc-open-concept";
+/** Concept the next Atlas mount (or the open one) should centre and select. */
+export let pendingConcept: string | null = null;
+export const setPendingConcept = (id: string | null) => (pendingConcept = id);
+
 /** Every node directly connected to `id`, in either direction. */
 export function neighborIds(edges: CanvasEdge[], id: string): Set<string> {
   const out = new Set<string>();
@@ -79,4 +85,31 @@ export function prerequisites(edges: CanvasEdge[], target: string): { order: str
   };
   visit(target);
   return { order, cycle: [...cycle] };
+}
+
+/** A neutral note about the map's structure (not about the student). */
+export type MapFinding = { key: string; conceptId: string; text: string };
+
+/**
+ * Structure checks for a workspace's concepts: concepts with no relationships,
+ * and concepts others depend on that have no notes or other resources attached.
+ */
+export function mapChecks(
+  concepts: { id: string; title: string }[],
+  edges: CanvasEdge[],
+  attachedIds: Set<string>,
+): MapFinding[] {
+  const out: MapFinding[] = [];
+  for (const c of concepts) {
+    const touching = edges.filter((e) => e.sourceId === c.id || e.targetId === c.id);
+    if (!touching.length) out.push({ key: `unconnected:${c.id}`, conceptId: c.id, text: `${c.title} isn't connected to any other concept or page yet.` });
+    const needed = edges.filter((e) => e.relType === "depends_on" && e.targetId === c.id).length;
+    if (needed && !attachedIds.has(c.id))
+      out.push({
+        key: `prereq:${c.id}`,
+        conceptId: c.id,
+        text: `${needed} concept${needed === 1 ? " depends" : "s depend"} on ${c.title}, but it has no notes or resources attached.`,
+      });
+  }
+  return out;
 }

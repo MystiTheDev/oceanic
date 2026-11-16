@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
@@ -6,6 +6,17 @@ import {
   type AiStatus, type ModelId, type Provider,
 } from "../lib/nerida";
 import { ModelMenu } from "./NeridaModelMenu";
+import { Bell, Cpu, Eye, Gauge, MessageSquareText, Sparkles, Star, type LucideIcon } from "lucide-react";
+import { Switch } from "./SettingsModal";
+
+/* Nerida settings look: grouped cards, muted row icons, cyan→violet accent. */
+const card = "overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.025] divide-y divide-white/[0.05]";
+const rowCls = "flex items-center gap-3 px-4 py-3";
+const accentBtn = "cursor-pointer rounded-md bg-gradient-to-r from-[#38d6ff] to-[#7c3aed] px-3 py-1 text-[12.5px] font-medium text-white shadow-sm shadow-violet-900/30 hover:brightness-110 disabled:cursor-default disabled:opacity-40";
+const RowIcon = ({ icon: I }: { icon: LucideIcon }) => (
+  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-neutral-400"><I className="size-4" /></span>
+);
+const sectionTitle = "mt-6 mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-neutral-500";
 
 const ABOUT: Record<ModelId, string> = {
   plus: "Smarter answers, better explanations, flashcards and quizzes. Best with 8 GB+ RAM.",
@@ -15,7 +26,7 @@ const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.r
 /** Settings → Nerida AI: download / delete models and pick the default. */
 export function NeridaSettings() {
   const [status, setStatus] = useState<AiStatus | null>(null);
-  const { dl: prog, gpu } = useNerida();
+  const { dl: prog, gpu, style, notify } = useNerida();
   const [gpus, setGpus] = useState<{ id: string; name: string; mem_mib: number }[] | null>(null);
   const [err, setErr] = useState("");
   const refresh = () => engine.status().then(setStatus).catch((e) => setErr(String(e)));
@@ -40,57 +51,27 @@ export function NeridaSettings() {
 
   return (
     <div>
-      {/* Optional NVIDIA (CUDA) engine: never downloaded unless the user asks. */}
-      <div className="mb-3 rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
-        <div className="flex items-center gap-4">
-          <p className="min-w-0 flex-1 text-[12.5px] font-medium text-neutral-200">
-            NVIDIA engine <span className="font-normal text-neutral-500">· optional · 1.2 GB</span>
-          </p>
-          {status.cuda ? (
-            <button type="button" onClick={() => confirm("Delete the NVIDIA engine? Nerida keeps working with the standard engine.") && void invoke<void>("ai_delete_model", { model: "cuda" }).catch((e) => setErr(String(e))).then(refresh)} className="cursor-pointer rounded-md px-2.5 py-1 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-red-400">Delete</button>
-          ) : (
-            <button type="button" disabled={!!prog || !status.nvidia} title={status.nvidia ? "" : "Needs an NVIDIA graphics card"} onClick={() => void downloadCuda().then((e) => (setErr(e), refresh()))} className="cursor-pointer rounded-md bg-teal-400/90 px-2.5 py-1 text-[12.5px] font-medium text-neutral-950 hover:bg-teal-300 disabled:cursor-default disabled:opacity-40">Download</button>
-          )}
-        </div>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-400">
-          Uses NVIDIA's own CUDA tools. Nerida reads long notes, PDFs and attached files about 10× faster, so the first word of a reply comes in seconds instead of ~20 s.
-          Writing speed stays about the same. Worth it if you often ask about long notes or PDFs, or make quizzes and flashcards from them; not needed for short questions.
-        </p>
-        <p className="mt-1 text-[11.5px] text-neutral-500">
-          {status.cuda ? "Installed: chosen automatically, or pick it under Graphics card." : status.nvidia ? "Not installed. Nerida already uses your NVIDIA card with the standard engine." : "Needs an NVIDIA graphics card (none found on this PC)."}
-        </p>
-      </div>
-      {/* Which graphics card runs Nerida. Lists every card the engine can see. */}
-      <div className="mb-3 flex items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.03] p-3 text-[12.5px] text-neutral-300">
-        <span className="flex-1">Graphics card<span className="block text-[11.5px] text-neutral-500">A dedicated card (NVIDIA, AMD Radeon RX, Intel Arc) is usually fastest.</span></span>
-        <GpuMenu value={gpu} options={[
-          ["auto", "Automatic", "recommended"],
-          ...(status.cuda ? [["cuda", "NVIDIA", "fast engine"] as const] : []),
-          ...(gpus ?? []).map((g) => [g.id, g.name, `${(g.mem_mib / 1024).toFixed(1)} GB`] as const),
-          ["cpu", "Processor only", "no graphics card"],
-        ]} />
-      </div>
-      {gpus === null && <p className="-mt-2 mb-3 text-[11.5px] text-neutral-500">Looking for graphics cards…</p>}
-      <p className="mb-3 text-[12px] text-neutral-500">
-        Nerida is Oceanic's free AI. It runs entirely on this PC, so your notes never leave it. Models use {size(used)} of disk space.
-      </p>
+      <p className="mb-1 px-1 text-[12px] text-neutral-500">Runs on this PC: your notes never leave it · {size(used)} used</p>
       {!status.server && used > 0 && (
         <div className="mb-2 flex items-center gap-4 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] p-3">
           <p className="min-w-0 flex-1 text-[12.5px] text-amber-200/90">
             Nerida's engine (<code>llama-server.exe</code>) is missing. Your antivirus may have removed it. Add Oceanic's <code>nerida</code> folder to its exclusions, then download it again (~38 MB).
           </p>
-          <button type="button" disabled={!!prog} onClick={() => void download(status.models.find((m) => m.installed)!.id, true)} className="cursor-pointer rounded-md bg-teal-400/90 px-2.5 py-1 text-[12.5px] font-medium text-neutral-950 hover:bg-teal-300 disabled:opacity-40">Download engine</button>
+          <button type="button" disabled={!!prog} onClick={() => void download(status.models.find((m) => m.installed)!.id, true)} className={accentBtn}>Download engine</button>
         </div>
       )}
+      <p className={sectionTitle}>Model</p>
+      <div className={card}>
       {status.models.map((m) => {
         const busy = prog?.model === m.id;
         return (
-          <div key={m.id} className="border-b border-white/[0.05] py-3">
-            <div className="flex items-center gap-4">
+          <div key={m.id} className="px-4 py-3">
+            <div className="flex items-center gap-3">
+              <RowIcon icon={Sparkles} />
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] text-neutral-100">
                   {MODEL_NAMES[m.id]} <span className="text-[12px] text-neutral-500">· {size(m.size)}</span>
-                  {m.installed && !m.outdated && <span className="ml-2 rounded-full bg-teal-400/15 px-1.5 py-0.5 text-[11px] text-teal-300">Installed</span>}
+                  {m.installed && !m.outdated && <span className="ml-2 rounded-full bg-cyan-400/10 px-1.5 py-0.5 text-[11px] text-cyan-300">Installed</span>}
                   {m.outdated && <span className="ml-2 rounded-full bg-sky-400/15 px-1.5 py-0.5 text-[11px] text-sky-300">Update available</span>}
                 </p>
                 <p className="text-[12px] text-neutral-500">{ABOUT[m.id]}</p>
@@ -102,13 +83,13 @@ export function NeridaSettings() {
               ) : m.installed ? (
                 <button type="button" onClick={() => void remove(m.id)} className="cursor-pointer rounded-md px-2.5 py-1 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-red-400">Delete</button>
               ) : (
-                <button type="button" disabled={!!prog} onClick={() => void download(m.id)} className="cursor-pointer rounded-md bg-teal-400/90 px-2.5 py-1 text-[12.5px] font-medium text-neutral-950 hover:bg-teal-300 disabled:cursor-default disabled:opacity-40">Download</button>
+                <button type="button" disabled={!!prog} onClick={() => void download(m.id)} className={accentBtn}>Download</button>
               )}
             </div>
             {busy && (
-              <div className="mt-2">
+              <div className="mt-2 pl-11">
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                  <div className="h-full rounded-full bg-gradient-to-r from-teal-300 to-blue-400" style={{ width: `${(prog.got / prog.total) * 100}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-[#38d6ff] to-[#7c3aed]" style={{ width: `${(prog.got / prog.total) * 100}%` }} />
                 </div>
                 <p className="mt-1 text-[11.5px] text-neutral-500">{size(prog.got)} / {size(prog.total)}</p>
               </div>
@@ -116,14 +97,75 @@ export function NeridaSettings() {
           </div>
         );
       })}
-      <div className="flex items-center gap-4 border-b border-white/[0.05] py-3">
+      <div className={rowCls}>
+        <RowIcon icon={Star} />
         <div className="min-w-0 flex-1">
           <p className="text-[14px] text-neutral-100">Default model</p>
           <p className="text-[12px] text-neutral-500">Used for new chats and all Nerida features. You can still switch inside a chat.</p>
         </div>
         <ModelMenu inSettings />
       </div>
+      </div>
+      <p className={sectionTitle}>Answers</p>
+      <div className={card}><div className={rowCls}>
+        <RowIcon icon={MessageSquareText} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] text-neutral-100">Reply style</p>
+          <p className="text-[12px] text-neutral-500">How the chat answers.</p>
+        </div>
+        <StyleSwitch value={style} />
+      </div><div className={rowCls}>
+        <RowIcon icon={Bell} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] text-neutral-100">Notify when done</p>
+          <p className="text-[12px] text-neutral-500">Desktop notification when Nerida finishes while Oceanic is in the background.</p>
+        </div>
+        <Switch on={notify} onChange={nerida.setNotify} />
+      </div></div>
+      <p className={sectionTitle}>Performance</p>
+      <div className={card}><div className={rowCls}>
+        <RowIcon icon={Gauge} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] text-neutral-100">Graphics card</p>
+          <p className="text-[12px] text-neutral-500">{gpus === null ? "Looking for graphics cards…" : "A dedicated card is usually fastest."}</p>
+        </div>
+        <GpuMenu value={gpu} options={[
+          ["auto", "Automatic", "recommended"],
+          ...(status.cuda ? [["cuda", "NVIDIA", "fast engine"] as const] : []),
+          ...(gpus ?? []).map((g) => [g.id, g.name, `${(g.mem_mib / 1024).toFixed(1)} GB`] as const),
+          ["cpu", "Processor only", "no graphics card"],
+        ]} />
+      </div></div>
+      <p className={sectionTitle}>Extra modules</p>
+      <div className={card}>
+        <ModuleRow icon={Eye} name="Vision" size="668 MB" installed={status.vision} busy={!!prog}
+          about="Reads scanned PDF pages."
+          lose={`Delete Vision (668 MB)?
+
+You will lose: reading scanned PDFs and pictures of pages. Nerida will only read PDFs that contain real text.
+
+You can download it again here any time.`}
+          onDelete={() => void invoke<void>("ai_delete_model", { model: "vision" }).then(() => nerida.setNoVision(true)).catch((e) => setErr(String(e))).then(refresh)}
+          onDownload={async () => {
+            nerida.setNoVision(false);
+            const step = (got: number, total: number) => nerida.set({ dl: { model: "plus", label: "Nerida vision", got, total } });
+            step(0, 1);
+            await engine.download("vision", step).catch((e) => String(e) !== "cancelled" && setErr(String(e)));
+            nerida.set({ dl: null });
+            void refresh();
+          }} />
+        <ModuleRow icon={Cpu} name="NVIDIA engine" size="1.2 GB" installed={status.cuda} busy={!!prog} disabled={!status.nvidia && !status.cuda}
+          about={status.nvidia || status.cuda ? "Faster on long notes and PDFs." : "Needs an NVIDIA card (none found)."}
+          lose={`Delete the NVIDIA engine (1.2 GB)?
+
+You will lose: the faster start on long notes, PDFs and attached files (back to ~20 s). Nerida keeps working with the standard engine.
+
+You can download it again here any time.`}
+          onDelete={() => void invoke<void>("ai_delete_model", { model: "cuda" }).catch((e) => setErr(String(e))).then(refresh)}
+          onDownload={() => void downloadCuda().then((e) => (setErr(e), refresh()))} />
+      </div>
       {err && <p className="mt-3 text-[12.5px] text-red-400">{err}</p>}
+      <p className={sectionTitle}>Other models</p>
       <OllamaSection />
       <Providers />
     </div>
@@ -131,7 +173,6 @@ export function NeridaSettings() {
 }
 
 const field = "h-8 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 text-[13px] text-neutral-100 outline-none focus:border-teal-300/50";
-const heading = "mt-6 mb-1 text-[12px] font-medium uppercase tracking-wide text-neutral-500";
 
 /** Ollama: nothing to configure; models found on this PC appear in the picker. */
 function OllamaSection() {
@@ -147,7 +188,7 @@ function OllamaSection() {
   }, []);
   return (
     <>
-      <p ref={ref} className={heading}>Ollama</p>
+      <p ref={ref} className="mt-3 text-[13px] font-medium text-neutral-300">Ollama</p>
       <div className="flex items-center gap-4 border-b border-white/[0.05] py-3">
         <p className="min-w-0 flex-1 text-[12.5px] text-neutral-400">
           {models === null
@@ -218,7 +259,7 @@ function Providers() {
 
   return (
     <>
-      <p className={heading}>Your AI providers</p>
+      <p className="mt-4 text-[13px] font-medium text-neutral-300">AI providers</p>
       <p className="mb-1 text-[12px] text-neutral-500">Connect your own API key or local server. Keys are stored in your system's secure keychain, never in Oceanic's files.</p>
       {providers.map((p) => (
         <div key={p.id} className="flex items-center gap-4 border-b border-white/[0.05] py-3">
@@ -299,6 +340,43 @@ function GpuMenu({ value, options }: { value: string; options: (readonly [string
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One optional add-on: size, what it does, and Delete (confirm says what's lost) or Download. */
+function ModuleRow({ icon, name, size, about, lose, installed, busy, disabled, onDelete, onDownload }: { icon: LucideIcon; name: string; size: string; about: string; lose: string; installed: boolean; busy: boolean; disabled?: boolean; onDelete: () => void; onDownload: () => void }) {
+  return (
+    <div className={rowCls}>
+      <RowIcon icon={icon} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] text-neutral-100">{name} <span className="text-[12px] text-neutral-500">· {size}</span>{installed && <span className="ml-2 rounded-full bg-cyan-400/10 px-1.5 py-0.5 text-[11px] text-cyan-300">Installed</span>}</p>
+        <p className="text-[12px] text-neutral-500">{about}</p>
+      </div>
+      {installed ? (
+        <button type="button" disabled={busy} onClick={() => confirm(lose) && onDelete()} className="cursor-pointer rounded-md px-2.5 py-1 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-red-400 disabled:opacity-40">Delete</button>
+      ) : (
+        <button type="button" disabled={busy || disabled} onClick={onDownload} className={accentBtn}>Download</button>
+      )}
+    </div>
+  );
+}
+
+/** Reply style switch: the gradient pill slides to the chosen option. */
+function StyleSwitch({ value }: { value: "short" | "tutor" }) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const b = refs.current[value];
+    if (b) setPill({ left: b.offsetLeft, width: b.offsetWidth });
+  }, [value]);
+  return (
+    <div className="relative flex rounded-lg border border-white/[0.06] bg-black/20 p-0.5 text-[12.5px]">
+      {pill && <span aria-hidden className="absolute top-0.5 bottom-0.5 rounded bg-gradient-to-r from-[#38d6ff]/25 to-[#7c3aed]/35 shadow-sm transition-[left,width] duration-[250ms] ease-[cubic-bezier(.4,0,.2,1)] motion-reduce:transition-none" style={pill} />}
+      {(["short", "tutor"] as const).map((s) => (
+        <button key={s} ref={(el) => void (refs.current[s] = el)} type="button" aria-pressed={value === s} onClick={() => nerida.setStyle(s)}
+          className={`relative cursor-pointer rounded px-2.5 py-1 transition-colors duration-200 ${value === s ? "text-white" : "text-neutral-400 hover:text-neutral-200"}`}>{s === "short" ? "Short" : "Detailed tutor"}</button>
+      ))}
     </div>
   );
 }

@@ -70,6 +70,16 @@
 }
 @keyframes oc-nerida-in { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
 .oc-nerida-in { animation: oc-nerida-in 180ms ease-out; }
+/* Chat box "· Thinking" label: slides in, then a slow violet shimmer. */
+@keyframes oc-think-in { from { transform: translateX(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+.oc-think-label {
+  background: linear-gradient(90deg, #a78bfa 0%, #a78bfa 35%, #e0f7ff 50%, #a78bfa 65%, #a78bfa 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: oc-think-in 220ms ease-out, oc-nerida-shimmer 3.5s linear 220ms infinite;
+}
+@keyframes oc-think-glow { 0%, 100% { opacity: 1; filter: none; } 50% { opacity: .6; filter: drop-shadow(0 0 3px #a78bfa); } }
+.oc-think-icon { animation: oc-think-in 220ms ease-out, oc-think-glow 2.4s ease-in-out 220ms infinite; }
+@media (prefers-reduced-motion: reduce) { .oc-think-label, .oc-think-icon { animation: none; } }
 
 /* ---- Nerida orb ---- */
 .oc-orb * { transform-box: fill-box; transform-origin: center; }
@@ -140,3 +150,9 @@
 .oc-send-morph[data-busy] .oc-send-arrow { transform: scale(0.3) rotate(45deg); opacity: 0; }
 .oc-send-morph[data-busy] .oc-send-stop { transform: none; opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .oc-send-morph svg { transition: none; } }
+
+/* Nerida change bar: slides down in, slides up out. */
+@keyframes oc-bar-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.oc-bar-in { animation: oc-bar-in 220ms cubic-bezier(.2,.8,.2,1) both; }
+.oc-bar-out { animation: oc-bar-in 160ms ease-in reverse both; }
+@media (prefers-reduced-motion: reduce) { .oc-bar-in, .oc-bar-out { animation: none; } }

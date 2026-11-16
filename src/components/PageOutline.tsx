@@ -3,7 +3,7 @@ import type { OceanicEditor } from "../editor/schema";
 
 type Heading = { id: string; level: number; text: string };
 
-const headingsOf = (editor: OceanicEditor): Heading[] => {
+export const headingsOf = (editor: OceanicEditor): Heading[] => {
   const out: Heading[] = [];
   const walk = (blocks: typeof editor.document) => {
     for (const b of blocks) {

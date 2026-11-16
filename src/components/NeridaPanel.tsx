@@ -4,13 +4,13 @@ import { createMindmap } from "../mindmap/MindmapGallery";
 import { MAP_FLAG } from "../mindmap/NeridaMap";
 import { OPEN_MINDMAP } from "../editor/mindmapBlock";
 import { NeridaTaskCard } from "./NeridaTaskCard";
-import { GARBLED_NOTE, NERIDA_ASK, pdfContext, type AskDetail } from "../lib/neridaPdf";
+import { GARBLED_NOTE, NERIDA_ASK, pageRange, pdfContext, readScanned, summarizePdf, type AskDetail } from "../lib/neridaPdf";
 import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
 import { ArrowUp, Check, ChevronDown, Copy, Download, FileInput, FileText, Globe, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 import { usePageDirectory } from "../editor/pageDirectory";
 import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
-import { ASK_WHICH, editPrompt, isEditRequest, targetBlocks, unclearTarget, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
+import { ASK_WHICH, editPrompt, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
 import { ModelMenu } from "./NeridaModelMenu";
 import { openNeridaCards } from "./NeridaCards";
 import { ATTACH_ACCEPT, attachmentsContext, extractFileText, type Attachment } from "../lib/neridaFiles";
@@ -120,13 +120,13 @@ function Setup({ status, model, auto, onDone }: { status: AiStatus; model: Model
 }
 
 /** The previous model version is still in use: offer the smarter one. Chat keeps working meanwhile. */
-function UpdateBanner({ model, size, onDone }: { model: ModelId; size: number; onDone: () => void }) {
+function UpdateBanner({ model, size, visionOnly, onDone }: { model: ModelId; size: number; visionOnly: boolean; onDone: () => void }) {
   const dl = useNerida().dl;
   const prog = dl?.model === model ? dl.got / dl.total : null;
   const [err, setErr] = useState("");
   const run = async () => {
     setErr("");
-    const e = await downloadModel(model, false);
+    const e = await downloadModel(model, false, visionOnly);
     setErr(e);
     if (!e) onDone();
   };
@@ -134,7 +134,7 @@ function UpdateBanner({ model, size, onDone }: { model: ModelId; size: number; o
     <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.05] p-3 text-[12.5px]">
       <div className="flex items-center gap-2">
         <NeridaMark size={18} busy={prog !== null} />
-        <p className="min-w-0 flex-1 text-neutral-200">Nerida got smarter. Update {MODEL_NAMES[model]} ({mb(size)}).</p>
+        <p className="min-w-0 flex-1 text-neutral-200">{visionOnly ? "Nerida can now read scanned PDFs. Add vision" : `Nerida got smarter. Update ${MODEL_NAMES[model]}`} ({mb(size)}).</p>
         {prog === null ? (
           <button type="button" onClick={() => void run()} className="cursor-pointer rounded-md bg-sky-400/90 px-2.5 py-1 font-medium text-neutral-950 hover:bg-sky-300">Update</button>
         ) : (
@@ -325,7 +325,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     setDraft("");
     setStepsOpen(true);
     const used = allNotes.filter((n) => !excluded.has(n.id));
-    const mark = (label: string) => setSteps((s) => [...s.map((x) => ({ ...x, done: true })), { label, done: false }]);
+    const mark = (label: string) => setSteps((s) => (s[s.length - 1]?.label === label ? s : [...s.map((x) => ({ ...x, done: true })), { label, done: false }]));
     setSteps([]);
     let reply = "";
     // Deep: thinking streams to onThink; kept on the message as a collapsed "Thought for Xs".
@@ -342,8 +342,15 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     try {
       // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
       const blocks = pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
-      if (blocks.length && unclearTarget(text, blocks)) {
-        reply = ASK_WHICH;
+      if (!blocks.length && isEditRequest(text) && !pdf && (!pageId || home)) {
+        reply = "Open the note in the editor and ask me there: I can only change the note that's open next to this chat.";
+        throw null;
+      }
+      // "Mark the incomplete ones as done": tick every open item at once, no model call.
+      const all = blocks.length ? markAllDone(text, blocks) : null;
+      if (all) {
+        const n = proposeEdits(all);
+        reply = n ? `I've marked ${n} item${n > 1 ? "s" : ""} as done, highlighted in blue. They're **pending**: accept or reject them in the note, or with the buttons below.` : "Everything in this note is already marked done.";
         throw null;
       }
       if (blocks.length) {
@@ -377,9 +384,20 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (pdf) {
         const name = pdfNames.get(pdf.id) ?? pdf.name; // the reader fills pdfNames once the PDF loads
         mark(`Reading ${name}`);
-        const c = await pdfContext(pdf.id, name, text);
-        if (!c.parts) mark("No text in this PDF (scanned pages can't be read yet)");
-        else mark(`Found ${c.parts} relevant page${c.parts === 1 ? "" : "s"}`);
+        // Scanned pages: the vision add-on reads each page once (saved), then they're normal text.
+        if (b && status?.vision) await readScanned(pdf.id, (n, total) => mark(`Reading scanned page ${n} of ${total}`));
+        const range = pageRange(text);
+        // "Summarize": every page (or the named range), in parts, then combined, so nothing is skipped.
+        if (/\bsumm?ar/i.test(text)) {
+          if (range) mark(`Pages ${range[0]}–${range[1]}`);
+          reply = await summarizePdf(pdf.id, range?.[0] ?? 1, range?.[1] ?? Infinity, false, (label, t) => (mark(label), setDraft(t)));
+          setSteps((s) => s.map((x) => ({ ...x, done: true })));
+          throw null; // reply is saved below
+        }
+        const c = await pdfContext(pdf.id, name, text, range?.[0], range?.[1]);
+        if (range) mark(`Pages ${range[0]}–${range[1]}`);
+        if (!c.parts) mark(b && !status?.vision ? "This PDF is scanned: add Nerida vision to read it" : "No text in this PDF");
+        else if (c.parts) mark(`Found ${c.parts} relevant page${c.parts === 1 ? "" : "s"}`);
         garbled = c.garbled;
         context = [context, c.text].filter(Boolean).join("\n\n");
       }
@@ -523,7 +541,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           {b === "plus" && <button type="button" disabled={busy} title={online ? "Web search on" : "Search the web"} aria-pressed={online} onClick={() => setOnline((v) => !v)} className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] ${online ? "text-sky-400" : "text-neutral-400 hover:text-neutral-200"}`}><Globe className="size-4" /></button>}
           <div className="flex-1" />
           <ModelMenu disabled={busy} />
-          <EffortButton disabled={busy} />
+          <EffortButton disabled={busy} compact={!home} />
           {/* One button: the arrow morphs into a stop square while Nerida answers. */}
           <button type="button" title={busy ? "Stop" : "Send"} data-busy={busy || undefined} disabled={!busy && (!(input.trim() || cmd) || !ready)}
             onClick={() => (busy ? void engine.stop() : cmd ? runCmd(cmd) : void send(input))}
@@ -591,7 +609,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-3">
       <div className={home ? "mx-auto w-full max-w-3xl" : ""}>
         {b && status && !ready && !intro && <Setup key={b} status={status} model={b} auto={auto} onDone={() => void refresh()} />}
-        {b && ready && status?.models.find((m) => m.id === b)?.outdated && <UpdateBanner model={b} size={status.models.find((m) => m.id === b)!.size} onDone={() => void refresh()} />}
+        {b && ready && status && (() => {
+          const m = status.models.find((x) => x.id === b)!;
+          const vis = status.vision || nerida.get().noVision; // deleted on purpose: no nagging
+          return (m.outdated || !vis) && <UpdateBanner model={b} visionOnly={!m.outdated} size={(m.outdated ? m.size : 0) + (vis ? 0 : 668_227_264)} onDone={() => void refresh()} />;
+        })()}
         {ready && !msgs.length && !busy && home && (
           <div className="oc-stagger mx-auto mt-[12vh] max-w-xl">
             <div className="mb-4 grid place-items-center"><NeridaMark size={64} /></div>
@@ -633,14 +655,16 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         )}
         {msgs.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="oc-msg-in oc-msg-user mt-6 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/15 bg-gradient-to-br from-teal-400/[0.16] to-sky-400/[0.08] px-3.5 py-2 text-[13.5px] leading-relaxed text-neutral-100">{m.content}</div></div>
+            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div></div>
           ) : (
-            <div key={i} className="group oc-msg-in mt-6 flex gap-3">
-              <div className="mt-0.5 shrink-0"><NeridaMark size={20} /></div>
+            <div key={i} className="group oc-msg-in mt-5 flex gap-2.5">
+              <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
               <div className="min-w-0 flex-1 leading-relaxed">
-              {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
-              <Markdown text={m.content} />
-              <div className={`mt-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
+              <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20">
+                {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
+                <Markdown text={m.content} />
+              </div>
+              <div className={`mt-1 ml-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
                 <Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act>
                 {pageId && <Act title="Insert into note" onClick={() => window.dispatchEvent(new CustomEvent("oc-nerida-insert", { detail: m.content }))}><FileInput className="size-3.5" /></Act>}
                 {i === lastAssistant && <Act title="Retry" onClick={retry}><RotateCcw className="size-3.5" /></Act>}

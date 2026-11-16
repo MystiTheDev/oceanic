@@ -289,6 +289,24 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;"
         ))?;
     }
+
+    if version < 10 {
+        // Atlas groups: a concept belongs to at most one group (NULL = none).
+        conn.execute_batch(&format!(
+            "BEGIN;
+             CREATE TABLE IF NOT EXISTS concept_groups (
+               id           TEXT PRIMARY KEY,
+               workspace_id TEXT NOT NULL DEFAULT 'general',
+               name         TEXT NOT NULL DEFAULT '',
+               collapsed    INTEGER NOT NULL DEFAULT 0,
+               created_at   DATETIME NOT NULL DEFAULT ({NOW})
+             );
+             CREATE INDEX IF NOT EXISTS idx_concept_groups_ws ON concept_groups(workspace_id);
+             ALTER TABLE concepts ADD COLUMN group_id TEXT;
+             PRAGMA user_version = 10;
+             COMMIT;"
+        ))?;
+    }
     Ok(())
 }
 
@@ -1054,6 +1072,17 @@ pub struct Concept {
     state: String,
     created_at: String,
     updated_at: String,
+    group_id: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptGroup {
+    id: String,
+    workspace_id: String,
+    name: String,
+    collapsed: bool,
+    created_at: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -1066,7 +1095,7 @@ pub struct ConceptResource {
     created_at: String,
 }
 
-const CONCEPT_COLS: &str = "id, workspace_id, title, description, tags, state, created_at, updated_at";
+const CONCEPT_COLS: &str = "id, workspace_id, title, description, tags, state, created_at, updated_at, group_id";
 
 fn concept_row(r: &Row) -> rusqlite::Result<Concept> {
     Ok(Concept {
@@ -1078,6 +1107,7 @@ fn concept_row(r: &Row) -> rusqlite::Result<Concept> {
         state: r.get(5)?,
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
+        group_id: r.get(8)?,
     })
 }
 
@@ -1210,6 +1240,110 @@ pub(crate) fn previews(conn: &Connection, ids: &[String], max_chars: Option<usiz
         }
     }
     Ok(out)
+}
+
+const GROUP_COLS: &str = "id, workspace_id, name, collapsed, created_at";
+
+fn group_row(r: &Row) -> rusqlite::Result<ConceptGroup> {
+    Ok(ConceptGroup {
+        id: r.get(0)?,
+        workspace_id: r.get(1)?,
+        name: r.get(2)?,
+        collapsed: r.get::<_, i64>(3)? != 0,
+        created_at: r.get(4)?,
+    })
+}
+
+fn get_group(conn: &Connection, id: &str) -> CmdResult<ConceptGroup> {
+    conn.query_row(&format!("SELECT {GROUP_COLS} FROM concept_groups WHERE id = ?1"), [id], group_row)
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| format!("No group with id {id}"))
+}
+
+pub(crate) fn groups_in(conn: &Connection, workspace_id: &str) -> CmdResult<Vec<ConceptGroup>> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT {GROUP_COLS} FROM concept_groups WHERE workspace_id = ?1 ORDER BY created_at"))
+        .map_err(err)?;
+    let rows = stmt.query_map([workspace_id], group_row).map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+pub(crate) fn insert_group(conn: &Connection, workspace_id: &str, name: &str) -> CmdResult<ConceptGroup> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("A group needs a name".into());
+    }
+    let id = format!("group:{}", new_id());
+    conn.execute(
+        "INSERT INTO concept_groups (id, workspace_id, name) VALUES (?1, ?2, ?3)",
+        params![id, workspace_id, name],
+    )
+    .map_err(err)?;
+    get_group(conn, &id)
+}
+
+pub(crate) fn edit_group(conn: &Connection, id: &str, name: &str, collapsed: bool) -> CmdResult<ConceptGroup> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("A group needs a name".into());
+    }
+    let n = conn
+        .execute(
+            "UPDATE concept_groups SET name = ?2, collapsed = ?3 WHERE id = ?1",
+            params![id, name, collapsed as i64],
+        )
+        .map_err(err)?;
+    if n == 0 {
+        return Err(format!("No group with id {id}"));
+    }
+    get_group(conn, id)
+}
+
+/// Deletes the group only; its concepts stay, ungrouped.
+pub(crate) fn remove_group(conn: &mut Connection, id: &str) -> CmdResult<()> {
+    let tx = conn.transaction().map_err(err)?;
+    tx.execute("UPDATE concepts SET group_id = NULL WHERE group_id = ?1", [id]).map_err(err)?;
+    tx.execute("DELETE FROM concept_groups WHERE id = ?1", [id]).map_err(err)?;
+    tx.commit().map_err(err)
+}
+
+/// Puts a concept in a group of its own workspace, or takes it out (`None`).
+pub(crate) fn set_group(conn: &Connection, concept_id: &str, group_id: Option<&str>) -> CmdResult<Concept> {
+    let c = get_concept(conn, concept_id)?;
+    if let Some(g) = group_id {
+        if get_group(conn, g)?.workspace_id != c.workspace_id {
+            return Err("Group is in another workspace".into());
+        }
+    }
+    conn.execute("UPDATE concepts SET group_id = ?2 WHERE id = ?1", params![concept_id, group_id])
+        .map_err(err)?;
+    get_concept(conn, concept_id)
+}
+
+#[tauri::command]
+pub fn list_concept_groups(db: State<Db>, workspace_id: String) -> CmdResult<Vec<ConceptGroup>> {
+    groups_in(&db.0.lock().unwrap(), &workspace_id)
+}
+
+#[tauri::command]
+pub fn create_concept_group(db: State<Db>, workspace_id: String, name: String) -> CmdResult<ConceptGroup> {
+    insert_group(&db.0.lock().unwrap(), &workspace_id, &name)
+}
+
+#[tauri::command]
+pub fn update_concept_group(db: State<Db>, id: String, name: String, collapsed: bool) -> CmdResult<ConceptGroup> {
+    edit_group(&db.0.lock().unwrap(), &id, &name, collapsed)
+}
+
+#[tauri::command]
+pub fn delete_concept_group(db: State<Db>, id: String) -> CmdResult<()> {
+    remove_group(&mut db.0.lock().unwrap(), &id)
+}
+
+#[tauri::command]
+pub fn set_concept_group(db: State<Db>, id: String, group_id: Option<String>) -> CmdResult<Concept> {
+    set_group(&db.0.lock().unwrap(), &id, group_id.as_deref())
 }
 
 /// Read-only note text for Atlas page cards (zoomed in) and Peek (`max_chars: None`).
@@ -1925,6 +2059,23 @@ mod tests {
         migrate(&conn).unwrap();
         seed(&conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn atlas_groups() {
+        let mut c = db();
+        let a = insert_concept(&c, "general", "Heat").unwrap();
+        let g = insert_group(&c, "general", "Thermo").unwrap();
+        assert!(insert_group(&c, "general", " ").is_err());
+        assert_eq!(set_group(&c, &a.id, Some(&g.id)).unwrap().group_id.as_deref(), Some(g.id.as_str()));
+        // A group from another workspace is refused.
+        let other = insert_group(&c, "school", "Other").unwrap();
+        assert!(set_group(&c, &a.id, Some(&other.id)).is_err());
+        assert!(edit_group(&c, &g.id, "Thermodynamics", true).unwrap().collapsed);
+        // Deleting the group keeps its concepts, ungrouped.
+        remove_group(&mut c, &g.id).unwrap();
+        assert_eq!(get_concept(&c, &a.id).unwrap().group_id, None);
+        assert!(groups_in(&c, "general").unwrap().is_empty());
     }
 
     #[test]

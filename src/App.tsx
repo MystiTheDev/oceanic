@@ -38,6 +38,8 @@ import { engine, nerida, useNerida } from "./lib/nerida";
 import { PageEditor } from "./components/PageEditor";
 import { Toast } from "./components/Toast";
 import { SpatialCanvas } from "./components/SpatialCanvas";
+import { OPEN_ATLAS } from "./components/PromoteDialog";
+import { OPEN_CONCEPT, setPendingConcept } from "./data/atlas";
 import { pageDirectory } from "./editor/pageDirectory";
 import { extractLinks } from "./lib/links";
 import { getSeedBlocks, isInTrash, subtreeIds, type PageMeta } from "./data/workspace";
@@ -216,6 +218,8 @@ export default function App() {
   const [view, setView] = useState<AppView>("document");
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState("general");
+  /** Page opened from Atlas: shows a "Back to Atlas" chip while it stays open. */
+  const [fromAtlas, setFromAtlas] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [askName, setAskName] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean | string>(false);
@@ -409,6 +413,10 @@ export default function App() {
     if (activeTabId !== HOME_TAB) setLibraryOpen(false);
   }, [activeTabId]);
   const activePageId = activeTab ? (activeTab.id === HOME_TAB && libraryOpen ? LIBRARY : currentPage(activeTab)) : null;
+  // Leaving the page opened from Atlas drops its "Back to Atlas" chip.
+  useEffect(() => {
+    if (fromAtlas && view === "document" && activePageId !== fromAtlas) setFromAtlas(null);
+  }, [activePageId, view, fromAtlas]);
   /** Each app (Oceanic, Oceanic Mindmap) shows only its own tabs. */
   const activeApp = activeTab ? appOf(activeTab) : "notes";
   const visibleTabs = tabs.filter((t) => appOf(t) === activeApp);
@@ -1096,8 +1104,25 @@ export default function App() {
     else if (activeApp === "sketch") openPage(sketchEntry(newSketch(1280, 720)));
     else void createPage(null);
   };
-  const keys = useRef({ importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId, activeApp, startEmbed, newInApp });
-  keys.current = { importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId, activeApp, startEmbed, newInApp };
+  const keys = useRef({ activeWorkspaceId, importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId, activeApp, startEmbed, newInApp });
+  keys.current = { activeWorkspaceId, importNotes, openPage, createPage, newHomeTab, closeTab, step, tabs: visibleTabs, activeTabId, setActiveTabId, openMindmap, closeDeletedMaps, navigate, activePageId, activeApp, startEmbed, newInApp };
+  // Search picked a concept: its workspace, Atlas view; the canvas centres it.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { id, workspaceId } = (e as CustomEvent<{ id: string; workspaceId: string }>).detail;
+      setPendingConcept(id);
+      if (workspaceId !== keys.current.activeWorkspaceId) selectWorkspace(workspaceId);
+      setView("atlas");
+    };
+    window.addEventListener(OPEN_CONCEPT, on);
+    return () => window.removeEventListener(OPEN_CONCEPT, on);
+  }, []);
+  // "Send to Atlas" toast → switch to the Atlas view.
+  useEffect(() => {
+    const on = () => setView("atlas");
+    window.addEventListener(OPEN_ATLAS, on);
+    return () => window.removeEventListener(OPEN_ATLAS, on);
+  }, []);
   // Flashcard "Open in note": open the page; PageEditor scrolls to the block.
   useEffect(() => {
     const on = (e: Event) => keys.current.openPage((e as CustomEvent<{ pageId: string }>).detail.pageId);
@@ -1513,15 +1538,27 @@ export default function App() {
 
         {/* ---- Main area: page header + document canvas ---- */}
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Opened from Atlas (note, mind map, doc or sketch): one click back to the same spot. */}
+          {view === "document" && fromAtlas && fromAtlas === activePageId && (
+            <button
+              type="button"
+              onClick={() => (setFromAtlas(null), setView("atlas"))}
+              className="oc-fade-in absolute left-1/2 top-12 z-40 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-white/[0.08] bg-neutral-800/95 px-3 py-1 text-[12px] text-neutral-200 shadow-lg shadow-black/40 backdrop-blur hover:bg-neutral-700"
+            >
+              <ArrowLeft className="size-3.5" /> Back to Atlas
+            </button>
+          )}
           {!loaded ? (
             <div className="h-full" />
           ) : view === "atlas" ? (
             <SpatialCanvas
+              key={activeWorkspaceId}
               pages={livePages}
               activePageId={activePageId}
               version={linksVersion}
               onOpenPage={(id) => {
                 setView("document");
+                setFromAtlas(id);
                 openPage(id);
               }}
               onOpenInNewTab={(id) => {
@@ -1597,6 +1634,7 @@ export default function App() {
               onOpenPage={openPage}
               onTitle={(id, title) => setMindmapTitles((prev) => (prev[id] === title ? prev : { ...prev, [id]: title }))}
               onHome={() => setActiveTabId(MM_HOME_TAB)}
+              workspaceId={activeWorkspaceId}
             />
           ) : activePageId?.startsWith("pdf:") ? (
             <div className="flex h-full min-h-0">

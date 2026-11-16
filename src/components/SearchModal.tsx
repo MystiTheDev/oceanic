@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownUp, Check, ChevronDown, Clock, CornerDownLeft, Search, X } from "lucide-react";
-import { api, type PageStatus, type SearchHit, type WorkspaceRecord } from "../data/api";
+import { api, type Concept, type PageStatus, type SearchHit, type WorkspaceRecord } from "../data/api";
+import { isConceptId, OPEN_CONCEPT } from "../data/atlas";
 import { getSeedBlocks, type PageMeta } from "../data/workspace";
 import { STATUSES } from "../lib/colors";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
@@ -81,6 +82,24 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
   useEffect(() => {
     api.getSettings().then((s) => setRecentSearches(JSON.parse(s[RECENT_KEY] ?? "[]"))).catch(() => {});
   }, []);
+  // Atlas concepts from every workspace, matched client-side on title, description and tags.
+  const [concepts, setConcepts] = useState<Concept[]>([]);
+  useEffect(() => {
+    Promise.all(workspaces.map((w) => api.listConcepts(w.id)))
+      .then((all) => setConcepts(all.flat()))
+      .catch(() => {});
+  }, [workspaces]);
+  const conceptHits = useMemo(() => {
+    if (!q) return [];
+    const ql = q.toLowerCase();
+    return concepts
+      .filter((c) => (!wsFilter || c.workspaceId === wsFilter) && [c.title, c.description, c.tags.join(" ")].some((t) => t?.toLowerCase().includes(ql)))
+      .slice(0, 5)
+      .map((c) => ({
+        page: { id: c.id, icon: "💡", title: c.title, pinned: false, parentId: null, workspaceId: c.workspaceId } as PageMeta,
+        hit: c.description ? ({ pageId: c.id, snippet: c.description, rank: 0 } as SearchHit) : undefined,
+      }));
+  }, [q, concepts, wsFilter]);
 
   // Full-text search, debounced a touch so typing stays smooth.
   useEffect(() => {
@@ -139,7 +158,8 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
 
   // Empty query: group by when the page was last edited, like Notion.
   const groups = useMemo(() => {
-    if (q || sort !== "best") return [{ title: q ? "Results" : SORTS[sort], items: results }];
+    if (q || sort !== "best")
+      return [...(conceptHits.length ? [{ title: "Concepts", items: conceptHits }] : []), { title: q ? "Results" : SORTS[sort], items: results }].filter((g) => g.items.length);
     const now = Date.now();
     const age = (p: PageMeta) => now - (Date.parse(p.updatedAt ?? "") || 0);
     const buckets: [string, (a: number) => boolean][] = [
@@ -149,7 +169,7 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
       ["Older", (a) => a >= 30 * DAY],
     ];
     return buckets.map(([title, f]) => ({ title, items: results.filter((r) => f(age(r.page))) })).filter((g) => g.items.length);
-  }, [results, q, sort]);
+  }, [results, q, sort, conceptHits]);
   const flat = groups.flatMap((g) => g.items);
   const selected = flat[cursor]?.page;
 
@@ -162,7 +182,9 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
   const open = (id: string, newTab = false) => {
     rememberSearch();
     const pdf = pdfHit(id);
-    if (pdf) openPdfReader(pdf);
+    const concept = isConceptId(id) && concepts.find((c) => c.id === id);
+    if (concept) window.dispatchEvent(new CustomEvent(OPEN_CONCEPT, { detail: { id, workspaceId: concept.workspaceId } }));
+    else if (pdf) openPdfReader(pdf);
     else if (newTab) onOpenInNewTab(id);
     else onOpenPage(id);
     onClose();
@@ -399,6 +421,8 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
                   <Highlight text={flat[cursor]?.hit?.snippet ?? ""} />
                 </p>
               </div>
+            ) : selected && isConceptId(selected.id) ? (
+              <ConceptPreview concept={concepts.find((c) => c.id === selected.id)} pages={pages} />
             ) : selected ? (
               <Preview key={selected.id} page={selected} crumb={breadcrumb(selected)} query={q} />
             ) : (
@@ -417,6 +441,54 @@ export function SearchModal({ pages, workspaces, onOpenPage, onOpenInNewTab, onC
       </div>
     </div>,
     document.body,
+  );
+}
+
+const STATE_LABEL: Record<string, string> = { unexplored: "Unexplored", learning: "Learning", understood: "Understood", mastered: "Mastered", review: "Needs review" };
+
+/** Right pane for a concept: description, learning state, tags and linked resources. */
+function ConceptPreview({ concept, pages }: { concept?: Concept; pages: PageMeta[] }) {
+  const [res, setRes] = useState<string[]>([]);
+  useEffect(() => {
+    if (!concept) return;
+    api
+      .listConceptResources(concept.workspaceId)
+      .then((rs) =>
+        setRes(
+          rs
+            .filter((r) => r.conceptId === concept.id)
+            .map((r) => {
+              const pageId = r.entryId.startsWith("heading:") ? r.entryId.split(":")[1] : r.entryId;
+              const p = pages.find((x) => x.id === pageId);
+              if (p) return `${p.icon} ${p.title || "Untitled"}${pageId !== r.entryId ? " › section" : ""}`;
+              return r.entryId.startsWith("mindmap:") ? "🧠 Mind map" : r.entryId.startsWith("doc:") ? "📄 Document" : r.entryId.startsWith("sketch:") ? "🎨 Sketch" : "Resource";
+            }),
+        ),
+      )
+      .catch(() => setRes([]));
+  }, [concept, pages]);
+  if (!concept) return null;
+  return (
+    <div className="p-6 text-[13px]">
+      <p className="text-[15px] font-semibold text-neutral-100">💡 {concept.title}</p>
+      <p className="mt-1 text-[12px] text-neutral-500">Atlas concept · {STATE_LABEL[concept.state] ?? concept.state}</p>
+      {concept.description && <p className="mt-3 leading-5 text-neutral-300">{concept.description}</p>}
+      {concept.tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {concept.tags.map((t) => (
+            <TagChip key={t} tag={t} />
+          ))}
+        </div>
+      )}
+      {res.length > 0 && (
+        <>
+          <p className="mb-1 mt-4 text-[11px] font-medium text-neutral-500">Linked</p>
+          {res.map((r, i) => (
+            <p key={i} className="truncate text-neutral-300">{r}</p>
+          ))}
+        </>
+      )}
+    </div>
   );
 }
 

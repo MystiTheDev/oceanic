@@ -394,6 +394,12 @@ fn handoff_existing_app(app: &AppHandle) {
         .show();
 }
 
+/// Desktop notification (Nerida finished while the app was in the background).
+#[tauri::command]
+fn notify(app: AppHandle, title: String, body: String) {
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
 #[derive(serde::Deserialize)]
 struct RecentItem {
     id: String,
@@ -669,6 +675,11 @@ pub fn run() {
             db::list_concept_resources,
             db::attach_resource,
             db::detach_resource,
+            db::list_concept_groups,
+            db::create_concept_group,
+            db::update_concept_group,
+            db::delete_concept_group,
+            db::set_concept_group,
             db::get_tabs,
             db::save_tabs,
             db::get_workspaces,
@@ -716,6 +727,7 @@ pub fn run() {
             db::delete_pdf_annotation,
             db::batch_pdf_annotations,
             db::save_pdf_text,
+            notify,
             db::get_pdf_text,
         ])
         .build(tauri::generate_context!())

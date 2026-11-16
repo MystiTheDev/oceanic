@@ -54,8 +54,10 @@ import {
   Sparkles,
   Trash2,
   Unlink,
+  Lightbulb,
 } from "lucide-react";
 import { api } from "../data/api";
+import { PromoteDialog, type PromoteItem } from "../components/PromoteDialog";
 import type { PageMeta } from "../data/workspace";
 import { COLOR_IDS, COLORS, colorOf } from "../lib/colors";
 import { pickSaveTarget } from "../lib/export";
@@ -64,6 +66,7 @@ import { openContextMenu, type MenuItem } from "../components/ContextMenu";
 import { WindowControls } from "../components/TitleBar";
 import {
   ROOT,
+  childrenOf,
   childSpot,
   fromRecord,
   layout,
@@ -84,6 +87,8 @@ type Props = {
   onTitle: (id: string, title: string) => void;
   /** Back to Mindmap Home (the map stays open in the background). */
   onHome: () => void;
+  /** Active workspace: "Send to Atlas" puts concepts here. */
+  workspaceId: string;
 };
 
 type TopicData = MNode & {
@@ -103,6 +108,8 @@ type Actions = {
   cut: (id: string) => void;
   /** Arm "connect": the next topic clicked becomes this topic's parent. */
   startConnect: (id: string) => void;
+  /** Open the "Send to Atlas" checklist for this topic's branch. */
+  sendToAtlas: (id: string) => void;
 };
 
 /* ------------------------------------------------------------------ node */
@@ -163,6 +170,9 @@ const TopicNode = memo(function TopicNode({ data, selected }: NodeProps<Node<Top
           <button type="button" title="Link to a page" className={`oc-mm-tool ${data.linkedPageId ? "is-on" : ""}`} onClick={(e) => data.actions.linkMenu(e, data.id)}>
             <Link2 size={14} />
           </button>
+          <button type="button" title="Send to Atlas…" className="oc-mm-tool" onClick={() => data.actions.sendToAtlas(data.id)}>
+            <Lightbulb size={14} />
+          </button>
           <button type="button" title="Add child (Tab)" className="oc-mm-tool" onClick={() => data.actions.addChild(data.id)}>
             <Plus size={14} />
           </button>
@@ -218,7 +228,7 @@ const TopicNode = memo(function TopicNode({ data, selected }: NodeProps<Node<Top
 const nodeTypes = { topic: TopicNode };
 
 /* ---------------------------------------------------------------- editor */
-function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
+function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: Props) {
   const rf = useReactFlow();
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
@@ -229,6 +239,8 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
   const [searching, setSearching] = useState(false);
   /** Topic Nerida is growing branches under. */
   const [mapFor, setMapFor] = useState<string | null>(null);
+  /** Topic whose branch is being sent to Atlas. */
+  const [atlasFor, setAtlasFor] = useState<string | null>(null);
   /** Topic waiting for its new parent to be clicked. */
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const flash = (text: string) => {
@@ -392,6 +404,7 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
         ];
         openContextMenu({ clientX: r.left, clientY: r.bottom + 6, preventDefault() {}, stopPropagation() {} } as never, items);
       },
+      sendToAtlas: (id) => setAtlasFor(id),
     }),
     [pages, mindmapId],
   );
@@ -877,6 +890,14 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome }: Props) {
       </div>
 
       <ZoomPill onFit={fit} />
+      {atlasFor && (
+        <PromoteDialog
+          workspaceId={workspaceId}
+          items={branchItems(nodes, atlasFor)}
+          preselect={[atlasFor]}
+          onClose={() => setAtlasFor(null)}
+        />
+      )}
       {mapFor && (
         <NeridaMapDialog
           topic={nodes.find((n) => n.id === mapFor)?.label ?? ""}
@@ -993,6 +1014,18 @@ function TopicSearch({ nodes, onPick, onClose }: { nodes: MNode[]; onPick: (n: M
       ))}
     </div>
   );
+}
+
+/** A topic and its branch, parents before children, as "Send to Atlas" items. */
+function branchItems(nodes: MNode[], id: string): PromoteItem[] {
+  const out: PromoteItem[] = [];
+  const walk = (n: MNode, depth: number) => {
+    out.push({ key: n.id, title: n.label, parentKey: depth ? n.parentId : null, depth, entryIds: n.linkedPageId ? [n.linkedPageId] : [] });
+    for (const k of childrenOf(nodes, n.id)) walk(k, depth + 1);
+  };
+  const top = nodes.find((n) => n.id === id);
+  if (top) walk(top, 0);
+  return out;
 }
 
 export function MindmapView(props: Props) {

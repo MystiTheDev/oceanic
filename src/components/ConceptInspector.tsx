@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link2Off, Plus, Route, X } from "lucide-react";
-import { api, CONCEPT_STATES, type CanvasEdge, type Concept, type MindmapRecord } from "../data/api";
+import { api, CONCEPT_STATES, type CanvasEdge, type Concept, type ConceptGroup, type MindmapRecord } from "../data/api";
+import { Select } from "./SettingsModal";
 import type { PageMeta } from "../data/workspace";
-import { REL_LABELS } from "../data/atlas";
+import { REL_COLORS, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
 import { docTitle, useDocs } from "../docs/store";
 import { sketchTitle, useSketch } from "../sketch/store";
 
 const STATE_LABELS: Record<Concept["state"], string> = {
   unexplored: "Unexplored", learning: "Learning", understood: "Understood", mastered: "Mastered", review: "Needs review",
+};
+/** Short labels for the segmented control; the full label is the tooltip. */
+const STATE_SHORT: Record<Concept["state"], string> = {
+  unexplored: "New", learning: "Learning", understood: "Got it", mastered: "Mastered", review: "Review",
+};
+/** Learning-state colors, shared with the concept cards. */
+export const STATE_COLORS: Record<Concept["state"], string> = {
+  unexplored: "#737373", learning: "#f59e0b", understood: "#38bdf8", mastered: "#22c55e", review: "#f43f5e",
 };
 
 type Resource = { entryId: string; title: string; missing: boolean };
@@ -29,8 +38,11 @@ export function ConceptInspector({
   onOpen,
   onSelect,
   onClose,
+  onRemoveEdge,
   path,
   onTogglePath,
+  groups,
+  onGroup,
 }: {
   concept: Concept;
   /** Drawn connections touching this concept. */
@@ -45,9 +57,13 @@ export function ConceptInspector({
   onOpen: (entryId: string) => void;
   onSelect: (nodeId: string) => void;
   onClose: () => void;
+  onRemoveEdge: (edge: CanvasEdge) => void;
   /** Prerequisites in learning order (from "Depends on" links), when the pathway is shown. */
   path: { order: string[]; cycle: string[] } | null;
   onTogglePath: () => void;
+  groups: ConceptGroup[];
+  /** Group id, `null` for none, or `"new"` for a new group. */
+  onGroup: (groupId: string | null) => void;
 }) {
   const docs = useDocs().files;
   const sketches = useSketch().files;
@@ -71,6 +87,11 @@ export function ConceptInspector({
     // Docs and sketches are files outside the listed folder are still openable; pages/mind maps are gone.
     if (entryId.startsWith("doc:")) return { entryId, title: `📄 ${docTitle(entryId.slice(4))}`, missing: false };
     if (entryId.startsWith("sketch:")) return { entryId, title: `🎨 ${sketchTitle(entryId.slice(7))}`, missing: false };
+    // `heading:<pageId>:<blockId>`: a section of a note.
+    if (entryId.startsWith("heading:")) {
+      const p = pages.find((x) => x.id === entryId.split(":")[1]);
+      if (p) return { entryId, title: `📍 ${p.title || "Untitled"} › section`, missing: false };
+    }
     return { entryId, title: "Deleted resource", missing: true };
   };
 
@@ -79,17 +100,25 @@ export function ConceptInspector({
 
   const field =
     "w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-1.5 text-[13px] text-neutral-100 outline-none transition-colors duration-100 placeholder:text-neutral-500 focus:border-sky-500/60";
-  const heading = "px-0.5 pb-1.5 pt-4 text-[11px] font-medium text-neutral-500";
+  const heading = "px-0.5 pb-2 pt-5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500";
+  const [tagDraft, setTagDraft] = useState("");
+  const addTags = (raw: string) => {
+    const next = [...concept.tags];
+    for (const t of raw.split(",").map((x) => x.trim()).filter(Boolean)) if (!next.includes(t)) next.push(t);
+    if (next.length !== concept.tags.length) save({ tags: next });
+    setTagDraft("");
+  };
 
   return (
     <aside
+      data-atlas-overlay
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
-      className="oc-fade-in absolute bottom-16 right-4 top-3 z-20 flex w-[300px] cursor-default flex-col overflow-y-auto rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-3 shadow-2xl shadow-black/60"
+      className="oc-fade-in absolute bottom-16 right-3 top-3 z-20 flex w-[min(300px,calc(100%-1.5rem))] cursor-default flex-col overflow-y-auto [&>*]:shrink-0 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-4 shadow-xl shadow-black/40"
     >
       <div className="flex items-center justify-between pb-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-violet-300/80">Concept</span>
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-sky-400">Concept</span>
         <button type="button" title="Close" onClick={onClose} className="cursor-pointer rounded p-0.5 text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-200">
           <X className="size-4" />
         </button>
@@ -112,33 +141,61 @@ export function ConceptInspector({
       />
 
       <p className={heading}>Learning state</p>
-      <div className="flex flex-wrap gap-1">
+      <div role="radiogroup" aria-label="Learning state" className="grid grid-cols-5 gap-0.5 rounded-lg bg-white/[0.04] p-0.5">
         {CONCEPT_STATES.map((s) => (
           <button
             key={s}
             type="button"
+            role="radio"
+            aria-checked={concept.state === s}
+            data-tip={STATE_LABELS[s]}
             onClick={() => save({ state: s })}
-            className={`h-7 cursor-pointer rounded-md border px-2 text-[11px] transition-colors duration-100 ${
-              concept.state === s
-                ? "border-sky-500 bg-sky-500/10 text-neutral-100"
-                : "border-white/[0.08] text-neutral-400 hover:bg-white/[0.05] hover:text-neutral-200"
+            className={`flex h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-md text-[10.5px] transition-colors duration-100 ${
+              concept.state === s ? "bg-white/[0.1] font-medium text-neutral-100" : "text-neutral-500 hover:bg-white/[0.05] hover:text-neutral-200"
             }`}
           >
-            {STATE_LABELS[s]}
+            <span className="size-2 rounded-full" style={{ backgroundColor: STATE_COLORS[s] }} />
+            {STATE_SHORT[s]}
           </button>
         ))}
       </div>
 
+      <div className="mt-4 flex items-center justify-between">
+        <p className="px-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">Group</p>
+        <Select<string>
+          value={concept.groupId ?? "none"}
+          onChange={(v) => onGroup(v === "none" ? null : v)}
+          options={[["none", "No group"], ...groups.map((g): [string, string] => [g.id, g.name]), ["new", "New group…"]]}
+        />
+      </div>
+
       <p className={heading}>Tags</p>
+      {concept.tags.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {concept.tags.map((t) => (
+            <span key={t} className="flex h-6 items-center gap-1 rounded-md bg-white/[0.06] pl-2 pr-1 text-[11.5px] text-neutral-200">
+              {t}
+              <button
+                type="button"
+                aria-label={`Remove tag ${t}`}
+                onClick={() => save({ tags: concept.tags.filter((x) => x !== t) })}
+                className="cursor-pointer rounded text-neutral-500 hover:text-neutral-100"
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <input
-        key={`g-${concept.id}-${concept.tags.join()}`}
-        defaultValue={concept.tags.join(", ")}
-        placeholder="e.g. physics, chapter 3"
-        onBlur={(e) => {
-          const tags = e.target.value.split(",").map((t) => t.trim()).filter(Boolean);
-          if (tags.join(",") !== concept.tags.join(",")) save({ tags });
+        value={tagDraft}
+        placeholder={concept.tags.length ? "Add a tag" : "e.g. physics, chapter 3"}
+        onChange={(e) => (e.target.value.endsWith(",") ? addTags(e.target.value) : setTagDraft(e.target.value))}
+        onBlur={() => addTags(tagDraft)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") addTags(tagDraft);
+          if (e.key === "Backspace" && !tagDraft && concept.tags.length) save({ tags: concept.tags.slice(0, -1) });
         }}
-        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
         className={field}
       />
 
@@ -148,23 +205,39 @@ export function ConceptInspector({
         const out = e.sourceId === concept.id;
         const other = out ? e.targetId : e.sourceId;
         return (
-          <button
-            key={`${e.sourceId}>${e.targetId}`}
-            type="button"
-            onClick={() => onSelect(other)}
-            title={e.label || undefined}
-            className="flex w-full cursor-pointer items-baseline gap-1.5 rounded-md px-1.5 py-1 text-left text-[12px] hover:bg-white/[0.05]"
-          >
-            <span className="shrink-0 text-neutral-500">{out ? REL_LABELS[e.relType] : `← ${REL_LABELS[e.relType]}`}</span>
-            <span className="truncate text-neutral-200">{titleOf(other)}</span>
-          </button>
+          <div key={`${e.sourceId}>${e.targetId}`} className="group flex items-center rounded-md hover:bg-white/[0.05]">
+            <button
+              type="button"
+              onClick={() => onSelect(other)}
+              title={e.label || undefined}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-1.5 py-1.5 text-left text-[12.5px]"
+            >
+              <span
+                className="shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium"
+                style={{ color: REL_COLORS[e.relType], backgroundColor: `color-mix(in srgb, ${REL_COLORS[e.relType]} 14%, transparent)` }}
+              >
+                {REL_LABELS[e.relType]}
+              </span>
+              <span className="shrink-0 text-neutral-500">{SYMMETRIC_TYPES.has(e.relType) ? "↔" : out ? "→" : "←"}</span>
+              <span className="truncate text-neutral-200">{titleOf(other)}</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Remove relationship"
+              data-tip="Remove relationship"
+              onClick={() => onRemoveEdge(e)}
+              className="mr-1 cursor-pointer rounded p-0.5 text-neutral-500 opacity-0 hover:text-red-400 focus:opacity-100 group-hover:opacity-100"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
         );
       })}
 
       <button
         type="button"
         onClick={onTogglePath}
-        className={`mt-4 flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border text-[12px] font-medium transition-colors duration-150 ${
+        className={`mt-3 flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border text-[12px] font-medium transition-colors duration-150 ${
           path ? "border-violet-400/60 bg-violet-500/15 text-violet-100" : "border-white/[0.08] text-neutral-300 hover:bg-white/[0.05]"
         }`}
       >

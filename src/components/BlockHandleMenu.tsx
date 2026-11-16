@@ -9,7 +9,8 @@ import {
   useComponentsContext,
   useExtensionState,
 } from "@blocknote/react";
-import { Copy, Palette, Trash2 } from "lucide-react";
+import { Copy, Lightbulb, Palette, Trash2 } from "lucide-react";
+import { HEADINGS_TO_ATLAS } from "./PromoteDialog";
 
 /** Menu label with a leading icon. */
 function Label({ icon, children }: { icon: ReactNode; children: ReactNode }) {
@@ -44,11 +45,28 @@ function DuplicateBlockItem() {
   );
 }
 
+/** Headings only: open "Send to Atlas" with this heading ticked. */
+function AtlasItem() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor();
+  const block = useExtensionState(SideMenuExtension, { editor, selector: (s) => s?.block });
+  if (block?.type !== "heading") return null;
+  return (
+    <Components.Generic.Menu.Item
+      className="bn-menu-item"
+      onClick={() => window.dispatchEvent(new CustomEvent(HEADINGS_TO_ATLAS, { detail: { blockId: block.id } }))}
+    >
+      <Label icon={<Lightbulb className="size-4" />}>Make Atlas concept</Label>
+    </Components.Generic.Menu.Item>
+  );
+}
+
 /** Notion's block (⋮⋮) menu: Duplicate, Delete, then Color — each with an icon. */
 export function BlockHandleMenu() {
   return (
     <DragHandleMenu>
       <DuplicateBlockItem />
+      <AtlasItem />
       <RemoveBlockItem>
         <Label icon={<Trash2 className="size-4" />}>
           Delete

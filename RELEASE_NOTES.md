@@ -1,3 +1,21 @@
+# 🌊 Oceanic v2.0.3: Atlas groups and scanned PDFs
+
+- 🗺️ Send to Atlas: turn a note's headings or a mind map's topics into Atlas concepts, connected the way you choose.
+- 📦 Group concepts in Atlas. Collapse a group into one card, or rename and delete it.
+- 🏷️ Give concepts tags and a learning state: New, Learning, Got it, Mastered or Review.
+- 📍 Attach a single section of a note to a concept, not just the whole page.
+- 🧭 A getting-started checklist for Atlas. Bring it back in Settings → Atlas tutorial.
+- 💾 Atlas remembers your view for each workspace, even after a restart.
+- 🔎 Search now finds Atlas concepts by title, description and tags.
+- 👁️ Nerida can read scanned PDFs with the optional vision add-on in Settings → Nerida AI.
+- 📄 "Summarize" now reads every page of a PDF, so nothing is skipped.
+- ✍️ Step through Nerida's suggested edits one at a time, and accept or reject each from a small bar.
+- ✅ Ask Nerida to mark open to-dos as done, and they're ticked in one go.
+- 💬 Choose Nerida's reply style, and get a desktop notification when an answer finishes in the background.
+- 🧩 Nerida's optional add-ons now show their size, with Download and Delete buttons.
+- ⚠️ A clear message, with a fix, when your graphics card runs out of memory.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.2: Faster, smarter Nerida
 
 - 🧠 Pick how hard Nerida thinks: Fast, Balanced or Deep. Deep shows its reasoning in a collapsible "Thought for Xs" line.
