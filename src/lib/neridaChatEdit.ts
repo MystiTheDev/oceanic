@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from "react";
+import { blockText } from "./srs";
 
 /* Nerida edits the open note from chat. The model answers with numbered-block changes; the
  * note shows them highlighted until the user accepts or rejects them. */
 
 /** Typical "change my note" requests. */
 export const isEditRequest = (t: string) =>
-  /\b(edit|rewrite|reword|fix|improve|add|insert|append|expand|shorten|update|change|correct)\b[^.?!]*\b(note|paragraph|section|heading|this|it)\b/i.test(t) ||
+  /\b(edit|rewrite|reword|rephrase|fix|improve|add|insert|append|expand|shorten|update|change|correct|simplify|simplfy|condense|tidy|clean|polish|dumb|fill|delete|remove)\b[^.?!]*\b(note|notes|paragraph|section|heading|table|rows?|columns?|cells?|text|content|page|lines?|everything|this|it|them)\b/i.test(t) ||
+  /\bmake\b[^.?!]*\b(this|it|the note|my note|them|everything)\b[^.?!]*\b(simpler|easier|shorter|longer|clearer|better|neater|less|more)\b/i.test(t) ||
   /\b(mark|check|tick|cross)\b[^.?!]*\b(done|completed?|finished|off)\b/i.test(t);
 
 export type NoteBlock = { id: string; text: string; type: string };
@@ -32,7 +34,44 @@ export const editPrompt = (blocks: NoteBlock[], ask: string) =>
   `My note, one numbered block per line:\n<notes>\n${blocks.map((b, i) => `[${i + 1}] ${b.text}`).join("\n")}\n</notes>\n\n` +
   `Request: ${ask}\n\nReply only with changes, each in this exact format and nothing else:\n` +
   `REPLACE <number>: <new text for that block>\nADD AFTER <number>: <new block text>\n(use ADD AFTER 0 to add at the top)\n` +
+  `Do the whole request. If it doesn't name a part (e.g. "simplify it"), change every block that needs it. Never say you can't edit.\n` +
+  `A table is one line: TABLE: cell | cell // next row cell | cell. To change a table (cells, rows or columns), REPLACE its whole line in that same format.\n` +
   `Checklist lines end in [done] or [not done]; to tick or untick one, REPLACE it with the same text ending in [done] or [not done].`;
+
+/* Tables travel to the model as one line: "TABLE: a | b // c | d" (rows split by " // ", cells by "|"). */
+type Cell = { type: "tableCell"; props?: Record<string, unknown>; content: unknown[] } | unknown[];
+export type TableData = { type: "tableContent"; columnWidths: (number | undefined)[]; headerRows?: number; headerCols?: number; rows: { cells: Cell[] }[] };
+const cellInline = (c: Cell) => (Array.isArray(c) ? c : c.content) as { type?: string; text?: string; content?: { text?: string }[] }[];
+const cellText = (c: Cell) => blockText({ content: cellInline(c) } as never).replace(/\s*\n\s*/g, " ");
+/** "**bold** *italic* `code`" marks (as written by blockText) back to styled text. */
+const marks = (t: string) =>
+  t.split(/(\*{1,3}[^*]+\*{1,3}|`[^`]+`)/).filter(Boolean).map((x) => {
+    const m = /^(\*{1,3}|`)(.+)\1$/.exec(x);
+    const k = m?.[1] ?? "";
+    return { type: "text", text: m ? m[2] : x, styles: { ...(k === "`" && { code: true }), ...(k.length > 1 && k !== "`" && { bold: true }), ...(k.length !== 2 && k[0] === "*" && { italic: true }) } };
+  });
+
+export const tableToText = (b: { content?: unknown }) =>
+  "TABLE: " + ((b.content as TableData | undefined)?.rows ?? []).map((r) => r.cells.map(cellText).join(" | ")).join(" // ");
+
+/** Model's "TABLE: …" line → table content; ragged rows are padded, column widths kept when the count matches. */
+export function textToTable(text: string, old: TableData, bg: string): TableData {
+  const rows = text.replace(/^TABLE:\s*/i, "").split(/\s*\/\/\s*/).filter((r) => r.trim()).map((r) => r.split("|").map((c) => c.trim()));
+  const cols = Math.max(1, ...rows.map((r) => r.length));
+  // Unchanged cells keep their exact content (links, colours); changed ones get bold/italic/code back from the marks.
+  const byText = new Map(old.rows.flatMap((r) => r.cells.map((c) => [cellText(c), cellInline(c)] as const)));
+  return {
+    ...old,
+    columnWidths: old.columnWidths?.length === cols ? old.columnWidths : Array(cols).fill(undefined),
+    rows: rows.map((r) => ({ cells: Array.from({ length: cols }, (_, i) => ({ type: "tableCell" as const, props: { backgroundColor: bg }, content: r[i] ? (byText.get(r[i]) ?? marks(r[i])) : [] })) })),
+  };
+}
+
+/** Same table, every cell's background set to `bg` (blue while pending, "default" once accepted). */
+export const paintTable = (t: TableData, bg: string): TableData => ({
+  ...t,
+  rows: t.rows.map((r) => ({ cells: r.cells.map((c) => (Array.isArray(c) ? { type: "tableCell" as const, props: { backgroundColor: bg }, content: c } : { ...c, props: { ...c.props, backgroundColor: bg } })) })),
+});
 
 /** `id` is the block to replace or add after; none = add at the top. */
 export type Proposal = { kind: "replace" | "add"; id?: string; text: string };

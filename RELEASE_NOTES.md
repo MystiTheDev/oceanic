@@ -14,6 +14,10 @@
 - 💬 Choose Nerida's reply style, and get a desktop notification when an answer finishes in the background.
 - 🧩 Nerida's optional add-ons now show their size, with Download and Delete buttons.
 - ⚠️ A clear message, with a fix, when your graphics card runs out of memory.
+- 📊 Nerida can now edit tables in your notes: cells, rows and columns.
+- 🛠️ Fixed Nerida saying it couldn't edit a note when asked, and it now edits the whole note when no part is named.
+- 💬 Nerida understands more ways of asking for edits, like "simplify it" or "make this shorter".
+- 🗣️ Nerida understands casual slang in chat.
 - 🐛 Fixed bugs, plus lots of smaller polish.
 
 # 🌊 Oceanic v2.0.2: Faster, smarter Nerida

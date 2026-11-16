@@ -355,10 +355,15 @@ const STYLE =
   "If you don't know something and it isn't in the notes or results, say so instead of guessing. Never invent facts, names or numbers. " +
   "Only when the user's latest message says your previous answer was wrong, start by admitting it in a few words (e.g. \"You're right, my mistake.\"), then give the corrected answer. " +
   "If they are the one who is wrong, say so politely and explain. " +
-  "You can't change notes from this answer: never say you edited, updated or marked anything in a note.";
+  "Users may write casual or gen alpha slang; read its plain meaning and reply normally. For example: " +
+  "fr = for real, no cap = honestly, cap = lie, lowkey = a bit, highkey = very, bet = okay, mid = average or not good, " +
+  "bussin = great, slay or ate = did great, rizz = charm, sus = suspicious, ong = I swear, ngl = not gonna lie, " +
+  "idk = I don't know, rn = right now, tbh = to be honest; skibidi and gyatt are joke words, ignore them.";
+const NO_EDIT = " You can't change notes from this answer: never say you edited, updated or marked anything in a note.";
 
-
-export const SYSTEM = `${IDENTITY} ${FEATURES} ${STYLE}`;
+export const SYSTEM = `${IDENTITY} ${FEATURES} ${STYLE}${NO_EDIT}`;
+/** Note-edit calls: same rules, but Nerida knows the app applies its changes to the note. */
+export const EDIT_SYSTEM = `${IDENTITY} ${STYLE} You are editing the user's open note; the app applies your changes.`;
 /** "Detailed tutor" reply style, added after STYLE (overrides its "short"). */
 const TUTOR = "Reply style: detailed tutor. Explain step by step in plain words, give a short example, and end with a one-line recap. Still only use facts from the notes or that you are sure of.";
 

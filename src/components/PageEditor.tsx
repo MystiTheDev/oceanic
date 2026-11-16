@@ -26,7 +26,7 @@ import {
 import { NeridaMark } from "./NeridaOrb";
 import { openNeridaCards } from "./NeridaCards";
 import { openNeridaEdit } from "../lib/neridaEdit";
-import { NOTE_BLOCKS, PROPOSE, setPending, usePending, type NoteBlock, type Proposal } from "../lib/neridaChatEdit";
+import { NOTE_BLOCKS, PROPOSE, paintTable, setPending, tableToText, textToTable, usePending, type NoteBlock, type Proposal, type TableData } from "../lib/neridaChatEdit";
 import { TextSelection } from "prosemirror-state";
 import { BlockNoteView } from "@blocknote/mantine";
 import type { Block, PartialBlock } from "@blocknote/core";
@@ -273,7 +273,7 @@ export function PageEditor({
     const onBlocks = (e: Event) => {
       // Nested blocks too (sub-tasks under a list item), in reading order.
       const flat = (bs: Block[]): Block[] => bs.flatMap((b) => [b, ...flat((b.children ?? []) as Block[])]);
-      (e as CustomEvent<{ blocks: NoteBlock[] }>).detail.blocks = flat(editor.document as Block[]).map((b) => ({ id: b.id, text: blockText(b) + (b.type === "checkListItem" ? ((b.props as { checked?: boolean }).checked ? " [done]" : " [not done]") : ""), type: b.type }));
+      (e as CustomEvent<{ blocks: NoteBlock[] }>).detail.blocks = flat(editor.document as Block[]).map((b) => ({ id: b.id, text: b.type === "table" ? tableToText(b) : blockText(b) +(b.type === "checkListItem" ? ((b.props as { checked?: boolean }).checked ? " [done]" : " [not done]") : ""), type: b.type }));
     };
     const onPropose = (e: Event) => {
       const d = (e as CustomEvent<{ proposals: Proposal[]; applied: number }>).detail;
@@ -282,6 +282,14 @@ export function PageEditor({
       for (const p of d.proposals) {
         const ref = p.id ? editor.getBlock(p.id) : doc[0];
         if (!ref) continue;
+        // Tables: only a full "TABLE: …" replacement of an existing table; never turn one into text or add new ones.
+        if (ref.type === "table" || /^TABLE:/i.test(p.text)) {
+          if (p.kind !== "replace" || ref.type !== "table" || !/^TABLE:/i.test(p.text)) continue;
+          const old = { type: ref.type, content: ref.content, props: ref.props } as PartialBlock;
+          editor.updateBlock(ref, { content: textToTable(p.text, ref.content as unknown as TableData, "blue") } as never);
+          added.push({ newId: ref.id, old });
+          continue;
+        }
         // A replaced block keeps its type (checklists stay checklists; "[done]" ticks the box).
         const type = p.kind === "replace" && ["paragraph", "heading", "checkListItem", "bulletListItem", "numberedListItem"].includes(ref.type) ? ref.type : "paragraph";
         const done = /\s*\[(done|not done)\]\s*$/i.exec(p.text);
@@ -310,7 +318,9 @@ export function PageEditor({
       const list = pick(i).filter(Boolean);
       for (const c of list) {
         const bg = (c.old?.props as { backgroundColor?: string } | undefined)?.backgroundColor ?? "default";
-        if (editor.getBlock(c.newId)) editor.updateBlock(c.newId, { props: { backgroundColor: bg } } as never);
+        const b = editor.getBlock(c.newId);
+        if (b?.type === "table") editor.updateBlock(b, { content: paintTable(b.content as unknown as TableData, "default") } as never);
+        else if (b) editor.updateBlock(c.newId, { props: { backgroundColor: bg } } as never);
       }
       done(list);
     };

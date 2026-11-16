@@ -18,7 +18,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion,
+  buildContext, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM,withNotes, uid, useNerida, isFeaturesQuestion,
   type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
@@ -357,7 +357,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         if (b) await engine.start(b);
         mark("Editing your note");
         let raw = "";
-        await engine.chat(model, [{ role: "system", content: SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (raw += t), onThink);
+        await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (raw += t), onThink);
         const n = proposeEdits(parseEdits(raw, blocks));
         reply = n
           ? `I've made ${n} change${n > 1 ? "s" : ""} to your note, highlighted in blue. They're **pending**: accept or reject them in the note, or with the buttons below.`
