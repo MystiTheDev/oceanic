@@ -60,8 +60,11 @@ export const EFFORTS: { id: Effort; label: string; maxTokens: number; budget: nu
 const effortOf = () => EFFORTS.find((e) => e.id === state.effort) ?? EFFORTS[1];
 
 export type ReplyStyle = "short" | "tutor";
-type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "dashboard" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null };
-let state: State = { notify: true, noVision: false, thinking: false, style: "short", gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return (localStorage.getItem("oc-home-mode") as State["homeMode"]) || "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null };
+type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "dashboard" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null; /** A download waits for the built-in engine's reply to finish. */ dlWaiting: boolean; /** Download finished: "ask" shows the restart dialog, "later" the reminder. */ restart: "ask" | "later" | null };
+let state: State = { notify: true, noVision: false, thinking: false, style: "short", gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return (localStorage.getItem("oc-home-mode") as State["homeMode"]) || "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null, dlWaiting: false, restart: null };
+/** Built-in chat is locked while an engine/model/add-on download runs (cloud and Ollama stay usable). */
+export const UPGRADE_MSG = "Nerida AI is getting an upgrade, please be patient.";
+export const isLocked = (s: State) => !!s.dl && !s.dlWaiting;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const persist = () => api.setSetting("neridaChats", JSON.stringify(state.chats.slice(0, 100))).catch(() => {});
@@ -160,6 +163,7 @@ export const engine = {
   async chat(ref: ModelRef, messages: { role: string; content: string | unknown[] }[], onToken: (t: string) => void, onThink?: (thought: string) => void) {
     const b = builtin(ref);
     let baseUrl: string, keyId: string | null = null, model: string;
+    if (b && state.dl) throw new Error(UPGRADE_MSG);
     if (b) [baseUrl, model] = [await engine.start(b), b];
     else if (ref.startsWith("ollama:")) [baseUrl, model] = [OLLAMA_URL, ref.slice(7)];
     else {
@@ -192,11 +196,13 @@ export const engine = {
       if (add) messages = [{ role: "system", content: SYSTEM + add }, ...messages.slice(1)];
     }
     active++;
+    if (b) (localActive++, (localIdleAt = 0));
     try {
       await invoke<void>("ai_chat", { baseUrl, keyId, model, messages, extra, onToken: ch });
       notifyWhenIdle(splitThink(raw).answer); // only on success: errors show in the app
     } finally {
       active--;
+      if (b && !--localActive) localIdleAt = Date.now();
     }
     if (splitThink(raw).thinking) throw new Error("Nerida thought for too long. Turn off Thinking in the effort menu.");
   },
@@ -206,6 +212,9 @@ export const engine = {
 /* Desktop notification when Nerida finishes while Oceanic is minimised or not focused. Multi-step jobs
  * (PDF summaries, quizzes) call the model several times: notify once, after the last call. */
 let active = 0;
+/** Built-in engine calls in flight, and when the last one ended (multi-step jobs pause briefly between calls). */
+let localActive = 0;
+let localIdleAt = 0;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 function notifyWhenIdle(answer: string) {
   clearTimeout(idleTimer);
@@ -219,35 +228,47 @@ function notifyWhenIdle(answer: string) {
   }, 1500);
 }
 
-/** App-wide download: survives Settings/chat closing; the pill reads `dl`. Resolves "" or an error. */
-export async function downloadModel(model: ModelId, needServer: boolean, engineOnly = false): Promise<string> {
+/** Runs a download job: waits for the built-in reply to finish (1.5 s idle, so multi-step jobs
+ * finish too), locks built-in chat meanwhile, then asks for an app restart. Resolves "" or an error. */
+async function upgrade(label: string, job: () => Promise<void>): Promise<string> {
   if (state.dl) return "";
-  const step = (label: string) => (got: number, total: number) => nerida.set({ dl: { model, label, got, total } });
-  let err = "";
+  nerida.set({ dl: { model: "plus", label, got: 0, total: 1 }, dlWaiting: true });
+  while (localActive || Date.now() - localIdleAt < 1500) await new Promise((r) => setTimeout(r, 300));
+  nerida.set({ dlWaiting: false });
+  let err = "", ok = false;
   try {
+    await job();
+    ok = true;
+  } catch (e) {
+    if (String(e) !== "cancelled") err = String(e);
+  }
+  nerida.set({ dl: null, ...(ok ? { restart: "ask" as const } : {}) });
+  return err;
+}
+
+/** App-wide download: survives Settings/chat closing; the pill reads `dl`. Resolves "" or an error. */
+export function downloadModel(model: ModelId, needServer: boolean, engineOnly = false): Promise<string> {
+  const step = (label: string) => (got: number, total: number) => nerida.set({ dl: { model, label, got, total } });
+  return upgrade(needServer ? "Nerida engine" : engineOnly ? "Nerida vision" : MODEL_NAMES[model], async () => {
     if (needServer) { step("Nerida engine")(0, 1); await engine.download("server", step("Nerida engine")); }
     if (!engineOnly) { step(MODEL_NAMES[model])(0, 1); await engine.download(model, step(MODEL_NAMES[model])); }
     // Vision add-on: lets Nerida read scanned PDF pages.
     if (!state.noVision && !(await engine.status()).vision) { step("Nerida vision")(0, 1); await engine.download("vision", step("Nerida vision")); }
-  } catch (e) {
-    if (String(e) !== "cancelled") err = String(e);
-  }
-  nerida.set({ dl: null });
-  return err;
+  });
+}
+
+/** Vision add-on only (Settings → Extra modules). */
+export function downloadVision(): Promise<string> {
+  const step = (got: number, total: number) => nerida.set({ dl: { model: "plus", label: "Nerida vision", got, total } });
+  return upgrade("Nerida vision", () => engine.download("vision", step));
 }
 
 /** Optional NVIDIA engine: CUDA build, then the CUDA runtime (~680 MB together). Resolves "" or an error. */
-export async function downloadCuda(): Promise<string> {
-  if (state.dl) return "";
+export function downloadCuda(): Promise<string> {
   const step = (got: number, total: number) => nerida.set({ dl: { model: "plus", label: "NVIDIA engine", got, total } });
-  let err = "";
-  try {
+  return upgrade("NVIDIA engine", async () => {
     for (const item of ["cuda", "cudart"] as const) (step(0, 1), await engine.download(item, step));
-  } catch (e) {
-    if (String(e) !== "cancelled") err = String(e);
-  }
-  nerida.set({ dl: null });
-  return err;
+  });
 }
 
 /* ---------------------------------------------------------------- context */

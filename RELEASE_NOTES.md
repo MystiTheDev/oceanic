@@ -1,3 +1,16 @@
+# 🌊 Oceanic v2.0.4: Atlas sections and note cards
+
+- 🗂️ Atlas groups are now sections: boxed areas you can move, resize, collapse and colour.
+- 🖱️ Drag a card into a section to add it, or right-click a card and choose Add to group.
+- 📝 Notes can join groups too, and their cards show the note's text. Scroll to read it, or open it to edit.
+- 🎨 Pick your own colours for Atlas cards.
+- 🔍 New Atlas buttons to zoom, reset to 100%, fit to screen and tidy up the layout.
+- 💬 Nerida's chat list has New chat and Search chats buttons.
+- 🔄 After a Nerida download, Oceanic asks you to restart to finish the upgrade.
+- ⏳ Nerida downloads now wait for the current reply to finish, so answers are never cut off.
+- 🖼️ Drop pictures on the sidebar to add them to the open page.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.3: Atlas groups and scanned PDFs
 
 - 🗺️ Send to Atlas: turn a note's headings or a mind map's topics into Atlas concepts, connected the way you choose.

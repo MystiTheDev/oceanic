@@ -40,16 +40,17 @@ import {
   type Concept,
   type ConceptGroup,
   type ConceptResource,
+  type GroupRect,
   type LinkEdge,
   type RelType,
   REL_TYPES,
 } from "../data/api";
 import { AtlasGuide } from "./AtlasGuide";
-import { AtlasGroups } from "./AtlasGroups";
+import { AtlasGroups, GROUP_HEADER } from "./AtlasGroups";
 import { mapChecks, OPEN_CONCEPT, pendingConcept, setPendingConcept, isConceptId, prerequisites, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
 import { ConceptInspector } from "./ConceptInspector";
 import { AtlasLegend } from "./AtlasLegend";
-import { MUTED_STROKE, REL_COLORS } from "../data/atlas";
+import { MUTED_STROKE, PALETTE, REL_COLORS } from "../data/atlas";
 import type { PageMeta } from "../data/workspace";
 import { tagColor } from "../lib/colors";
 
@@ -79,9 +80,20 @@ type SpatialCanvasProps = {
 const STATE_DOT: Record<Concept["state"], string> = {
   unexplored: "#737373", learning: "#f59e0b", understood: "#38bdf8", mastered: "#22c55e", review: "#f43f5e",
 };
+const STATE_LABEL: Record<Concept["state"], string> = {
+  unexplored: "New", learning: "Learning", understood: "Got it", mastered: "Mastered", review: "Review",
+};
 
 const CARD_W = 208;
 const CARD_H = 60;
+/** Note cards show the note itself (read-only), so they are bigger. */
+const NOTE_W = 248;
+const NOTE_H = 176;
+type Size = { w: number; h: number };
+const CARD: Size = { w: CARD_W, h: CARD_H };
+const NOTE: Size = { w: NOTE_W, h: NOTE_H };
+/** Room between a section's edge and the cards inside it. */
+const GROUP_PAD = 24;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2.5;
 const GRID = 24;
@@ -241,12 +253,28 @@ export function SpatialCanvas({
   const [camera, setCamera] = useState<Camera>(lastView?.camera ?? { x: 0, y: 0, k: 1 });
   /** Semantic zoom: dots when far out, cards in the middle, note previews when close. */
   const level: "dot" | "card" | "preview" = camera.k < 0.6 ? "dot" : camera.k > 1.2 ? "preview" : "card";
+  const noteIds = useMemo(() => new Set(pageList.map((p) => p.id)), [pageList]);
+  /** Card footprint: notes are bigger (they show their text); everything is a dot when far out. */
+  const sizeOf = (id: string): Size => (level !== "dot" && noteIds.has(id) ? NOTE : CARD);
+  /** User-picked card colours (palette keys), kept in settings. */
+  const [cardColors, setCardColors] = useState<Record<string, string>>({});
   useEffect(() => {
-    if (level !== "preview") return;
+    api.getSettings().then((s) => setCardColors(JSON.parse(s.atlasCardColors ?? "{}"))).catch(() => {});
+  }, []);
+  const setCardColor = (id: string, color: string | null) =>
+    setCardColors((prev) => {
+      const next = { ...prev };
+      if (color) next[id] = color;
+      else delete next[id];
+      api.setSetting("atlasCardColors", JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  useEffect(() => {
+    if (level === "dot") return;
     const missing = pageList.map((p) => p.id).filter((id) => !previews.has(id));
     if (!missing.length) return;
     api
-      .getPagePreviews(missing, 300)
+      .getPagePreviews(missing, 2000)
       .then((rows) =>
         setPreviews((prev) => {
           const next = new Map(prev);
@@ -418,10 +446,10 @@ export function SpatialCanvas({
     if (!el || !positions || !positions.size) return;
     const pts = pages.map((p) => positions.get(p.id)).filter((p): p is Point => !!p);
     if (!pts.length) return;
-    const minX = Math.min(...pts.map((p) => p.x)) - CARD_W / 2 - 60;
-    const maxX = Math.max(...pts.map((p) => p.x)) + CARD_W / 2 + 60;
-    const minY = Math.min(...pts.map((p) => p.y)) - CARD_H / 2 - 60;
-    const maxY = Math.max(...pts.map((p) => p.y)) + CARD_H / 2 + 60;
+    const minX = Math.min(...pts.map((p) => p.x)) - NOTE_W / 2 - 60;
+    const maxX = Math.max(...pts.map((p) => p.x)) + NOTE_W / 2 + 60;
+    const minY = Math.min(...pts.map((p) => p.y)) - NOTE_H / 2 - 60;
+    const maxY = Math.max(...pts.map((p) => p.y)) + NOTE_H / 2 + 60;
     // Keep clear of side overlays (tutorial, inspector) when there is room to.
     const vp = el.getBoundingClientRect();
     let left = 0;
@@ -466,6 +494,9 @@ export function SpatialCanvas({
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if ((e.target as HTMLElement).closest(".oc-edge-popover")) return;
+      // Scrolling a note card's text scrolls the text, not the map.
+      const note = (e.target as HTMLElement).closest<HTMLElement>(".oc-note-scroll");
+      if (note && note.scrollHeight > note.clientHeight) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - rect.left, e.clientY - rect.top);
@@ -473,6 +504,12 @@ export function SpatialCanvas({
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  /** World point at the middle of the visible map. */
+  const viewCenter = (): Point => {
+    const el = viewport.current;
+    return el ? { x: (el.clientWidth / 2 - camera.x) / camera.k, y: (el.clientHeight / 2 - camera.y) / camera.k } : { x: 0, y: 0 };
+  };
 
   /** Screen (client) coordinates → world coordinates. */
   const toWorld = (clientX: number, clientY: number): Point => {
@@ -484,18 +521,36 @@ export function SpatialCanvas({
   const cardAt = (p: Point, except?: string) =>
     pages.find((page) => {
       const c = positions?.get(page.id);
-      return (
-        c && page.id !== except && Math.abs(p.x - c.x) <= CARD_W / 2 && Math.abs(p.y - c.y) <= CARD_H / 2
-      );
+      const s = sizeOf(page.id);
+      return c && page.id !== except && Math.abs(p.x - c.x) <= s.w / 2 && Math.abs(p.y - c.y) <= s.h / 2;
     })?.id ?? null;
 
   /* ---------------------------------------------- pan, drag, connect */
   const gesture = useRef<
     | { kind: "pan"; startX: number; startY: number; cam: Camera }
-    | { kind: "card"; id: string; startX: number; startY: number; origin: Point; moved: boolean }
+    | { kind: "card"; id: string; startX: number; startY: number; origin: Point; moved: boolean; last?: Point }
     | { kind: "connect"; from: string; side: Side }
+    | { kind: "group"; id: string; startX: number; startY: number; rect: GroupRect; members: [string, Point][]; d?: Point }
+    | { kind: "resize"; id: string; startX: number; startY: number; rect: GroupRect; last?: GroupRect }
     | null
   >(null);
+
+  const onGroupHeaderDown = (e: PointerEvent, g: ConceptGroup) => {
+    const rect = rectOf(g);
+    if (e.button !== 0 || !positions || !rect) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const members = membersOf(g.id).flatMap((id) => (positions.has(id) ? [[id, positions.get(id)!] as [string, Point]] : []));
+    gesture.current = { kind: "group", id: g.id, startX: e.clientX, startY: e.clientY, rect, members };
+    setSelected(null);
+  };
+  const onGroupResizeDown = (e: PointerEvent, g: ConceptGroup) => {
+    const rect = rectOf(g);
+    if (e.button !== 0 || !rect) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    gesture.current = { kind: "resize", id: g.id, startX: e.clientX, startY: e.clientY, rect };
+  };
 
   const onBackgroundDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
@@ -542,25 +597,73 @@ export function SpatialCanvas({
     const dy = e.clientY - g.startY;
     if (g.kind === "pan") {
       setCamera({ ...g.cam, x: g.cam.x + dx, y: g.cam.y + dy });
+    } else if (g.kind === "group") {
+      const [wx, wy] = [dx / camera.k, dy / camera.k];
+      g.d = { x: wx, y: wy };
+      setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, rect: { ...g.rect, x: g.rect.x + wx, y: g.rect.y + wy } } : x)));
+      setPositions((prev) => {
+        const next = new Map(prev);
+        for (const [id, o] of g.members) next.set(id, { x: o.x + wx, y: o.y + wy });
+        return next;
+      });
+    } else if (g.kind === "resize") {
+      const rect = { ...g.rect, w: Math.max(160, g.rect.w + dx / camera.k), h: Math.max(100, g.rect.h + dy / camera.k) };
+      g.last = rect;
+      setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, rect } : x)));
     } else {
       if (!g.moved && Math.hypot(dx, dy) < 3) return;
       g.moved = true;
+      const at = { x: g.origin.x + dx / camera.k, y: g.origin.y + dy / camera.k };
+      g.last = at;
       setPositions((prev) => {
         const next = new Map(prev);
-        next.set(g.id, { x: g.origin.x + dx / camera.k, y: g.origin.y + dy / camera.k });
+        next.set(g.id, at);
         return next;
       });
+      const target = groupAtPoint(at, groupOfCard(g.id)?.id ?? null);
+      setDropGroup(target?.id ?? null);
     }
   };
 
   const onPointerUp = () => {
     const g = gesture.current;
     gesture.current = null;
-    if (g?.kind === "card" && g.moved && positions) {
-      const p = positions.get(g.id)!;
+    if (g?.kind === "group" && g.d) {
+      const d = g.d;
+      const grp = groups.find((x) => x.id === g.id);
+      if (grp) saveLayout(grp, { rect: { ...g.rect, x: g.rect.x + d.x, y: g.rect.y + d.y } });
       api
-        .saveCanvasPositions([{ pageId: g.id, x: p.x, y: p.y }])
+        .saveCanvasPositions(g.members.map(([id, o]) => ({ pageId: id, x: o.x + d.x, y: o.y + d.y })))
         .catch((e) => console.error("Saving canvas failed", e));
+    }
+    if (g?.kind === "resize" && g.last && positions) {
+      const grp = groups.find((x) => x.id === g.id);
+      if (grp) saveLayout(grp, { rect: grownToFit(grp, g.last, positions) });
+    }
+    if (g?.kind === "card" && g.moved && positions) {
+      const p = g.last ?? positions.get(g.id)!;
+      const target = groups.find((x) => x.id === dropRef.current) ?? null;
+      setDropGroup(null);
+      const cur = groupOfCard(g.id);
+      const curRect = cur ? rectOf(cur) : undefined;
+      const inside = !!curRect && p.x > curRect.x && p.x < curRect.x + curRect.w && p.y > curRect.y && p.y < curRect.y + curRect.h;
+      const title = pages.find((x) => x.id === g.id)?.title || "this card";
+      const putBack = () => setPositions((prev) => new Map(prev).set(g.id, g.origin));
+      if (cur && !inside && !window.confirm(`Take "${title}" out of the group "${cur.name}"?`)) return putBack();
+      api.saveCanvasPositions([{ pageId: g.id, x: p.x, y: p.y }]).catch((e) => console.error("Saving canvas failed", e));
+      const into = target ?? (cur && inside ? cur : null);
+      if (into !== cur) void setGroupOf(g.id, into?.id ?? null);
+      // The section grows so the card fits inside it.
+      if (into) {
+        const r = rectOf(into);
+        const s = sizeOf(g.id);
+        if (r) {
+          const x = Math.min(r.x, p.x - s.w / 2 - GROUP_PAD);
+          const y = Math.min(r.y, p.y - s.h / 2 - GROUP_PAD - GROUP_HEADER);
+          const rect = { x, y, w: Math.max(r.x + r.w, p.x + s.w / 2 + GROUP_PAD) - x, h: Math.max(r.y + r.h, p.y + s.h / 2 + GROUP_PAD) - y };
+          if (rect.x !== r.x || rect.y !== r.y || rect.w !== r.w || rect.h !== r.h) saveLayout(into, { rect });
+        }
+      }
     }
     if (g?.kind === "connect") {
       const target = draft?.target;
@@ -621,21 +724,81 @@ export function SpatialCanvas({
       .catch((e) => console.error("Creating concept failed", e));
 
   /* ---------------------------------------------- groups */
-  const setGroupOf = (conceptId: string, groupId: string | null) =>
-    api
-      .setConceptGroup(conceptId, groupId)
-      .then((u) => setConcepts((prev) => prev.map((x) => (x.id === conceptId ? u : x))))
-      .catch((e) => console.error("Grouping failed", e));
-  /** New group holding `conceptId`, name ready to type. */
-  const newGroupWith = (conceptId: string) =>
+  /** Puts a concept or note in a group (or takes it out with `null`). */
+  const setGroupOf = (id: string, groupId: string | null) =>
+    isConceptId(id)
+      ? api
+          .setConceptGroup(id, groupId)
+          .then((u) => setConcepts((prev) => prev.map((x) => (x.id === id ? u : x))))
+          .catch((e) => console.error("Grouping failed", e))
+      : api
+          .setPageGroup(id, groupId)
+          .then(() =>
+            setGroups((prev) =>
+              prev.map((g) => ({ ...g, pageIds: g.id === groupId ? [...g.pageIds.filter((p) => p !== id), id] : g.pageIds.filter((p) => p !== id) })),
+            ),
+          )
+          .catch((e) => console.error("Grouping failed", e));
+  /** New group holding card `id` (or empty, boxed at `at`), name ready to type. */
+  const newGroupWith = (id: string | null, at?: Point) =>
     api
       .createConceptGroup(workspaceId, "New group")
-      .then((g) => {
+      .then(async (g) => {
+        if (at) g = await api.layoutConceptGroup(g.id, null, { x: at.x - 200, y: at.y - 130, w: 400, h: 260 });
         setGroups((prev) => [...prev, g]);
         setRenamingGroup(g.id);
-        return setGroupOf(conceptId, g.id);
+        if (id) await setGroupOf(id, g.id);
       })
       .catch((e) => console.error("Creating group failed", e));
+  const groupOfCard = (id: string) =>
+    groups.find((g) => (isConceptId(id) ? concepts.find((c) => c.id === id)?.groupId === g.id : g.pageIds.includes(id))) ?? null;
+  const tintOf = (g: ConceptGroup) => (g.color && PALETTE[g.color] ? PALETTE[g.color].color : tagColor(g.id).solid);
+  /** Smallest section box around `ids` (at `pos`), or undefined when none are placed. */
+  const boxAround = (ids: string[], pos: Map<string, Point>): GroupRect | undefined => {
+    const boxes = ids.flatMap((id) => {
+      const p = pos.get(id);
+      const s = sizeOf(id);
+      return p ? [{ x0: p.x - s.w / 2, y0: p.y - s.h / 2, x1: p.x + s.w / 2, y1: p.y + s.h / 2 }] : [];
+    });
+    if (!boxes.length) return undefined;
+    const x = Math.min(...boxes.map((b) => b.x0)) - GROUP_PAD;
+    const y = Math.min(...boxes.map((b) => b.y0)) - GROUP_PAD - GROUP_HEADER;
+    return { x, y, w: Math.max(...boxes.map((b) => b.x1)) + GROUP_PAD - x, h: Math.max(...boxes.map((b) => b.y1)) + GROUP_PAD - y };
+  };
+  /** `r` grown (never shrunk) so every member fits inside. */
+  const grownToFit = (g: ConceptGroup, r: GroupRect, pos: Map<string, Point>): GroupRect => {
+    const b = boxAround(membersOf(g.id), pos);
+    if (!b) return r;
+    const x = Math.min(r.x, b.x);
+    const y = Math.min(r.y, b.y);
+    return { x, y, w: Math.max(r.x + r.w, b.x + b.w) - x, h: Math.max(r.y + r.h, b.y + b.h) - y };
+  };
+  const rectOf = (g: ConceptGroup) => g.rect ?? (positions ? boxAround(membersOf(g.id), positions) : undefined);
+  const saveLayout = (g: ConceptGroup, patch: { color?: string | null; rect?: GroupRect }) => {
+    const color = patch.color !== undefined ? patch.color : g.color;
+    const rect = patch.rect ?? g.rect;
+    setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, color, rect } : x)));
+    api.layoutConceptGroup(g.id, color, rect).catch((e) => console.error("Saving group failed", e));
+  };
+  // Groups from before sections had a box: box each one around its members once.
+  useEffect(() => {
+    if (!positions || !conceptsLoaded) return;
+    for (const g of groups) {
+      if (g.rect) continue;
+      const r = boxAround(membersOf(g.id), positions);
+      if (r) saveLayout(g, { rect: r });
+    }
+  }, [groups, positions, conceptsLoaded]);
+  /** Group a dragged card would join if dropped now. */
+  const [dropGroup, setDropGroupState] = useState<string | null>(null);
+  /** Same value, readable in the pointer-up handler before React re-renders. */
+  const dropRef = useRef<string | null>(null);
+  const setDropGroup = (id: string | null) => ((dropRef.current = id), setDropGroupState(id));
+  const groupAtPoint = (p: Point, except: string | null) =>
+    [...groups].reverse().find((g) => {
+      const r = !g.collapsed && g.id !== except ? rectOf(g) : undefined;
+      return r && p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
+    }) ?? null;
   const saveGroup = (g: ConceptGroup, patch: Partial<Pick<ConceptGroup, "name" | "collapsed">>) =>
     api
       .updateConceptGroup(g.id, { name: patch.name ?? g.name, collapsed: patch.collapsed ?? g.collapsed })
@@ -649,7 +812,10 @@ export function SpatialCanvas({
         setConcepts((prev) => prev.map((c) => (c.groupId === g.id ? { ...c, groupId: null } : c)));
       })
       .catch((e) => console.error("Deleting group failed", e));
-  const membersOf = (groupId: string) => concepts.filter((c) => c.groupId === groupId).map((c) => c.id);
+  function membersOf(groupId: string) {
+    const notes = groups.find((g) => g.id === groupId)?.pageIds.filter((id) => noteIds.has(id)) ?? [];
+    return [...concepts.filter((c) => c.groupId === groupId).map((c) => c.id), ...notes];
+  }
 
   const saveConcept = (id: string, patch: Pick<Concept, "title" | "description" | "tags" | "state">) =>
     api
@@ -763,31 +929,46 @@ export function SpatialCanvas({
     ]);
   };
 
+  const groupItem = (id: string): MenuItem => {
+    const cur = groupOfCard(id);
+    return {
+      label: "Add to group",
+      icon: <Boxes className="size-4" />,
+      children: [
+        ...groups.map((g) => ({ label: g.name, checked: cur?.id === g.id, onSelect: () => addToGroup(id, g) })),
+        ...(groups.length ? (["divider"] as const) : []),
+        { label: "New group…", icon: <Plus className="size-4" />, onSelect: () => newGroupWith(id) },
+        ...(cur ? [{ label: "Remove from group", icon: <X className="size-4" />, onSelect: () => setGroupOf(id, null) }] : []),
+      ],
+    };
+  };
+  /** Menu "Add to group": join, and move the card into the section if it sits outside. */
+  const addToGroup = (id: string, g: ConceptGroup) => {
+    void setGroupOf(id, g.id);
+    const r = rectOf(g);
+    const p = positions?.get(id);
+    if (!r || !p) return;
+    const s = sizeOf(id);
+    const inside = p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
+    if (inside) return;
+    // Drop it below the section's current contents, then grow the section.
+    const at = { x: r.x + GROUP_PAD + s.w / 2, y: r.y + r.h + s.h / 2 };
+    setPositions((prev) => new Map(prev).set(id, at));
+    api.saveCanvasPositions([{ pageId: id, ...at }]).catch(() => {});
+    saveLayout(g, { rect: { ...r, h: r.h + s.h + GROUP_PAD } });
+  };
+
   const cardMenu = (e: React.MouseEvent, page: PageMeta) =>
     openContextMenu(e, isConceptId(page.id) ? [
       { label: "Focus", icon: <Crosshair className="size-4" />, onSelect: () => enterFocus(page.id) },
       { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(page.id) },
-      {
-        label: "Add to group",
-        icon: <Boxes className="size-4" />,
-        children: [
-          ...groups.map((g) => ({
-            label: g.name,
-            checked: concepts.find((c) => c.id === page.id)?.groupId === g.id,
-            onSelect: () => setGroupOf(page.id, g.id),
-          })),
-          ...(groups.length ? (["divider"] as const) : []),
-          { label: "New group…", icon: <Plus className="size-4" />, onSelect: () => newGroupWith(page.id) },
-          ...(concepts.find((c) => c.id === page.id)?.groupId
-            ? [{ label: "Remove from group", icon: <X className="size-4" />, onSelect: () => setGroupOf(page.id, null) }]
-            : []),
-        ],
-      },
+      groupItem(page.id),
       "divider",
       { label: "Delete concept", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => deleteConcept(page.id) },
     ] : [
       { label: "Open", icon: <FileText className="size-4" />, onSelect: () => onOpenPage(page.id) },
       { label: "Open in new tab", icon: <AppWindow className="size-4" />, onSelect: () => onOpenInNewTab(page.id) },
+      groupItem(page.id),
       "divider",
       {
         label: page.pinned ? "Remove from Favorites" : "Add to Favorites",
@@ -896,9 +1077,9 @@ export function SpatialCanvas({
   for (const g of groups) {
     if (!g.collapsed) continue;
     const ids = membersOf(g.id).filter((id) => shown.has(id));
-    if (!ids.length) continue;
-    const pts = ids.map((id) => shown.get(id)!);
-    shown.set(g.id, { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length });
+    const r = rectOf(g);
+    if (!r) continue;
+    shown.set(g.id, { x: r.x + r.w / 2, y: r.y + r.h / 2 });
     for (const id of ids) (shown.delete(id), collapsedTo.set(id, g.id));
   }
   /** Every edge is drawn; types switched off in the filter are greyed out and ignored by Focus.
@@ -952,7 +1133,7 @@ export function SpatialCanvas({
   const dotR = (id: string) => (9 + Math.min(degree(id), 6) * 1.5) / camera.k;
   /** Edge geometry for the current zoom level. */
   const curveOf = (s: string, t: string, a: Point, b: Point) =>
-    level === "dot" ? connector(a, b, dotR(s), dotR(t)) : connector(a, b);
+    level === "dot" ? connector(a, b, CARD, CARD, dotR(s), dotR(t)) : connector(a, b, sizeOf(s), sizeOf(t));
   const editing = editingEdge ? edges.find((e) => e.key === editingEdge) : undefined;
   const pageTitle = (id: string) => {
     const p = pages.find((x) => x.id === id);
@@ -992,15 +1173,24 @@ export function SpatialCanvas({
         {positions && (
           <AtlasGroups
             groups={groups}
-            membersOf={membersOf}
-            at={(id) => shown.get(id)}
+            rectOf={rectOf}
+            tintOf={tintOf}
+            countOf={(g) => {
+              const ids = membersOf(g.id);
+              const c = ids.filter(isConceptId).length;
+              return { concepts: c, notes: ids.length - c };
+            }}
             cardW={CARD_W}
             cardH={CARD_H}
             renaming={renamingGroup}
+            dropTarget={dropGroup}
             onStartRename={setRenamingGroup}
             onRename={(g, name) => saveGroup(g, { name })}
             onToggle={(g) => saveGroup(g, { collapsed: !g.collapsed })}
             onDelete={deleteGroup}
+            onColor={(g, color) => saveLayout(g, { color })}
+            onHeaderDown={onGroupHeaderDown}
+            onResizeDown={onGroupResizeDown}
           />
         )}
         <svg
@@ -1097,7 +1287,7 @@ export function SpatialCanvas({
             {/* Connection being drawn */}
             {draft && shown.get(draft.from) && (
               <path
-                d={draftCurve(shown.get(draft.from)!, draft.side, draft.target ? shown.get(draft.target)! : null, draft.to)}
+                d={draftCurve(shown.get(draft.from)!, draft.side, draft.target ? shown.get(draft.target)! : null, draft.to, sizeOf(draft.from), draft.target ? sizeOf(draft.target) : CARD)}
                 fill="none"
                 stroke={FOCUS_STROKE}
                 strokeWidth={2}
@@ -1161,6 +1351,11 @@ export function SpatialCanvas({
             const showHandles = !draft && hovered === page.id && !gesture.current;
             const links = degree(page.id);
             const concept = concepts.find((c) => c.id === page.id);
+            const size = sizeOf(page.id);
+            const isNote = !concept && level !== "dot";
+            const own = cardColors[page.id] && PALETTE[cardColors[page.id]]?.color;
+            const dragging = gesture.current?.kind === "card" && gesture.current.id === page.id && gesture.current.moved;
+            const dropInto = dragging && dropGroup ? groups.find((g) => g.id === dropGroup) : undefined;
             return (
               <div
                 key={page.id}
@@ -1178,18 +1373,21 @@ export function SpatialCanvas({
                 onContextMenu={(e) => cardMenu(e, page)}
                 title={concept ? "Concept · double-click to focus" : "Double-click to open"}
                 style={{
-                  left: p.x - CARD_W / 2,
-                  top: p.y - CARD_H / 2,
-                  width: CARD_W,
-                  height: CARD_H,
+                  left: p.x - size.w / 2,
+                  top: p.y - size.h / 2,
+                  width: size.w,
+                  height: size.h,
                   scale: scale < 1 ? String(scale) : undefined,
                   opacity: bright && !bright.has(page.id) ? 0.12 : dimmed && !dimmed.has(page.id) ? 0.45 : out < 1 ? out : undefined,
                   outline: level !== "dot" && page.id === (pathFor ?? focus) ? "2px solid var(--color-sky-400)" : "2px solid transparent",
                   outlineOffset: 3,
-                  zIndex: child ? undefined : 1,
+                  zIndex: dragging ? 5 : child ? undefined : 1,
                   ...(level !== "dot" && t && !lit && !isDropTarget ? { borderColor: `color-mix(in srgb, ${t.solid} 55%, transparent)`, background: `color-mix(in srgb, ${t.solid} 14%, var(--oc-raised))` } : {}),
+                  ...(level !== "dot" && own && !isDropTarget && page.id !== selected ? { borderColor: `color-mix(in srgb, ${own} 70%, transparent)`, background: `color-mix(in srgb, ${own} 16%, var(--oc-raised))` } : {}),
+                  ...(concept && level !== "dot" ? { borderLeft: `3px solid ${STATE_DOT[concept.state]}` } : {}),
+                  boxShadow: dragging ? "0 18px 40px -12px rgba(0,0,0,0.6)" : undefined,
                 }}
-                className={level === "dot" ? "absolute cursor-pointer transition-opacity duration-300" : `oc-pop-in absolute flex cursor-pointer flex-col justify-center border ${concept ? "rounded-2xl px-4" : "rounded-xl px-3"} shadow-md shadow-black/25 transition-[border-color,background-color,box-shadow,opacity,outline-color] duration-200 ${
+                className={level === "dot" ? "absolute cursor-pointer transition-opacity duration-300" : `oc-pop-in absolute flex cursor-pointer flex-col border ${isNote ? "justify-start overflow-hidden rounded-lg px-3 pt-2.5" : "justify-center rounded-xl px-4"} shadow-md shadow-black/25 transition-[border-color,background-color,box-shadow,opacity,outline-color] duration-200 ${
                   concept ? "bg-[color-mix(in_srgb,var(--color-sky-500)_7%,var(--oc-raised))]" : "bg-[var(--oc-raised)]"
                 } ${
                   isDropTarget
@@ -1281,10 +1479,25 @@ export function SpatialCanvas({
                     {count}
                   </button>
                 )}
-                <div className={`mt-1 text-[11px] text-neutral-500 pl-6`}>
-                  {links ? `${links} link${links === 1 ? "" : "s"}` : "No links yet"}
-                  {active && <span className="text-neutral-400"> · open</span>}
-                </div>
+                {isNote ? (
+                  // The note itself, read-only: scroll to read, "Open note" to edit.
+                  <div className="oc-note-scroll scrollbar-thin mt-1.5 min-h-0 flex-1 overflow-y-auto whitespace-pre-line pb-2.5 pr-1 text-[11.5px] leading-relaxed text-neutral-400">
+                    {previews.has(page.id) ? previews.get(page.id) || <span className="italic text-neutral-600">Empty note</span> : <span className="oc-nerida-shimmer">Loading…</span>}
+                  </div>
+                ) : (
+                  <div className={`mt-1 text-[11px] text-neutral-500 pl-6`}>
+                    {concept ? (STATE_LABEL[concept.state] + (links ? ` · ${links} link${links === 1 ? "" : "s"}` : "")) : links ? `${links} link${links === 1 ? "" : "s"}` : "No links yet"}
+                    {active && <span className="text-neutral-400"> · open</span>}
+                  </div>
+                )}
+                {dropInto && (
+                  <span
+                    className="oc-pop-in pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-[11.5px] font-medium text-white shadow-lg shadow-black/40"
+                    style={{ background: tintOf(dropInto) }}
+                  >
+                    Drop to add to {dropInto.name}
+                  </span>
+                )}
 
                 {/* Connection handles on each edge, shown on hover */}
                 {showHandles &&
@@ -1298,12 +1511,6 @@ export function SpatialCanvas({
                     />
                   ))}
 
-                {/* Zoomed in: the start of the note, read-only */}
-                {level === "preview" && !concept && previews.get(page.id) && (
-                  <div className="oc-fade-in pointer-events-none absolute left-0 right-0 top-full mt-1.5 line-clamp-6 rounded-lg border border-white/[0.06] bg-[var(--oc-raised)]/95 px-3 py-2 text-[11px] leading-relaxed text-neutral-400 shadow-lg shadow-black/40">
-                    {previews.get(page.id)}
-                  </div>
-                )}
                 </>)}
               </div>
             );
@@ -1329,6 +1536,34 @@ export function SpatialCanvas({
             onChange={(patch) => updateEdge(editing.key, patch)}
             onDelete={() => deleteEdge(editing)}
             onClose={() => setEditingEdge(null)}
+          />
+        );
+      })()}
+
+      {/* Toolbar over the selected card (screen space) */}
+      {(() => {
+        const id = selected;
+        const p = id ? shown.get(id) : undefined;
+        const page = id ? pages.find((x) => x.id === id) : undefined;
+        if (!id || !p || !page || level === "dot" || draft || gesture.current?.kind === "card") return null;
+        const s = sizeOf(id);
+        const isConcept = isConceptId(id);
+        return (
+          <CardToolbar
+            key={id}
+            x={camera.x + p.x * camera.k}
+            y={camera.y + (p.y - s.h / 2) * camera.k}
+            color={cardColors[id] ?? null}
+            isConcept={isConcept}
+            onFocus={() => enterFocus(id)}
+            onConnect={(e) => onHandleDown(e, id, "right")}
+            onColor={(c) => setCardColor(id, c)}
+            onOpen={() => onOpenPage(id)}
+            onDelete={() => {
+              if (isConcept) {
+                if (window.confirm(`Delete the concept "${page.title || "Untitled"}"? Its links and attachments go too.`)) void deleteConcept(id);
+              } else if (window.confirm(`Move "${page.title || "Untitled"}" to Trash?`)) onTrashPage(id);
+            }}
           />
         );
       })()}
@@ -1367,12 +1602,6 @@ export function SpatialCanvas({
         ) : null;
       })()}
 
-      {/* Hint */}
-      <div className="pointer-events-none absolute bottom-5 left-4 max-w-[45%] text-[11px] leading-relaxed text-neutral-500 max-[900px]:hidden">
-        Drag a card's edge dot onto another card to connect · click a line to set its relationship ·
-        double-click a concept to focus
-      </div>
-
       {/* Toolbar: search, filter, focus trail */}
       <div onPointerDown={(e) => e.stopPropagation()} className="absolute left-4 top-3 z-10 flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
@@ -1402,6 +1631,29 @@ export function SpatialCanvas({
                 ))}
               </div>
             )}
+          </div>
+          <div className="flex h-8 items-center gap-0.5 rounded-lg border border-white/[0.08] bg-neutral-800/90 px-0.5 backdrop-blur">
+            <CanvasButton title="Zoom out (or scroll)" onClick={() => zoomCenter(1 / 1.2)}>
+              <Minus className="size-4" />
+            </CanvasButton>
+            <button
+              type="button"
+              data-tip="Reset zoom to 100%"
+              aria-label="Reset zoom"
+              onClick={() => zoomCenter(1 / camera.k)}
+              className="h-7 w-11 cursor-pointer rounded-md text-[11.5px] font-medium tabular-nums text-neutral-300 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-100"
+            >
+              {Math.round(camera.k * 100)}%
+            </button>
+            <CanvasButton title="Zoom in (or scroll)" onClick={() => zoomCenter(1.2)}>
+              <Plus className="size-4" />
+            </CanvasButton>
+            <CanvasButton title="Fit to screen" onClick={fit}>
+              <Maximize2 className="size-3.5" />
+            </CanvasButton>
+            <CanvasButton title="Tidy up (re-run auto layout)" onClick={relayout}>
+              <Sparkles className="size-3.5" />
+            </CanvasButton>
           </div>
           <button
             type="button"
@@ -1507,38 +1759,78 @@ export function SpatialCanvas({
 
       <AtlasLegend muted={hiddenTypes} />
 
-      {/* Controls */}
+      {/* Dock: add things (bottom centre) */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
-        className="absolute bottom-4 right-4 flex items-center gap-0.5 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-lg shadow-black/30"
+        className="oc-pop-in absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-xl shadow-black/30"
       >
-        <CanvasButton title="New concept" onClick={() => newConcept()}>
-          <Lightbulb className="size-3.5" />
-        </CanvasButton>
-        <span className="mx-1 h-4 w-px bg-white/10" />
-        <CanvasButton title="Zoom out (or scroll)" onClick={() => zoomCenter(1 / 1.2)}>
-          <Minus className="size-4" />
-        </CanvasButton>
-        <button
-          type="button"
-          data-tip="Reset zoom to 100%"
-          aria-label="Reset zoom"
-          onClick={() => zoomCenter(1 / camera.k)}
-          className="h-7 w-12 cursor-pointer rounded-md text-[11.5px] font-medium tabular-nums text-neutral-300 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-100"
-        >
-          {Math.round(camera.k * 100)}%
-        </button>
-        <CanvasButton title="Zoom in (or scroll)" onClick={() => zoomCenter(1.2)}>
-          <Plus className="size-4" />
-        </CanvasButton>
-        <span className="mx-1 h-4 w-px bg-white/10" />
-        <CanvasButton title="Fit to screen" onClick={fit}>
-          <Maximize2 className="size-3.5" />
-        </CanvasButton>
-        <CanvasButton title="Tidy up (re-run auto layout)" onClick={relayout}>
-          <Sparkles className="size-3.5" />
-        </CanvasButton>
+        {([
+          ["Concept", Lightbulb, () => newConcept(viewCenter())],
+          ["Note", FileText, () => ((pendingPlacement.current = viewCenter()), onCreatePage())],
+          ["Group", Boxes, () => newGroupWith(null, viewCenter())],
+        ] as const).map(([label, Icon, run]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={run}
+            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[12.5px] text-neutral-300 transition-[background-color,color,transform] duration-100 hover:bg-white/[0.07] hover:text-neutral-100 active:scale-95"
+          >
+            <Icon className="size-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
+    </div>
+  );
+}
+
+/** Small toolbar above the selected card: focus, connect, colour, open (notes), delete. */
+function CardToolbar({ x, y, color, isConcept, onFocus, onConnect, onColor, onOpen, onDelete }: {
+  /** Screen position of the card's top centre. */
+  x: number;
+  y: number;
+  color: string | null;
+  isConcept: boolean;
+  onFocus: () => void;
+  onConnect: (e: PointerEvent) => void;
+  onColor: (c: string | null) => void;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const btn = "grid size-7 cursor-pointer place-items-center rounded-md text-neutral-400 transition-colors duration-100 hover:bg-white/[0.07] hover:text-neutral-100";
+  return (
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      className="oc-pop-in absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-0.5 shadow-lg shadow-black/40"
+      style={{ left: x, top: y - 42 }}
+    >
+      <button type="button" title="Focus" aria-label="Focus" onClick={onFocus} className={btn}><Crosshair className="size-3.5" /></button>
+      <button type="button" title="Drag to connect" aria-label="Connect" onPointerDown={onConnect} className={`${btn} cursor-crosshair`}><Spline className="size-3.5" /></button>
+      <button type="button" title="Color" aria-label="Color" onClick={() => setPicking((p) => !p)} className={btn}>
+        <span className="size-3 rounded-full border border-white/30" style={{ background: color ? PALETTE[color]?.color : "transparent" }} />
+      </button>
+      {!isConcept && <button type="button" title="Open note" aria-label="Open note" onClick={onOpen} className={btn}><FileText className="size-3.5" /></button>}
+      <span className="mx-0.5 h-4 w-px bg-white/10" />
+      <button type="button" title={isConcept ? "Delete concept" : "Move to Trash"} aria-label="Delete" onClick={onDelete} className={`${btn} hover:text-red-400`}><Trash2 className="size-3.5" /></button>
+      {picking && (
+        <div className="oc-pop-in absolute left-1/2 top-full mt-1.5 flex -translate-x-1/2 gap-1 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1.5 shadow-xl shadow-black/40">
+          {Object.entries(PALETTE).map(([key, c]) => (
+            <button
+              key={key}
+              type="button"
+              title={c.label}
+              aria-label={c.label}
+              onClick={() => (onColor(key), setPicking(false))}
+              className={`size-5 cursor-pointer rounded-full transition-transform hover:scale-110 ${color === key ? "ring-2 ring-white/70 ring-offset-1 ring-offset-[var(--oc-surface)]" : ""}`}
+              style={{ background: c.color }}
+            />
+          ))}
+          <button type="button" onClick={() => (onColor(null), setPicking(false))} className="cursor-pointer rounded px-1.5 text-[11px] text-neutral-400 hover:bg-white/[0.06]">
+            None
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1762,17 +2054,17 @@ const NORMAL: Record<Side, Point> = {
 };
 
 /** Midpoint of a card's side. */
-const anchor = (c: Point, side: Side): Point => ({
-  x: c.x + NORMAL[side].x * (CARD_W / 2),
-  y: c.y + NORMAL[side].y * (CARD_H / 2),
+const anchor = (c: Point, side: Side, s: Size = CARD): Point => ({
+  x: c.x + NORMAL[side].x * (s.w / 2),
+  y: c.y + NORMAL[side].y * (s.h / 2),
 });
 
 /** Which sides two cards should connect through, by their relative position. */
-function facingSides(a: Point, b: Point): [Side, Side] {
+function facingSides(a: Point, b: Point, sa: Size = CARD, sb: Size = CARD): [Side, Side] {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  // Compare against the card's aspect so wide cards prefer left/right.
-  if (Math.abs(dx) * CARD_H > Math.abs(dy) * CARD_W) return dx > 0 ? ["right", "left"] : ["left", "right"];
+  // Compare against the cards' aspect so wide cards prefer left/right.
+  if (Math.abs(dx) * (sa.h + sb.h) > Math.abs(dy) * (sa.w + sb.w)) return dx > 0 ? ["right", "left"] : ["left", "right"];
   return dy > 0 ? ["bottom", "top"] : ["top", "bottom"];
 }
 
@@ -1791,22 +2083,22 @@ function bezier(s: Point, n1: Point, t: Point, n2: Point) {
  * Smooth S-curve between two cards, leaving and entering through facing sides.
  * With radii (zoomed-out dots), it runs nearly straight from circle edge to circle edge.
  */
-function connector(a: Point, b: Point, ra?: number, rb?: number) {
+function connector(a: Point, b: Point, za: Size, zb: Size, ra?: number, rb?: number) {
   if (ra !== undefined && rb !== undefined) {
     const d = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
     const u = { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
     return bezier({ x: a.x + u.x * ra, y: a.y + u.y * ra }, u, { x: b.x - u.x * rb, y: b.y - u.y * rb }, { x: -u.x, y: -u.y });
   }
-  const [sa, sb] = facingSides(a, b);
-  return bezier(anchor(a, sa), NORMAL[sa], anchor(b, sb), NORMAL[sb]);
+  const [sa, sb] = facingSides(a, b, za, zb);
+  return bezier(anchor(a, sa, za), NORMAL[sa], anchor(b, sb, zb), NORMAL[sb]);
 }
 
 /** The line while dragging: from the grabbed side to the cursor, snapping to a hovered card. */
-function draftCurve(from: Point, side: Side, target: Point | null, cursor: Point) {
-  const s = anchor(from, side);
+function draftCurve(from: Point, side: Side, target: Point | null, cursor: Point, zf: Size, zt: Size) {
+  const s = anchor(from, side, zf);
   if (target) {
-    const [, tb] = facingSides(from, target);
-    return bezier(s, NORMAL[side], anchor(target, tb), NORMAL[tb]).d;
+    const [, tb] = facingSides(from, target, zf, zt);
+    return bezier(s, NORMAL[side], anchor(target, tb, zt), NORMAL[tb]).d;
   }
   // Toward the cursor, arriving roughly opposite the direction of travel.
   const dx = cursor.x - s.x;

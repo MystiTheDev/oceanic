@@ -268,6 +268,9 @@ pub async fn ai_download(app: AppHandle, state: State<'_, Ai>, item: String, on_
         }
     }
     drop(file);
+    // Built-in chat is locked during downloads, so stopping the engine never cuts a reply.
+    // Its files are free to replace; the app restart (or next message) starts the new version.
+    shutdown(&state);
     if format!("{:x}", hash.finalize()) != a.sha256 {
         let _ = std::fs::remove_file(&part);
         return Err("Download was corrupted (checksum mismatch). Please try again.".into());
@@ -283,22 +286,13 @@ pub async fn ai_download(app: AppHandle, state: State<'_, Ai>, item: String, on_
         let f = std::fs::File::open(&part).map_err(|e| e.to_string())?;
         zip::ZipArchive::new(f).and_then(|mut z| z.extract(&out)).map_err(|e| e.to_string())?;
         let _ = std::fs::remove_file(&part);
-        if item == "cudart" {
-            shutdown(&state); // next start uses the NVIDIA engine
-        }
     } else {
         std::fs::rename(&part, d.join(a.file)).map_err(|e| e.to_string())?;
         if item == "vision" {
-            shutdown(&state); // next start loads the vision add-on
             return Ok(());
         }
-        // Updated: drop the previous version (stop it first if it's the one running).
-        if d.join(a.legacy).exists() {
-            if state.server.lock().unwrap().as_ref().is_some_and(|s| s.0.starts_with(&format!("{item}|"))) {
-                shutdown(&state);
-            }
-            let _ = std::fs::remove_file(d.join(a.legacy));
-        }
+        // Updated: drop the previous version (the engine was stopped above).
+        let _ = std::fs::remove_file(d.join(a.legacy));
     }
     Ok(())
 }

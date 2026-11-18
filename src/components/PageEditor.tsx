@@ -394,6 +394,12 @@ export function PageEditor({
     window.addEventListener("oc-open-block", jump);
     return () => window.removeEventListener("oc-open-block", jump);
   }, [editor]);
+  // Images dropped on the sidebar: append to this page.
+  useEffect(() => {
+    const on = (e: Event) => void insertImages((e as CustomEvent<File[]>).detail, true);
+    window.addEventListener("oc-insert-images", on);
+    return () => window.removeEventListener("oc-insert-images", on);
+  }, [editor]);
   useEffect(() => {
     const on = (e: Event) => setAnnotating((e as CustomEvent).detail);
     window.addEventListener("oc-annotate", on);
@@ -409,8 +415,8 @@ export function PageEditor({
   };
 
   /** Pasted or dropped images become image blocks (resize by dragging its edges; caption via right-click). */
-  const insertImages = async (files: File[]) => {
-    let after = editor.getTextCursorPosition().block;
+  const insertImages = async (files: File[], atEnd = false) => {
+    let after = atEnd ? editor.document[editor.document.length - 1] : editor.getTextCursorPosition().block;
     for (const f of files) {
       const url = await uploadFile(f).catch(() => null);
       if (!url) continue;

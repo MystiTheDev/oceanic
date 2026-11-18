@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
-  downloadCuda, downloadModel, engine, isLocalUrl, nerida, listModels, MODEL_NAMES, OLLAMA_URL, PRESETS, saveProviders, setKey, uid, useNerida,
+  downloadCuda, downloadModel, downloadVision, engine, isLocalUrl, nerida, listModels, MODEL_NAMES, OLLAMA_URL, PRESETS, saveProviders, setKey, uid, useNerida,
   type AiStatus, type ModelId, type Provider,
 } from "../lib/nerida";
 import { ModelMenu } from "./NeridaModelMenu";
@@ -26,7 +26,7 @@ const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.r
 /** Settings → Nerida AI: download / delete models and pick the default. */
 export function NeridaSettings() {
   const [status, setStatus] = useState<AiStatus | null>(null);
-  const { dl: prog, gpu, style, notify } = useNerida();
+  const { dl: prog, dlWaiting, gpu, style, notify } = useNerida();
   const [gpus, setGpus] = useState<{ id: string; name: string; mem_mib: number }[] | null>(null);
   const [err, setErr] = useState("");
   const refresh = () => engine.status().then(setStatus).catch((e) => setErr(String(e)));
@@ -91,7 +91,7 @@ export function NeridaSettings() {
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
                   <div className="h-full rounded-full bg-gradient-to-r from-[#38d6ff] to-[#7c3aed]" style={{ width: `${(prog.got / prog.total) * 100}%` }} />
                 </div>
-                <p className="mt-1 text-[11.5px] text-neutral-500">{size(prog.got)} / {size(prog.total)}</p>
+                <p className="mt-1 text-[11.5px] text-neutral-500">{dlWaiting ? "Waiting for Nerida's reply to finish…" : `${size(prog.got)} / ${size(prog.total)}`}</p>
               </div>
             )}
           </div>
@@ -148,10 +148,7 @@ You can download it again here any time.`}
           onDelete={() => void invoke<void>("ai_delete_model", { model: "vision" }).then(() => nerida.setNoVision(true)).catch((e) => setErr(String(e))).then(refresh)}
           onDownload={async () => {
             nerida.setNoVision(false);
-            const step = (got: number, total: number) => nerida.set({ dl: { model: "plus", label: "Nerida vision", got, total } });
-            step(0, 1);
-            await engine.download("vision", step).catch((e) => String(e) !== "cancelled" && setErr(String(e)));
-            nerida.set({ dl: null });
+            setErr(await downloadVision());
             void refresh();
           }} />
         <ModuleRow icon={Cpu} name="NVIDIA engine" size="1.2 GB" installed={status.cuda} busy={!!prog} disabled={!status.nvidia && !status.cuda}
@@ -346,6 +343,7 @@ function GpuMenu({ value, options }: { value: string; options: (readonly [string
 
 /** One optional add-on: size, what it does, and Delete (confirm says what's lost) or Download. */
 function ModuleRow({ icon, name, size, about, lose, installed, busy, disabled, onDelete, onDownload }: { icon: LucideIcon; name: string; size: string; about: string; lose: string; installed: boolean; busy: boolean; disabled?: boolean; onDelete: () => void; onDownload: () => void }) {
+  const { dl, dlWaiting } = useNerida();
   return (
     <div className={rowCls}>
       <RowIcon icon={icon} />
@@ -356,7 +354,7 @@ function ModuleRow({ icon, name, size, about, lose, installed, busy, disabled, o
       {installed ? (
         <button type="button" disabled={busy} onClick={() => confirm(lose) && onDelete()} className="cursor-pointer rounded-md px-2.5 py-1 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-red-400 disabled:opacity-40">Delete</button>
       ) : (
-        <button type="button" disabled={busy || disabled} onClick={onDownload} className={accentBtn}>Download</button>
+        <button type="button" disabled={busy || disabled} onClick={onDownload} className={accentBtn}>{dlWaiting && dl?.label.endsWith(name.replace("Vision", "vision")) ?"Waiting for reply…" : "Download"}</button>
       )}
     </div>
   );

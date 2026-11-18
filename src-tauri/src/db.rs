@@ -307,6 +307,25 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;"
         ))?;
     }
+
+    if version < 11 {
+        // Group sections: a colour, a fixed box (NULL = not boxed yet: the app sizes
+        // it around its members once), and notes as members too.
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE concept_groups ADD COLUMN color TEXT;
+             ALTER TABLE concept_groups ADD COLUMN x REAL;
+             ALTER TABLE concept_groups ADD COLUMN y REAL;
+             ALTER TABLE concept_groups ADD COLUMN w REAL;
+             ALTER TABLE concept_groups ADD COLUMN h REAL;
+             CREATE TABLE IF NOT EXISTS group_pages (
+               page_id  TEXT PRIMARY KEY,
+               group_id TEXT NOT NULL
+             );
+             PRAGMA user_version = 11;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -1083,6 +1102,20 @@ pub struct ConceptGroup {
     name: String,
     collapsed: bool,
     created_at: String,
+    /// Palette key picked by the user (None = automatic).
+    color: Option<String>,
+    /// Section box in world coordinates (None = not boxed yet).
+    rect: Option<Rect>,
+    /// Notes in the group (concepts carry their own `group_id`).
+    page_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct Rect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
 }
 
 #[derive(Serialize, Debug)]
@@ -1242,31 +1275,78 @@ pub(crate) fn previews(conn: &Connection, ids: &[String], max_chars: Option<usiz
     Ok(out)
 }
 
-const GROUP_COLS: &str = "id, workspace_id, name, collapsed, created_at";
+const GROUP_COLS: &str = "id, workspace_id, name, collapsed, created_at, color, x, y, w, h";
 
 fn group_row(r: &Row) -> rusqlite::Result<ConceptGroup> {
+    let (x, y, w, h): (Option<f64>, Option<f64>, Option<f64>, Option<f64>) = (r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?);
     Ok(ConceptGroup {
         id: r.get(0)?,
         workspace_id: r.get(1)?,
         name: r.get(2)?,
         collapsed: r.get::<_, i64>(3)? != 0,
         created_at: r.get(4)?,
+        color: r.get(5)?,
+        rect: match (x, y, w, h) {
+            (Some(x), Some(y), Some(w), Some(h)) => Some(Rect { x, y, w, h }),
+            _ => None,
+        },
+        page_ids: Vec::new(),
     })
 }
 
+fn with_pages(conn: &Connection, mut g: ConceptGroup) -> CmdResult<ConceptGroup> {
+    let mut stmt = conn.prepare("SELECT page_id FROM group_pages WHERE group_id = ?1").map_err(err)?;
+    g.page_ids = stmt.query_map([&g.id], |r| r.get(0)).map_err(err)?.collect::<Result<_, _>>().map_err(err)?;
+    Ok(g)
+}
+
 fn get_group(conn: &Connection, id: &str) -> CmdResult<ConceptGroup> {
-    conn.query_row(&format!("SELECT {GROUP_COLS} FROM concept_groups WHERE id = ?1"), [id], group_row)
+    let g = conn
+        .query_row(&format!("SELECT {GROUP_COLS} FROM concept_groups WHERE id = ?1"), [id], group_row)
         .optional()
         .map_err(err)?
-        .ok_or_else(|| format!("No group with id {id}"))
+        .ok_or_else(|| format!("No group with id {id}"))?;
+    with_pages(conn, g)
 }
 
 pub(crate) fn groups_in(conn: &Connection, workspace_id: &str) -> CmdResult<Vec<ConceptGroup>> {
     let mut stmt = conn
         .prepare(&format!("SELECT {GROUP_COLS} FROM concept_groups WHERE workspace_id = ?1 ORDER BY created_at"))
         .map_err(err)?;
-    let rows = stmt.query_map([workspace_id], group_row).map_err(err)?;
-    rows.collect::<Result<_, _>>().map_err(err)
+    let rows: Vec<ConceptGroup> = stmt.query_map([workspace_id], group_row).map_err(err)?.collect::<Result<_, _>>().map_err(err)?;
+    rows.into_iter().map(|g| with_pages(conn, g)).collect()
+}
+
+/// Saves a group's colour and section box.
+pub(crate) fn layout_group(conn: &Connection, id: &str, color: Option<&str>, rect: Option<Rect>) -> CmdResult<ConceptGroup> {
+    let r = rect.map(|r| (r.x, r.y, r.w.max(80.0), r.h.max(60.0)));
+    let n = conn
+        .execute(
+            "UPDATE concept_groups SET color = ?2, x = ?3, y = ?4, w = ?5, h = ?6 WHERE id = ?1",
+            params![id, color, r.map(|r| r.0), r.map(|r| r.1), r.map(|r| r.2), r.map(|r| r.3)],
+        )
+        .map_err(err)?;
+    if n == 0 {
+        return Err(format!("No group with id {id}"));
+    }
+    get_group(conn, id)
+}
+
+/// Puts a note in a group, or takes it out (`None`). A note is in at most one group.
+pub(crate) fn set_page_group_in(conn: &Connection, page_id: &str, group_id: Option<&str>) -> CmdResult<()> {
+    match group_id {
+        Some(g) => {
+            get_group(conn, g)?;
+            conn.execute(
+                "INSERT INTO group_pages (page_id, group_id) VALUES (?1, ?2)
+                 ON CONFLICT(page_id) DO UPDATE SET group_id = excluded.group_id",
+                params![page_id, g],
+            )
+        }
+        None => conn.execute("DELETE FROM group_pages WHERE page_id = ?1", [page_id]),
+    }
+    .map(|_| ())
+    .map_err(err)
 }
 
 pub(crate) fn insert_group(conn: &Connection, workspace_id: &str, name: &str) -> CmdResult<ConceptGroup> {
@@ -1304,6 +1384,7 @@ pub(crate) fn edit_group(conn: &Connection, id: &str, name: &str, collapsed: boo
 pub(crate) fn remove_group(conn: &mut Connection, id: &str) -> CmdResult<()> {
     let tx = conn.transaction().map_err(err)?;
     tx.execute("UPDATE concepts SET group_id = NULL WHERE group_id = ?1", [id]).map_err(err)?;
+    tx.execute("DELETE FROM group_pages WHERE group_id = ?1", [id]).map_err(err)?;
     tx.execute("DELETE FROM concept_groups WHERE id = ?1", [id]).map_err(err)?;
     tx.commit().map_err(err)
 }
@@ -1344,6 +1425,16 @@ pub fn delete_concept_group(db: State<Db>, id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn set_concept_group(db: State<Db>, id: String, group_id: Option<String>) -> CmdResult<Concept> {
     set_group(&db.0.lock().unwrap(), &id, group_id.as_deref())
+}
+
+#[tauri::command]
+pub fn layout_concept_group(db: State<Db>, id: String, color: Option<String>, rect: Option<Rect>) -> CmdResult<ConceptGroup> {
+    layout_group(&db.0.lock().unwrap(), &id, color.as_deref(), rect)
+}
+
+#[tauri::command]
+pub fn set_page_group(db: State<Db>, page_id: String, group_id: Option<String>) -> CmdResult<()> {
+    set_page_group_in(&db.0.lock().unwrap(), &page_id, group_id.as_deref())
 }
 
 /// Read-only note text for Atlas page cards (zoomed in) and Peek (`max_chars: None`).

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { House, LayoutDashboard, MessageSquare, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { chatGroups, nerida, useNerida } from "../lib/nerida";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -38,27 +38,54 @@ export function HomeSwitch() {
 }
 
 /** Left sidebar in the Nerida view: the conversation list (notes tree hidden). */
-export function NeridaSidebar({ footer }: { footer: ReactNode }) {
+export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer: ReactNode; collapsed: boolean; onExpand: () => void }) {
   const { chats, activeId } = useNerida();
+  // Rail layout waits for the 200ms close animation, so closing hides the full layout like opening reveals it.
+  const [collapsed, setCollapsed] = useState(target);
+  useEffect(() => {
+    if (!target) return setCollapsed(false);
+    const t = setTimeout(() => setCollapsed(true), 200);
+    return () => clearTimeout(t);
+  }, [target]);
+  const closing = target && !collapsed;
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const search = useRef<HTMLInputElement>(null);
   const shown = chats.filter((c) => c.title.toLowerCase().includes(q.toLowerCase()));
   return (
-    <aside className="oc-fade-in flex h-full w-[256px] shrink-0 flex-col overflow-hidden border-r border-white/[0.06]">
+    // Expanded: content keeps full width and never wraps, so the animating edge uncovers it.
+    <aside className={`oc-fade-in flex h-full w-[256px] shrink-0 flex-col overflow-hidden whitespace-nowrap border-r border-white/[0.06] ${collapsed ? "" : "[&>*]:w-[256px]"} ${closing ? "oc-keep [&_.overflow-y-auto]:!visible" : ""}`}>
       <div className="flex h-14 items-center gap-2.5 px-3 pt-1">
         <NeridaMark size={30} />
-        <span className="bg-gradient-to-r from-white via-sky-200 to-violet-300 bg-clip-text text-[18px] font-extrabold tracking-tight text-transparent">Nerida</span>
-        <BetaPill />
+        {!collapsed && <span className="bg-gradient-to-r from-white via-sky-200 to-violet-300 bg-clip-text text-[18px] font-extrabold tracking-tight text-transparent">Nerida</span>}
+        {!collapsed && <BetaPill />}
       </div>
       <div className="flex flex-col gap-1 px-2 pb-1">
-        <button type="button" onClick={() => nerida.set({ activeId: null })} className={`${ROW} text-neutral-300 hover:bg-white/5`}>
+        <button type="button" title="New chat" onClick={() => nerida.set({ activeId: null })} className={`${ROW} text-neutral-300 hover:bg-white/5`}>
           <Plus className="size-4 shrink-0 text-neutral-500" /> New chat
         </button>
-        <label className="flex h-8 items-center gap-2 rounded-lg bg-white/[0.04] px-2 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(45,212,191,0.35)]">
-          <Search className="size-3.5 shrink-0 text-neutral-500" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-200 outline-none placeholder:text-neutral-600" />
-        </label>
+        {collapsed ? (
+          <button type="button" title="Search chats" onClick={() => { onExpand(); setTimeout(() => search.current?.focus(), 220); }} className={`${ROW} text-neutral-300 hover:bg-white/5`}>
+            <Search className="size-4 shrink-0 text-neutral-500" />
+          </button>
+        ) : (
+          <label className="flex h-8 items-center gap-2 rounded-lg bg-white/[0.04] px-2 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(45,212,191,0.35)]">
+            <Search className="size-3.5 shrink-0 text-neutral-500" />
+            <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-200 outline-none placeholder:text-neutral-600" />
+          </label>
+        )}
       </div>
+      {/* Collapsed rail: recent chats as icons (title shows as tooltip). */}
+      {collapsed && chats.length > 0 && (
+        <div className="mx-2 mt-1 flex flex-col gap-1 border-t border-white/[0.06] pt-2">
+          {chats.slice(0, 5).map((c) => (
+            <button key={c.id} type="button" title={c.title} onClick={() => nerida.set({ activeId: c.id })}
+              className={`${ROW} ${c.id === activeId ? "bg-white/[0.08] text-teal-300" : "text-neutral-500 hover:bg-white/5"}`}>
+              <MessageSquare className="size-4 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
         {shown.length === 0 && (q
           ? <p className="mt-3 px-2 py-1 text-[13px] text-neutral-500">No chats match “{q}”</p>

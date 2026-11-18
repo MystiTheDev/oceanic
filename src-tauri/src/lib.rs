@@ -680,6 +680,8 @@ pub fn run() {
             db::update_concept_group,
             db::delete_concept_group,
             db::set_concept_group,
+            db::layout_concept_group,
+            db::set_page_group,
             db::get_tabs,
             db::save_tabs,
             db::get_workspaces,

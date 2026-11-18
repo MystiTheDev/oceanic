@@ -15,10 +15,11 @@ import { ModelMenu } from "./NeridaModelMenu";
 import { openNeridaCards } from "./NeridaCards";
 import { ATTACH_ACCEPT, attachmentsContext, extractFileText, type Attachment } from "../lib/neridaFiles";
 import { isTauri } from "@tauri-apps/api/core";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM,withNotes, uid, useNerida, isFeaturesQuestion,
+  buildContext, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM,withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
   type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
@@ -149,7 +150,7 @@ function UpdateBanner({ model, size, visionOnly, onDone }: { model: ModelId; siz
 
 /** Bottom-right download pill while Settings and chat are closed. Click opens Settings → Nerida. */
 export function NeridaDownloadPill({ hidden }: { hidden: boolean }) {
-  const dl = useNerida().dl;
+  const { dl, dlWaiting: waiting } = useNerida();
   if (!dl || hidden) return null;
   const pct = Math.round((dl.got / dl.total) * 100);
   return (
@@ -157,12 +158,40 @@ export function NeridaDownloadPill({ hidden }: { hidden: boolean }) {
       className="oc-pop-in fixed bottom-4 right-4 z-50 flex w-56 cursor-pointer items-center gap-2.5 rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] px-3 py-2 text-left shadow-xl shadow-black/40">
       <NeridaMark size={18} busy />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[12px] text-neutral-200">Downloading {dl.label} · {pct}%</p>
+        <p className="truncate text-[12px] text-neutral-200">{waiting ? `${dl.label}: waiting for reply…` : `Downloading ${dl.label} · ${pct}%`}</p>
         <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.08]">
           <div className="h-full rounded-full bg-gradient-to-r from-teal-300 to-blue-400 transition-[width]" style={{ width: `${pct}%` }} />
         </div>
       </div>
     </button>
+  );
+}
+
+/** After an engine/model/add-on download: restart the app so Nerida loads it. Mounted once in App. */
+export function NeridaRestartDialog() {
+  if (useNerida().restart !== "ask") return null;
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 backdrop-blur-sm">
+      <div className="oc-pop-in w-80 rounded-2xl border border-white/[0.08] bg-[var(--oc-surface)] p-5 text-center shadow-2xl shadow-black/50">
+        <div className="mb-3 grid place-items-center"><NeridaMark size={40} /></div>
+        <p className="text-[15px] font-medium text-neutral-100">Nerida AI upgrade ready</p>
+        <p className="mt-1 text-[12.5px] text-neutral-400">Restart Oceanic to finish the upgrade.</p>
+        <div className="mt-4 flex justify-center gap-2">
+          <button type="button" onClick={() => nerida.set({ restart: "later" })} className="cursor-pointer rounded-lg px-3 py-1.5 text-[13px] text-neutral-300 hover:bg-white/[0.06]">Later</button>
+          <button type="button" onClick={() => void relaunch()} className="cursor-pointer rounded-lg bg-teal-400/90 px-3 py-1.5 text-[13px] font-medium text-neutral-950 hover:bg-teal-300">Restart now</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Shown above the chat box after "Later". */
+function RestartReminder() {
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-lg border border-teal-300/20 bg-teal-400/[0.06] px-3 py-1.5 text-[12px] text-teal-100">
+      <span className="min-w-0 flex-1">Restart Oceanic to finish Nerida's upgrade.</span>
+      <button type="button" onClick={() => void relaunch()} className="cursor-pointer rounded px-1.5 font-medium text-teal-300 hover:bg-white/[0.08]">Restart</button>
+    </div>
   );
 }
 
@@ -186,7 +215,8 @@ const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good 
 /** Nerida chat. `home` = the full-page Home "Nerida" view; otherwise the in-note side panel. */
 /** `pdf`: the open PDF in the reader; its text is the chat's context instead of notes. */
 export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: string | null; home?: boolean; pdf?: { id: string; name: string } | null }) {
-  const { chats, activeId, model } = useNerida();
+  const neridaState = useNerida();
+  const { chats, activeId, model, restart } = neridaState;
   const chat = chats.find((c) => c.id === activeId) ?? null;
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [notes, setNotes] = useState<ContextNote[]>([]);
@@ -571,7 +601,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     <aside
       onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
       onDrop={(e) => { if (!ready || !e.dataTransfer.files.length) return; e.preventDefault(); e.stopPropagation(); void addFiles(e.dataTransfer.files); }}
-      className={home ? "oc-page-in flex h-full w-full flex-col" : "oc-nerida-in flex h-full w-[360px] shrink-0 flex-col border-l border-white/[0.06] bg-neutral-900/60"}>
+      className={home ? "oc-page-in relative flex h-full w-full flex-col" : "oc-nerida-in relative flex h-full w-[360px] shrink-0 flex-col border-l border-white/[0.06] bg-neutral-900/60"}>
       {/* header */}
       {home ? (
         <div className="h-12 shrink-0" />
@@ -716,7 +746,20 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       </div>
 
       {/* composer */}
-      <div className={home ? "mx-auto w-full max-w-3xl px-4 pb-4" : "shrink-0 p-3 pt-0"}>{composer}</div>
+      <div className={home ? "mx-auto w-full max-w-3xl px-4 pb-4" : "shrink-0 p-3 pt-0"}>
+        {restart === "later" && b && <RestartReminder />}
+        {composer}
+      </div>
+      {/* built-in chat locked during engine/model/add-on downloads */}
+      {b && ready && isLocked(neridaState) && (
+        <div className="absolute inset-x-0 bottom-0 top-12 z-30 grid place-items-center bg-neutral-950/70 backdrop-blur-sm">
+          <div className="pointer-events-none absolute inset-0 animate-pulse bg-gradient-to-b from-teal-400/[0.07] via-sky-400/[0.05] to-transparent" />
+          <div className="relative flex flex-col items-center gap-3 px-6 text-center">
+            <div className="animate-pulse"><NeridaMark size={48} busy /></div>
+            <p className="oc-nerida-shimmer text-[14px] font-medium">{UPGRADE_MSG}</p>
+          </div>
+        </div>
+      )}
     </aside>
     </>
   );

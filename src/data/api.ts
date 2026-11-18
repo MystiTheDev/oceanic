@@ -146,7 +146,16 @@ export type Concept = {
   groupId?: string | null;
 };
 /** A named Atlas group of concepts; collapsed groups show as one summary card. Ids start with `group:`. */
-export type ConceptGroup = { id: string; workspaceId: string; name: string; collapsed: boolean; createdAt: string };
+export type GroupRect = { x: number; y: number; w: number; h: number };
+export type ConceptGroup = {
+  id: string; workspaceId: string; name: string; collapsed: boolean; createdAt: string;
+  /** Palette key (`GROUP_COLORS`), or null for the automatic tint. */
+  color: string | null;
+  /** Section box in world coordinates; null until first sized around its members. */
+  rect: GroupRect | null;
+  /** Notes in the group (concepts carry `groupId`). */
+  pageIds: string[];
+};
 /** A concept's link to an existing resource by its app entry id (page id, `doc:…`, `sketch:…`, `mindmap:…`, `pdf:…`). */
 export type ConceptResource = { conceptId: string; entryId: string; createdAt: string };
 export type LinkEdge = { sourceId: string; targetId: string };
@@ -232,6 +241,10 @@ export type Api = {
   /** Deletes the group; its concepts stay, ungrouped. */
   deleteConceptGroup(id: string): Promise<void>;
   setConceptGroup(id: string, groupId: string | null): Promise<Concept>;
+  /** Group section colour (palette key) and box; `rect: null` = not boxed yet. */
+  layoutConceptGroup(id: string, color: string | null, rect: GroupRect | null): Promise<ConceptGroup>;
+  /** Puts a note in a group, or takes it out (`null`). */
+  setPageGroup(pageId: string, groupId: string | null): Promise<void>;
   getTabs(): Promise<TabRecord[]>;
   saveTabs(tabs: TabRecord[]): Promise<void>;
 };
@@ -304,6 +317,8 @@ const tauriApi: Api = {
   updateConceptGroup: (id, patch) => invoke("update_concept_group", { id, ...patch }),
   deleteConceptGroup: (id) => invoke("delete_concept_group", { id }),
   setConceptGroup: (id, groupId) => invoke("set_concept_group", { id, groupId }),
+  layoutConceptGroup: (id, color, rect) => invoke("layout_concept_group", { id, color, rect }),
+  setPageGroup: (pageId, groupId) => invoke("set_page_group", { pageId, groupId }),
   getTabs: () => invoke("get_tabs"),
   saveTabs: (tabs) => invoke("save_tabs", { tabs }),
 };
@@ -649,11 +664,12 @@ const localApi: Api = {
     tx((s) => {
       s.conceptResources = s.conceptResources!.filter((r) => !(r.conceptId === conceptId && r.entryId === entryId));
     }),
-  listConceptGroups: (workspaceId) => tx((s) => s.conceptGroups!.filter((g) => g.workspaceId === workspaceId).map((g) => ({ ...g }))),
+  listConceptGroups: (workspaceId) =>
+    tx((s) => s.conceptGroups!.filter((g) => g.workspaceId === workspaceId).map((g) => ({ ...g, color: g.color ?? null, rect: g.rect ?? null, pageIds: [...(g.pageIds ?? [])] }))),
   createConceptGroup: (workspaceId, name) =>
     tx((s) => {
       if (!name.trim()) throw new Error("A group needs a name");
-      const g: ConceptGroup = { id: `group:${crypto.randomUUID()}`, workspaceId, name: name.trim(), collapsed: false, createdAt: now() };
+      const g: ConceptGroup = { id: `group:${crypto.randomUUID()}`, workspaceId, name: name.trim(), collapsed: false, createdAt: now(), color: null, rect: null, pageIds: [] };
       s.conceptGroups!.push(g);
       return { ...g };
     }),
@@ -667,7 +683,7 @@ const localApi: Api = {
   deleteConceptGroup: (id) =>
     tx((s) => {
       for (const c of s.concepts!) if (c.groupId === id) c.groupId = null;
-      s.conceptGroups = s.conceptGroups!.filter((g) => g.id !== id);
+      s.conceptGroups = s.conceptGroups!.filter((g) => g.id !== id); // its notes leave with it
     }),
   setConceptGroup: (id, groupId) =>
     tx((s) => {
@@ -679,6 +695,21 @@ const localApi: Api = {
       }
       c.groupId = groupId;
       return { ...c };
+    }),
+  layoutConceptGroup: (id, color, rect) =>
+    tx((s) => {
+      const g = s.conceptGroups!.find((x) => x.id === id);
+      if (!g) throw new Error(`No group with id ${id}`);
+      return { ...Object.assign(g, { color, rect: rect && { ...rect, w: Math.max(80, rect.w), h: Math.max(60, rect.h) } }) };
+    }),
+  setPageGroup: (pageId, groupId) =>
+    tx((s) => {
+      for (const g of s.conceptGroups!) g.pageIds = (g.pageIds ?? []).filter((p) => p !== pageId);
+      if (groupId) {
+        const g = s.conceptGroups!.find((x) => x.id === groupId);
+        if (!g) throw new Error(`No group with id ${groupId}`);
+        g.pageIds!.push(pageId);
+      }
     }),
   setPageProperties: (id, props) =>
     tx((s) => Object.assign(find(s, id), props, { updatedAt: now() }).updatedAt),

@@ -33,6 +33,19 @@ export const REL_COLORS: Record<RelType, string> = {
   related: "#a3a3a3",
 };
 
+/** Colours the user can pick for group sections and cards. */
+export const PALETTE: Record<string, { label: string; color: string }> = {
+  blue: { label: "Blue", color: "#5e87c9" },
+  teal: { label: "Teal", color: "#2dd4bf" },
+  green: { label: "Green", color: "#529e72" },
+  yellow: { label: "Yellow", color: "#ca984d" },
+  orange: { label: "Orange", color: "#c77d48" },
+  red: { label: "Red", color: "#df5452" },
+  pink: { label: "Pink", color: "#d15796" },
+  purple: { label: "Purple", color: "#9d68d3" },
+  gray: { label: "Gray", color: "#9b9b9b" },
+};
+
 /** Lines of a relationship type switched off in the filter. */
 export const MUTED_STROKE = "#525252";
 

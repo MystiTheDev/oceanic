@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { TitleBar, type TabInfo } from "./components/TitleBar";
 import { PageHeader } from "./components/PageHeader";
-import { NeridaDownloadPill, NeridaPanel } from "./components/NeridaPanel";
+import { NeridaDownloadPill, NeridaPanel, NeridaRestartDialog } from "./components/NeridaPanel";
 import { HomeSwitch, NeridaSidebar } from "./components/NeridaHome";
 import { NeridaCardsHost } from "./components/NeridaCards";import { NeridaEditUI } from "./components/NeridaEditUI";
 import { NeridaOutlineUI } from "./components/NeridaOutlineUI";
@@ -1498,7 +1498,7 @@ export default function App() {
               footer={footerFor("mindmap")}
             />
           ) : neridaHome ? (
-            <NeridaSidebar footer={footerFor("notes")} />
+            <NeridaSidebar footer={footerFor("notes")} collapsed={sidebarCollapsed} onExpand={() => setSidebarCollapsed(false)} />
           ) : (
             <Sidebar
               pages={livePages}
@@ -1803,6 +1803,7 @@ export default function App() {
         />
       )}
       <NeridaDownloadPill hidden={!!settingsOpen || neridaOpen} />
+      <NeridaRestartDialog />
       <ContextMenuHost
         fallback={(e): MenuItem[] => {
           if (isTextField(e.target)) return textFieldMenu(e.target);

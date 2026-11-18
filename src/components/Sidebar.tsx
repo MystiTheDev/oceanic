@@ -280,7 +280,12 @@ export function Sidebar({
         if (!e.dataTransfer.files.length) return;
         e.preventDefault();
         setFileOver(false);
-        onImport([...e.dataTransfer.files]);
+        const files = [...e.dataTransfer.files];
+        // Images embed into the open page (ignored if none); never become notes.
+        const images = files.filter((f) => f.type.startsWith("image/"));
+        if (images.length) window.dispatchEvent(new CustomEvent("oc-insert-images", { detail: images }));
+        const rest = files.filter((f) => !images.includes(f));
+        if (rest.length) onImport(rest);
       }}
       className="oc-sidebar relative z-10 my-2 ml-2 flex h-[calc(100%-16px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[var(--oc-sidebar)] backdrop-blur"
     >
