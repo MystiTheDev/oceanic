@@ -1,3 +1,12 @@
+# 🌊 Oceanic v2.0.5: Safer imports and a stronger Nerida
+
+- 🛡️ On Windows, imported notes and zip files are checked by your antivirus first. If it flags something, the import stops and Oceanic warns you.
+- 🔒 Oceanic can now only open the folders and files you picked yourself. Clear folder access anytime in Settings.
+- 🐚 Nerida ignores hidden instructions inside your notes, PDFs and web results, and cites which source each fact came from.
+- 🧱 Tighter app security, so content inside Oceanic can't load outside scripts.
+- 📖 A refreshed README with system requirements, a safety section and a FAQ.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.4: Atlas sections and note cards
 
 - 🗂️ Atlas groups are now sections: boxed areas you can move, resize, collapse and colour.

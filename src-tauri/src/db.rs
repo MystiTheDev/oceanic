@@ -1498,8 +1498,8 @@ pub fn detach_resource(db: State<Db>, concept_id: String, entry_id: String) -> C
 
 /// Writes an export to the path the user picked in the native Save dialog.
 #[tauri::command]
-pub fn write_export_file(path: String, data: Vec<u8>) -> CmdResult<()> {
-    std::fs::write(&path, data).map_err(|e| e.to_string())
+pub fn write_export_file(scope: State<crate::scope::Scope>, path: String, data: Vec<u8>) -> CmdResult<()> {
+    scope.write(&path, &data)
 }
 
 /* ------------------------------------------------------------------ tabs */

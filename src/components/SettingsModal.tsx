@@ -7,8 +7,8 @@ import { pickSketchFolder, setSketchLayout, useSketch, type SketchLayout } from 
 import { pickFolder, setUiStyle, useDocs, type DocsUiStyle } from "../docs/store";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { open } from "../lib/dialog";
 import {
   AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smile, Trash2, Upload, User, X,
 } from "lucide-react";
@@ -169,6 +169,14 @@ const PAGES: Page[] = [
             ),
           },
           {
+            title: "Home screen",
+            description: "Plain Home shows your recent pages and mindmaps. Student dashboard adds tasks, deadlines and study tools.",
+            keywords: "dashboard study student classic",
+            control: ({ settings, onChange }) => (
+              <Select value={settings.homeStyle} onChange={(homeStyle) => onChange({ homeStyle })} options={[["classic", "Plain Home"], ["student", "Student dashboard"]]} />
+            ),
+          },
+          {
             title: "Close to system tray",
             description: "Clicking × hides Oceanic to the tray so it keeps running. Quit from the tray menu.",
             keywords: "background",
@@ -190,7 +198,13 @@ const PAGES: Page[] = [
     icon: <Database />,
     groups: [
       { heading: "Updates", rows: [{ title: "Check for updates", description: "Oceanic checks at startup and every few hours.", keywords: "version upgrade", control: () => <Btn onClick={() => void checkForUpdates(true)}>Check now</Btn> }] },
-      { heading: "Data", rows: [{ title: "Database location", description: <StoragePath />, keywords: "folder move backup", control: () => <MoveStorage /> }] },
+      {
+        heading: "Data",
+        rows: [
+          { title: "Database location", description: <StoragePath />, keywords: "folder move backup", control: () => <MoveStorage /> },
+          { title: "Folder access", description: <FolderAccessInfo />, keywords: "privacy permissions forget folders files security", control: () => <ForgetFolders /> },
+        ],
+      },
     ],
   },
   {
@@ -545,7 +559,7 @@ function MoveStorage() {
   const [confirm, setConfirm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pick = async () => {
-    const dir = await open({ directory: true, title: "Choose a folder for Oceanic's database" });
+    const dir = await open({ directory: true, purpose: "storage", title: "Choose a folder for Oceanic's database" });
     if (typeof dir === "string") setConfirm(dir);
   };
   return (
@@ -561,6 +575,46 @@ function MoveStorage() {
           <div className="mt-5 flex justify-end gap-2">
             <ModalButton onClick={() => (setConfirm(null), setError(null))}>Cancel</ModalButton>
             <ModalButton variant="primary" onClick={() => api.moveStorage(confirm).catch((e) => setError(String(e)))}>Move & restart</ModalButton>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/* Folders and files picked in Open / Save windows stay usable without asking again
+ * (files for 90 days after their last use). This clears them. */
+const scopeChanged = new EventTarget();
+function FolderAccessInfo() {
+  const [info, setInfo] = useState<{ folders: string[]; files: number } | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const load = () => void invoke<{ folders: string[]; files: number }>("scope_info").then(setInfo).catch(() => {});
+    load();
+    scopeChanged.addEventListener("change", load);
+    return () => scopeChanged.removeEventListener("change", load);
+  }, []);
+  if (!info) return <>Folders and files you've opened in Oceanic.</>;
+  return (
+    <>
+      Oceanic remembers {info.folders.length} folder{info.folders.length === 1 ? "" : "s"} and {info.files} file{info.files === 1 ? "" : "s"} you've opened. Files are forgotten after 90 days unused.
+    </>
+  );
+}
+function ForgetFolders() {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <>
+      <span data-tip={isTauri() ? undefined : "Needs the desktop app"}><Btn onClick={() => setConfirm(true)} disabled={!isTauri()}>Forget…</Btn></span>
+      {confirm && (
+        <Modal onClose={() => setConfirm(false)} className="w-[420px] p-5">
+          <h2 className="text-[15px] font-semibold text-neutral-100">Forget folder access?</h2>
+          <p className="mt-1 text-[13px] text-neutral-400">
+            Oceanic forgets every folder and file you've opened through it. Your files aren't touched. You'll pick a folder or file again the next time you use it (Oceanic's own Docs and Sketch folders keep working).
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <ModalButton onClick={() => setConfirm(false)}>Cancel</ModalButton>
+            <ModalButton variant="primary" onClick={() => void invoke("scope_forget").then(() => (scopeChanged.dispatchEvent(new Event("change")), setConfirm(false)))}>Forget</ModalButton>
           </div>
         </Modal>
       )}

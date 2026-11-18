@@ -2,7 +2,7 @@ import { writeDoc } from "../docs/store";
 import { useSyncExternalStore } from "react";
 import { readFileBytes } from "../lib/fileIO";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "../lib/dialog";
 import { api } from "../data/api";
 import type { DocFile } from "../docs/store";
 

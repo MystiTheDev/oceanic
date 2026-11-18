@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Check, CornerDownLeft, Replace, RotateCcw, Sparkles, SpellCheck, Square, Wand2, X } from "lucide-react";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { NERIDA_EDIT, fixSpelling, isShort, runContinue, runEdit, stopEdit, synonyms, type EditAction, type NeridaEditDetail } from "../lib/neridaEdit";
+import { editWarning } from "../lib/neridaGuard";
 
 /** Nerida's selection popup: pick Improve / Fix grammar / your own instruction, preview, then Replace or Insert below. */
 export function NeridaEditUI() {
@@ -73,6 +74,8 @@ export function NeridaEditUI() {
     }
   };
   const short = !pop.continue && isShort(pop.text);
+  // Steered or off-task results: flagged, but Replace / Insert still work.
+  const warn = phase === "done" && out && !short ? editWarning(pop.text, out, pop.continue || last === "custom" ? "free" : last) : "";
   const apply = (fn: (t: string) => void) => (fn(out), setPop(null));
   const btn = "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-neutral-200 hover:bg-white/[0.07]";
   const act = "flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-[12.5px] hover:bg-white/[0.08]";
@@ -126,6 +129,7 @@ export function NeridaEditUI() {
               {err && pop.continue && <span className="text-red-300">{err}</span>}
               {out || err || <span className="text-neutral-500">{short ? "Thinking…" : "Writing…"}</span>}
             </div>
+            {warn && <p className="mt-1.5 rounded-md bg-amber-400/10 px-2 py-1 text-[12px] text-amber-200">⚠️ {warn}</p>}
             <div className="mt-2 flex items-center gap-1">
               {phase === "run" ? (
                 <button type="button" className={`${act} text-neutral-300`} onClick={stopEdit}><Square className="size-3.5 shrink-0" fill="currentColor" strokeWidth={0} /> Stop</button>

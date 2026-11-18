@@ -7,7 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import { TableKit } from "@tiptap/extension-table";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../lib/dialog";
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, FileDown, FilePlus, FolderOpen, Highlighter, ImagePlus, IndentDecrease,
   IndentIncrease, Italic, List, ListOrdered, Printer, Redo2, RotateCcw, Save, Search, SeparatorHorizontal, Strikethrough, Table2,

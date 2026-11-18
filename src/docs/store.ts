@@ -1,7 +1,7 @@
 import { readFileBytes } from "../lib/fileIO";
 import { useSyncExternalStore } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "../lib/dialog";
 import { api } from "../data/api";
 import { notifyFileSaved } from "../lib/embedSource";
 

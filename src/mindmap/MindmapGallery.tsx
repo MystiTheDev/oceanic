@@ -1,6 +1,6 @@
 import { requestDelete } from "../lib/confirmDelete";
 import { OpenNowRow, type OpenItem } from "../components/OpenNowRow";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "../lib/dialog";
 import { importOmap } from "../lib/omapFile";
 import { readFileBytes } from "../lib/fileIO";
 import { HomeMotif } from "../components/HomeMotif";

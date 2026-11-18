@@ -1,5 +1,9 @@
 mod ai;
 mod db;
+mod scope;
+mod amsi;
+
+use scope::Scope;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -86,8 +90,8 @@ fn get_storage_path(app: AppHandle) -> Result<String, String> {
 /// Copies the database into `dir`, remembers it, and relaunches on the copy.
 /// The old file is left in place as a backup.
 #[tauri::command]
-fn move_storage(app: AppHandle, db: State<db::Db>, dir: String) -> Result<(), String> {
-    let dir = PathBuf::from(dir);
+fn move_storage(app: AppHandle, db: State<db::Db>, scope: State<Scope>, dir: String) -> Result<(), String> {
+    let dir = scope.take_storage_pick(std::path::Path::new(&dir))?;
     {
         let conn = db.0.lock().unwrap();
         db::copy_database_to(&conn, &dir)?;
@@ -110,6 +114,15 @@ struct AudioAsset {
 
 const AUDIO_EXT: &[&str] = &["mp3", "m4a", "wav", "ogg", "aac", "flac", "webm", "opus"];
 
+/// Extensions kept as-is for files added to notes (media and documents). Anything else is saved as `.bin`.
+const UPLOAD_EXT: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "tif", "tiff", "heic",
+    "mp3", "m4a", "wav", "ogg", "aac", "flac", "webm", "opus",
+    "mp4", "mov", "m4v", "mkv", "avi",
+    "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "ods", "odp", "rtf",
+    "txt", "md", "csv", "json", "zip", "7z", "rar", "epub",
+];
+
 fn assets_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("assets");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -131,17 +144,21 @@ fn audio_target(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
 /// Copies an audio file picked in the file dialog into the assets folder, so
 /// the note keeps working if the original moves.
 #[tauri::command]
-fn import_audio(app: AppHandle, src: String) -> Result<AudioAsset, String> {
+async fn import_audio(app: AppHandle, scope: State<'_, Scope>, src: String) -> Result<AudioAsset, String> {
+    let src = scope.check(&src)?;
     let name = PathBuf::from(&src).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let target = audio_target(&app, &name)?;
-    std::fs::copy(&src, &target).map_err(|e| e.to_string())?;
+    let data = scope.read(&src)?;
+    amsi::check(&app, &name, &data)?;
+    std::fs::write(&target, data).map_err(|e| e.to_string())?;
     Ok(AudioAsset { path: target.to_string_lossy().into_owned(), name })
 }
 
 /// Same, for a file dropped onto the page (the webview only has its bytes).
 #[tauri::command]
-fn import_audio_bytes(app: AppHandle, name: String, data: Vec<u8>) -> Result<AudioAsset, String> {
+async fn import_audio_bytes(app: AppHandle, name: String, data: Vec<u8>) -> Result<AudioAsset, String> {
     let target = audio_target(&app, &name)?;
+    amsi::check(&app, &name, &data)?;
     std::fs::write(&target, data).map_err(|e| e.to_string())?;
     Ok(AudioAsset { path: target.to_string_lossy().into_owned(), name })
 }
@@ -149,13 +166,17 @@ fn import_audio_bytes(app: AppHandle, name: String, data: Vec<u8>) -> Result<Aud
 /// Any file BlockNote's media blocks upload (video, image, audio, file):
 /// copied into the assets folder, keeping its extension.
 #[tauri::command]
-fn import_file_bytes(app: AppHandle, name: String, data: Vec<u8>) -> Result<AudioAsset, String> {
+async fn import_file_bytes(app: AppHandle, name: String, data: Vec<u8>) -> Result<AudioAsset, String> {
     let ext = std::path::Path::new(&name)
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| format!(".{}", e.to_lowercase()))
+        .map(|e| e.to_lowercase())
         .unwrap_or_default();
+    // Pages and programs are stored inert (.bin): the asset protocol would serve an .html as a
+    // live page, and an .exe/.bat could be launched from the assets folder.
+    let ext = if UPLOAD_EXT.contains(&ext.as_str()) { format!(".{ext}") } else { ".bin".into() };
     let target = assets_dir(&app)?.join(format!("{}{ext}", uuid::Uuid::new_v4()));
+    amsi::check(&app, &name, &data)?;
     std::fs::write(&target, data).map_err(|e| e.to_string())?;
     Ok(AudioAsset { path: target.to_string_lossy().into_owned(), name })
 }
@@ -168,20 +189,24 @@ fn pdf_target(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// Copies a PDF picked in the file dialog into the assets folder and records it.
 #[tauri::command]
-fn import_pdf(app: AppHandle, db: State<db::Db>, src: String) -> Result<db::PdfDoc, String> {
+async fn import_pdf(app: AppHandle, db: State<'_, db::Db>, scope: State<'_, Scope>, src: String) -> Result<db::PdfDoc, String> {
+    let src = scope.check(&src)?;
     let name = PathBuf::from(&src).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let target = pdf_target(&app)?;
-    std::fs::copy(&src, &target).map_err(|e| e.to_string())?;
+    let data = scope.read(&src)?;
+    amsi::check(&app, &name, &data)?;
+    std::fs::write(&target, data).map_err(|e| e.to_string())?;
     let conn = db.0.lock().unwrap();
     db::insert_pdf(&conn, &target.to_string_lossy(), &name).map_err(db::err)
 }
 
 /// Same, for a dropped or pasted PDF (base64: PDFs are often large).
 #[tauri::command]
-fn import_pdf_bytes(app: AppHandle, db: State<db::Db>, name: String, data: String) -> Result<db::PdfDoc, String> {
+async fn import_pdf_bytes(app: AppHandle, db: State<'_, db::Db>, name: String, data: String) -> Result<db::PdfDoc, String> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let bytes = STANDARD.decode(data).map_err(|e| e.to_string())?;
     let target = pdf_target(&app)?;
+    amsi::check(&app, &name, &bytes)?;
     std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
     let conn = db.0.lock().unwrap();
     db::insert_pdf(&conn, &target.to_string_lossy(), &name).map_err(db::err)
@@ -190,6 +215,9 @@ fn import_pdf_bytes(app: AppHandle, db: State<db::Db>, name: String, data: Strin
 /// The card's page-1 preview (PNG as base64), stored next to the PDF.
 #[tauri::command]
 fn save_pdf_thumb(app: AppHandle, db: State<db::Db>, id: String, data: String) -> Result<String, String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("Invalid id".into());
+    }
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let bytes = STANDARD.decode(data).map_err(|e| e.to_string())?;
     let target = assets_dir(&app)?.join(format!("{id}.thumb.png"));
@@ -211,7 +239,8 @@ struct DocFile {
 
 /// Oceanic Docs: the .docx files in the user's Docs folder, newest first.
 #[tauri::command]
-fn docs_list(dir: String) -> Result<Vec<DocFile>, String> {
+fn docs_list(scope: State<Scope>, dir: String) -> Result<Vec<DocFile>, String> {
+    let dir = scope.check_dir(&dir)?;
     let mut out = Vec::new();
     for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
         let path = entry.path();
@@ -237,26 +266,32 @@ fn docs_list(dir: String) -> Result<Vec<DocFile>, String> {
 #[tauri::command]
 /// Read as base64: raw byte arrays serialize to ~4x-size JSON over IPC,
 /// which made large docs (.docx with images) slow to open and save.
-fn docs_read(path: String) -> Result<String, String> {
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+async fn docs_read(app: AppHandle, scope: State<'_, Scope>, path: String) -> Result<String, String> {
+    let path = PathBuf::from(&path);
+    let bytes = scope.read(&path)?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    amsi::check(&app, &name, &bytes)?;
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     Ok(STANDARD.encode(bytes))
 }
 
 /// Atomic save: write a temp file next to it, then rename over the original.
 #[tauri::command]
-fn docs_write(path: String, data: String) -> Result<(), String> {
+fn docs_write(scope: State<Scope>, path: String, data: String) -> Result<(), String> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let bytes = STANDARD.decode(data).map_err(|e| e.to_string())?;
-    let tmp = format!("{path}.oceanic-tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    scope.write_atomic(&path, &bytes)
 }
 
 /// A free path "<dir>/<name>.docx" (adds " 2", " 3"… if taken).
 #[tauri::command]
-fn docs_free_path(dir: String, name: String) -> String {
-    let base = PathBuf::from(&dir);
+fn docs_free_path(scope: State<Scope>, dir: String, name: String) -> Result<String, String> {
+    scope.check_dir(&dir)?;
+    Ok(free_path(PathBuf::from(&dir), &name))
+}
+
+fn free_path(base: PathBuf, name: &str) -> String {
+    let name: String = name.chars().filter(|c| !r#"<>:"/|?*"#.contains(*c)).collect();
     let mut n = 1;
     loop {
         let file = if n == 1 { format!("{name}.docx") } else { format!("{name} {n}.docx") };
@@ -270,38 +305,42 @@ fn docs_free_path(dir: String, name: String) -> String {
 
 /// Renames a doc in place (same folder); returns the new path.
 #[tauri::command]
-fn docs_rename(path: String, name: String) -> Result<String, String> {
-    let src = PathBuf::from(&path);
+fn docs_rename(scope: State<Scope>, path: String, name: String) -> Result<String, String> {
+    let src = scope.check(&path)?;
     let clean: String = name.chars().filter(|c| !r#"<>:"/\|?*"#.contains(*c)).collect();
     let target = src.with_file_name(format!("{}.docx", clean.trim()));
     if target.exists() && target != src {
         return Err("A document with that name already exists".into());
     }
     std::fs::rename(&src, &target).map_err(|e| e.to_string())?;
+    scope.add_file(&target, true);
     Ok(target.to_string_lossy().into_owned())
 }
 
 /// Moves a doc to the Recycle Bin.
 #[tauri::command]
-fn docs_trash(path: String) -> Result<(), String> {
+fn docs_trash(scope: State<Scope>, path: String) -> Result<(), String> {
+    let path = scope.check(&path)?;
     trash::delete(&path).map_err(|e| e.to_string())
 }
 
 /// "Name copy.docx" next to the original; returns its path.
 #[tauri::command]
-fn docs_duplicate(path: String) -> Result<String, String> {
-    let src = PathBuf::from(&path);
-    let dir = src.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+fn docs_duplicate(scope: State<Scope>, path: String) -> Result<String, String> {
+    let src = scope.check(&path)?;
+    let dir = src.parent().map(PathBuf::from).unwrap_or_default();
     let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let target = docs_free_path(dir, format!("{stem} copy"));
+    let target = free_path(dir, &format!("{stem} copy"));
     std::fs::copy(&src, &target).map_err(|e| e.to_string())?;
+    scope.add_file(std::path::Path::new(&target), true);
     Ok(target)
 }
 
 /// Opens File Explorer with the doc selected.
 #[tauri::command]
-fn docs_reveal(path: String) -> Result<(), String> {
-    std::process::Command::new("explorer").arg(format!("/select,{path}")).spawn().map_err(|e| e.to_string())?;
+fn docs_reveal(scope: State<Scope>, path: String) -> Result<(), String> {
+    let path = scope.check(&path)?;
+    std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -317,7 +356,8 @@ fn docs_default_dir(app: AppHandle) -> Result<String, String> {
 
 /// Oceanic Sketch: the images (.png/.jpg) in its folder, newest first.
 #[tauri::command]
-fn sketch_list(dir: String) -> Result<Vec<DocFile>, String> {
+fn sketch_list(scope: State<Scope>, dir: String) -> Result<Vec<DocFile>, String> {
+    let dir = scope.check_dir(&dir)?;
     let mut out = Vec::new();
     for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
         let path = entry.path();
@@ -556,8 +596,10 @@ fn oceanic_file_arg(args: &[String]) -> Option<String> {
 
 /// File Oceanic was launched with (if any), for the app to open once it's ready.
 #[tauri::command]
-fn launch_file() -> Option<String> {
-    oceanic_file_arg(&std::env::args().collect::<Vec<_>>())
+fn launch_file(scope: State<Scope>) -> Option<String> {
+    let f = oceanic_file_arg(&std::env::args().collect::<Vec<_>>())?;
+    scope.add_file(std::path::Path::new(&f), true);
+    Some(f)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -570,6 +612,7 @@ pub fn run() {
             handoff_existing_app(app);
             // Double-clicked .ocean / .omap while Oceanic runs: open it here.
             if let Some(file) = oceanic_file_arg(&args) {
+                app.state::<Scope>().add_file(std::path::Path::new(&file), true);
                 let _ = app.emit("open-file", file);
             }
         }))
@@ -590,6 +633,14 @@ pub fn run() {
         .setup(|app| {
             let dir = storage_dir(app.handle())?;
             let conn = db::open(&dir)?;
+            let legacy = || {
+                let get = |k: &str| conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| r.get::<_, String>(0)).ok();
+                let list = |k: &str| get(k).and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok()).unwrap_or_default();
+                let roots = ["docsFolder", "sketchFolder"].iter().filter_map(|k| get(k)).collect();
+                let files = [list("recentDocs"), list("recentSketches")].concat();
+                (roots, files)
+            };
+            app.manage(Scope::load(app.handle(), legacy)?);
             app.manage(db::Db(Mutex::new(conn)));
             build_tray(app.handle())?;
 
@@ -643,6 +694,11 @@ pub fn run() {
             ai::ai_set_key,
             ai::ai_list_models,
             ai::web_get,
+            scope::pick_open,
+            scope::pick_save,
+            scope::scope_info,
+            scope::scope_forget,
+            amsi::scan_bytes,
             db::get_pages,
             db::get_trashed_pages,
             db::get_page,

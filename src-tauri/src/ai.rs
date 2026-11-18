@@ -82,6 +82,16 @@ fn model_file(d: &Path, a: &Asset) -> Option<PathBuf> {
     [a.file, a.legacy].into_iter().filter(|f| !f.is_empty()).map(|f| d.join(f)).find(|p| p.exists())
 }
 
+/// (port, API key) of the running built-in engine.
+static ENGINE_KEY: Mutex<Option<(u16, String)>> = Mutex::new(None);
+
+/// The built-in engine's key when `base_url` points at it.
+fn engine_key(base_url: &str) -> Option<String> {
+    let u = reqwest::Url::parse(base_url).ok()?;
+    let (port, key) = ENGINE_KEY.lock().unwrap().clone()?;
+    (u.host_str() == Some("127.0.0.1") && u.port() == Some(port)).then_some(key)
+}
+
 #[derive(Default)]
 pub struct Ai {
     /// (model id, port, process)
@@ -352,6 +362,11 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
         let gguf = model_file(&dir(&app)?, asset(&model)?).ok_or("This model isn't downloaded yet.")?;
         let port = std::net::TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).map_err(|e| e.to_string())?.port();
         let mut cmd = engine_cmd(&exe);
+        // A fresh secret per launch, so other programs on the PC (and web pages) can't use the
+        // engine. Passed in the environment, not on the command line, where process lists show it.
+        let key = uuid::Uuid::new_v4().simple().to_string();
+        cmd.env("LLAMA_API_KEY", &key);
+        *ENGINE_KEY.lock().unwrap() = Some((port, key));
         cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "-c", "8192", "--jinja", "-np", "1", "--cache-reuse", "256"]);
         let mmproj = dir(&app)?.join(VISION.file);
         if mmproj.exists() {
@@ -394,16 +409,38 @@ fn key_entry(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("oceanic-nerida", id).map_err(|e| e.to_string())
 }
 
-fn get_key(id: Option<&str>) -> Option<String> {
-    key_entry(id?).ok()?.get_password().ok()
+/// "scheme://host:port" of a provider URL; keys are only ever sent there.
+fn origin(url: &str) -> Option<String> {
+    let u = reqwest::Url::parse(url).ok()?;
+    Some(format!("{}://{}:{}", u.scheme(), u.host_str()?, u.port_or_known_default()?))
+}
+
+/// The key for provider `id`, but only when `base_url` is the server it was saved for.
+/// Keys saved before this check get bound to the first server they're used with.
+fn get_key(id: Option<&str>, base_url: &str) -> Option<String> {
+    let id = id?;
+    let key = key_entry(id).ok()?.get_password().ok()?;
+    let want = origin(base_url)?;
+    let bound = key_entry(&format!("{id}#origin")).ok()?;
+    match bound.get_password() {
+        Ok(o) if o == want => Some(key),
+        Ok(_) => None,
+        Err(_) => bound.set_password(&want).ok().map(|_| key),
+    }
 }
 
 /// Saves (or with `None`, deletes) the API key for provider `id`.
 #[tauri::command]
-pub fn ai_set_key(id: String, key: Option<String>) -> Result<(), String> {
+pub fn ai_set_key(id: String, key: Option<String>, base_url: Option<String>) -> Result<(), String> {
     let e = key_entry(&id)?;
+    let bound = key_entry(&format!("{id}#origin"))?;
+    let _ = bound.delete_credential();
     match key.filter(|k| !k.is_empty()) {
-        Some(k) => e.set_password(&k).map_err(|e| e.to_string()),
+        Some(k) => {
+            let o = base_url.as_deref().and_then(origin).ok_or("Add the server URL before its API key")?;
+            bound.set_password(&o).map_err(|e| e.to_string())?;
+            e.set_password(&k).map_err(|e| e.to_string())
+        }
         None => match e.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(err) => Err(err.to_string()),
@@ -418,7 +455,7 @@ pub async fn ai_list_models(base_url: String, key_id: Option<String>) -> Result<
     let mut req = reqwest::Client::new()
         .get(format!("{}/models", base_url.trim_end_matches('/')))
         .timeout(std::time::Duration::from_secs(8));
-    if let Some(k) = get_key(key_id.as_deref()) {
+    if let Some(k) = engine_key(&base_url).or_else(|| get_key(key_id.as_deref(), &base_url)) {
         req = req.bearer_auth(k);
     }
     let v: serde_json::Value = req.send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| e.to_string())?.json().await.map_err(|e| e.to_string())?;
@@ -451,7 +488,7 @@ pub async fn ai_chat(
             }
             body
         });
-    if let Some(k) = get_key(key_id.as_deref()) {
+    if let Some(k) = engine_key(&base_url).or_else(|| get_key(key_id.as_deref(), &base_url)) {
         req = req.bearer_auth(k);
     }
     let res = req.send().await.map_err(|e| e.to_string())?;
@@ -511,13 +548,20 @@ pub fn shutdown(state: &Ai) {
     }
 }
 
+/// The only sites Nerida's web tools read.
+const WEB_HOSTS: &[&str] = &["en.wikipedia.org", "html.duckduckgo.com", "api.dictionaryapi.dev"];
+
 /// GET an https page as text (web search for Nerida AI; avoids CORS in the webview).
 #[tauri::command]
 pub async fn web_get(url: String) -> Result<String, String> {
-    if !url.starts_with("https://") {
-        return Err("only https".into());
+    let u = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
+    if u.scheme() != "https" || u.port().is_some() || !u.host_str().is_some_and(|h| WEB_HOSTS.contains(&h)) {
+        return Err("This site isn't on Nerida's list of web sources".into());
     }
-    let res = reqwest::Client::new()
+    let res = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())?
         .get(&url)
         .header("User-Agent", "Mozilla/5.0 (Oceanic study app)")
         .timeout(std::time::Duration::from_secs(10))

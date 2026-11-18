@@ -3,11 +3,14 @@ import { createPortal } from "react-dom";
 import { RotateCcw, Square, X } from "lucide-react";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { runOutline, stopEdit, type EssayType } from "../lib/neridaEdit";
+import { neridaSafeMarkdown } from "../lib/neridaSafe";
 
 /** Outline generator (Docs + Notes): your topic, type, length and own ideas first, then a preview to insert. */
 export const NERIDA_OUTLINE = "oc-nerida-outline";
 export type OutlineDetail = { topic: string; insert: (markdown: string) => void };
-export const openNeridaOutline = (d: OutlineDetail) => window.dispatchEvent(new CustomEvent(NERIDA_OUTLINE, { detail: d }));
+/** The outline is defused (no images, links or HTML) before it reaches the editor. */
+export const openNeridaOutline = (d: OutlineDetail) =>
+  window.dispatchEvent(new CustomEvent(NERIDA_OUTLINE, { detail: { ...d, insert: (md: string) => d.insert(neridaSafeMarkdown(md)) } }));
 
 const TYPES: [EssayType, string][] = [
   ["argumentative", "Argumentative"],

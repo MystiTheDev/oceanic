@@ -1,3 +1,4 @@
+import pkg from "../../package.json";
 import { Avatar } from "./SettingsModal";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -7,7 +8,7 @@ import { colorOf } from "../lib/colors";
 import { openContextMenu } from "./ContextMenu";
 import { setDragGhost } from "../lib/dragGhost";
 
-export const APP_VERSION = "2.0.1";
+export const APP_VERSION: string = pkg.version;
 
 type SidebarFooterProps = {
   workspaces: WorkspaceRecord[];

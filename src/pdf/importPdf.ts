@@ -3,7 +3,7 @@
  * event that opens the reader at a page.
  * ------------------------------------------------------------------------ */
 import { isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../lib/dialog";
 import { api, type PdfDocRecord } from "../data/api";
 import { finishImport, toBase64 } from "./pdfjs";
 

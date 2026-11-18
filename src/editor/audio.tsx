@@ -4,7 +4,7 @@
  * ------------------------------------------------------------------------ */
 import { useEffect, useRef, useState } from "react";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../lib/dialog";
 import { createReactBlockSpec, createReactInlineContentSpec } from "@blocknote/react";
 import { Music, Pause, Play } from "lucide-react";
 

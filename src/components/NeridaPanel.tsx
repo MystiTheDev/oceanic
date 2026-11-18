@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { runTools, searchNotes, searchWeb } from "../lib/neridaTools";
+import { SourceBook } from "../lib/neridaGuard";
 import { createMindmap } from "../mindmap/MindmapGallery";
 import { MAP_FLAG } from "../mindmap/NeridaMap";
 import { OPEN_MINDMAP } from "../editor/mindmapBlock";
@@ -10,7 +11,7 @@ import { detectTask, type TaskDraft } from "../lib/neridaTask";
 import { ArrowUp, Check, ChevronDown, Copy, Download, FileInput, FileText, Globe, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 import { usePageDirectory } from "../editor/pageDirectory";
 import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
-import { ASK_WHICH, editPrompt, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
+import { ASK_WHICH, editPrompt, proposalWarning, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
 import { ModelMenu } from "./NeridaModelMenu";
 import { openNeridaCards } from "./NeridaCards";
 import { ATTACH_ACCEPT, attachmentsContext, extractFileText, type Attachment } from "../lib/neridaFiles";
@@ -27,6 +28,7 @@ export { NeridaMark } from "./NeridaOrb";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { BetaPill, NeridaBetaCard, NeridaMark } from "./NeridaOrb";
+import { neridaSafeMarkdown } from "../lib/neridaSafe";
 
 /* ------------------------------------------------------------- markdown */
 /** $…$ → KaTeX. Plain numbers or words ("$6.53$", "$P$" stays math-italic) need no braces; money like "$5 and $10" isn't matched (no space inside the $s). */
@@ -368,7 +370,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       thoughtSecs = Math.max(1, Math.round((Date.now() - t0) / 1000));
     };
     let garbled = false;
-    let sources: string[] = [];
+    const book = new SourceBook();
     try {
       // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
       const blocks = pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
@@ -388,9 +390,12 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         mark("Editing your note");
         let raw = "";
         await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (raw += t), onThink);
-        const n = proposeEdits(parseEdits(raw, blocks));
+        const proposals = parseEdits(raw, blocks);
+        const n = proposeEdits(proposals);
+        const warn = n ? proposalWarning(proposals, blocks) : "";
         reply = n
-          ? `I've made ${n} change${n > 1 ? "s" : ""} to your note, highlighted in blue. They're **pending**: accept or reject them in the note, or with the buttons below.`
+          ? `I've made ${n} change${n > 1 ? "s" : ""} to your note, highlighted in blue. They're **pending**: accept or reject them in the note, or with the buttons below.` +
+            (warn ? `\n\n⚠️ ${warn}` : "")
           : ASK_WHICH;
         setSteps((s) => s.map((x) => ({ ...x, done: true })));
         throw null; // skip the normal answer; reply is saved below
@@ -402,12 +407,12 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         const ids = await searchNotes(text);
         if (ids.length) {
           mark(`Searching your notes: found ${ids.length}`);
-          context = (await buildContext(ids.map((id) => ({ id, title: pages.get(id)?.title || "Untitled", icon: "", why: "mention" as const })), text)).text;
+          context = (await buildContext(ids.map((id) => ({ id, title: pages.get(id)?.title || "Untitled", icon: "", why: "mention" as const })), text, book)).text;
         }
       }
       if (used.length) {
         mark(`Reading ${used.length} note${used.length > 1 ? "s" : ""}`);
-        const c = await buildContext(used, text);
+        const c = await buildContext(used, text, book);
         context = c.text;
         mark(`Found ${c.parts} relevant part${c.parts === 1 ? "" : "s"}`);
       }
@@ -424,7 +429,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           setSteps((s) => s.map((x) => ({ ...x, done: true })));
           throw null; // reply is saved below
         }
-        const c = await pdfContext(pdf.id, name, text, range?.[0], range?.[1]);
+        const c = await pdfContext(pdf.id, name, text, range?.[0], range?.[1], book);
         if (range) mark(`Pages ${range[0]}–${range[1]}`);
         if (!c.parts) mark(b && !status?.vision ? "This PDF is scanned: add Nerida vision to read it" : "No text in this PDF");
         else if (c.parts) mark(`Found ${c.parts} relevant page${c.parts === 1 ? "" : "s"}`);
@@ -433,27 +438,26 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       }
       if (files.length) {
         mark(`Reading ${files.length} file${files.length > 1 ? "s" : ""}`);
-        context = [context, attachmentsContext(files)].filter(Boolean).join("\n\n");
+        context = [context, attachmentsContext(files, book, text)].filter(Boolean).join("\n\n");
       }
       if (online && b === "plus") {
         mark("Searching the web");
         try {
-          const w = await searchWeb(text);
-          sources = w.sources;
-          if (w.text) context = [context, `Web results:\n${w.text}`].filter(Boolean).join("\n\n");
-          mark(w.text ? `Read ${w.sources.length} web source${w.sources.length === 1 ? "" : "s"}` : "No web results");
+          const hits = await searchWeb(text);
+          const web = hits.map((h) => book.add("web", h.label, h.text)).filter(Boolean);
+          if (web.length) context = [context, ...web].filter(Boolean).join("\n\n");
+          mark(web.length ? `Read ${web.length} web source${web.length === 1 ? "" : "s"}` : "No web results");
         } catch {
           mark("Couldn't reach the web");
         }
       }
-      context = [tools, context].filter(Boolean).join("\n\n");
       if (b) {
         if (status?.running !== b) mark(`Waking up ${MODEL_NAMES[b]}`);
         await engine.start(b);
         void refresh();
       }
       mark(b ? "Writing answer" : `Asking ${modelLabel(model)}`);
-      await engine.chat(model, [{ role: "system", content: SYSTEM }, ...history, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context) }], (t) => {
+      await engine.chat(model, [{ role: "system", content: SYSTEM }, ...history, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context, book, tools) }], (t) => {
         reply += t;
         setDraft(reply);
       }, onThink);
@@ -463,7 +467,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (e !== null) setErr(String(e)); // null = note edit finished early
     }
     if (reply && garbled) reply += GARBLED_NOTE;
-    if (reply && sources.length) reply += "\n\nSources: " + sources.join(" · ");
+    if (reply) reply += book.footer(reply);
     if (reply) nerida.upsert({ ...base, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }) }], updatedAt: Date.now() });
     setDraft("");
     setBusy(false);
@@ -696,7 +700,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               </div>
               <div className={`mt-1 ml-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
                 <Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act>
-                {pageId && <Act title="Insert into note" onClick={() => window.dispatchEvent(new CustomEvent("oc-nerida-insert", { detail: m.content }))}><FileInput className="size-3.5" /></Act>}
+                {pageId && <Act title="Insert into note" onClick={() => window.dispatchEvent(new CustomEvent("oc-nerida-insert", { detail: neridaSafeMarkdown(m.content) }))}><FileInput className="size-3.5" /></Act>}
                 {i === lastAssistant && <Act title="Retry" onClick={retry}><RotateCcw className="size-3.5" /></Act>}
                 {i === lastAssistant && pending.count > 0 && (
                   <span className="ml-2 flex gap-1 text-[12px]">

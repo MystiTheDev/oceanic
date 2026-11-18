@@ -2801,9 +2801,10 @@ dependencies = [
 
 [[package]]
 name = "oceanic"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "base64 0.23.1",
+ "dunce",
  "futures-util",
  "keyring",
  "reqwest",
@@ -2824,6 +2825,7 @@ dependencies = [
  "tokio",
  "trash",
  "uuid",
+ "windows",
  "zip",
 ]
 

@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { House, LayoutDashboard, MessageSquare, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { House,MessageSquare, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { chatGroups, nerida, useNerida } from "../lib/nerida";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { openContextMenu } from "./ContextMenu";
 
 const ROW = "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13.5px] transition-colors";
 
-/** Top-right segmented pill on Home: Home | Dashboard | Nerida. The highlight stretch-slides between items. */
-const MODES = ["home", "dashboard", "nerida"] as const;
+/** Top-right segmented pill on Home: Home | Nerida. The highlight stretch-slides between items.
+ * Plain Home vs Student dashboard is chosen in Settings → General. */
+const MODES = ["home", "nerida"] as const;
 export function HomeSwitch() {
   const { homeMode } = useNerida();
   const box = useRef<HTMLDivElement>(null);
@@ -31,7 +32,6 @@ export function HomeSwitch() {
     <div ref={box} className="absolute right-4 top-3 z-10 flex items-center gap-0.5 rounded-full border border-white/[0.08] bg-neutral-900/80 p-0.5 backdrop-blur">
       <span aria-hidden className={`oc-switch-pill ${homeMode === "nerida" ? "oc-switch-nerida" : ""}`} data-dir={pill?.dir ?? 0} style={pill ? { left: pill.l, right: pill.r } : { opacity: 0 }} />
       {btn("home", <House className="size-3.5" />, "Home")}
-      {btn("dashboard", <LayoutDashboard className="size-3.5" />, "Dashboard")}
       {btn("nerida", <NeridaMark size={14} />, <>Nerida<BetaPill /></>)}
     </div>
   );
@@ -89,7 +89,7 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
         {shown.length === 0 && (q
           ? <p className="mt-3 px-2 py-1 text-[13px] text-neutral-500">No chats match “{q}”</p>
-          : <p className="mt-3 px-2 py-1 text-[12.5px] leading-relaxed text-neutral-500">Your chats will show up here. Start one on the right, or type <kbd className="text-neutral-300">/</kbd> for study actions.</p>)}
+          : <p className="mt-3 whitespace-normal px-2 py-1 text-[12.5px] leading-relaxed text-neutral-500">Your chats will show up here. Start one on the right, or type <kbd className="text-neutral-300">/</kbd> for study actions.</p>)}
         {chatGroups(shown).map(([group, list]) => (
           <div key={group}>
             <p className="mt-3 px-2 pb-1 text-[11.5px] font-semibold text-neutral-500">{group}</p>
@@ -116,7 +116,7 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
           </div>
         ))}
       </div>
-      {footer}
+      <div className="flex shrink-0 flex-col">{footer}</div>
     </aside>
   );
 }

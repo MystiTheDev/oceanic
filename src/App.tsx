@@ -3,6 +3,7 @@ import { SIDEBAR_ITEMS, sidebarPalette } from "./components/SettingsModal";
 import { loadSrs, scanAll, syncPage } from "./lib/srs";
 import { parseImports, pickImportFiles, type ImportedPage, type ImportFailure } from "./lib/importNotes";
 import { importOmap } from "./lib/omapFile";
+import { MalwareAlert } from "./components/MalwareAlert";
 import { StudyHome } from "./components/StudyHome";
 import { UpdateUI } from "./components/UpdateUI";
 import { SpellUI } from "./components/SpellUI";
@@ -91,6 +92,7 @@ import { PdfReader } from "./pdf/PdfReader";
 import { OPEN_PDF, type PdfTarget } from "./pdf/importPdf";
 import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
+import { neridaSafeMarkdown } from "./lib/neridaSafe";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
 const HOME_TAB = "home-tab";
@@ -303,7 +305,8 @@ export default function App() {
         accent: stored.accent ?? DEFAULT_SETTINGS.accent,
         closeToTray: stored.closeToTray !== "false",
         startup: stored.startup === "home" || stored.startup === "nerida" ? stored.startup : "last",
-        homeStyle: stored.homeStyle === "student" ? "student" : "classic",
+        // Before Home style lived in Settings, the Home pill stored "dashboard" in localStorage.
+        homeStyle: stored.homeStyle === "student" || (!stored.homeStyle && localStorage.getItem("oc-home-mode") === "dashboard") ? "student" : "classic",
         avatar: stored.avatar ?? "",
         weekStart: stored.weekStart === "monday" ? "monday" : "sunday",
         editorSize: stored.editorSize === "small" || stored.editorSize === "large" ? stored.editorSize : "default",
@@ -937,7 +940,7 @@ export default function App() {
       const { createTagged, pages, openPage } = taskRef.current;
       const same = r.reuse && pages.find((p) => !p.trashedAt && p.title.trim().toLowerCase() === r.title.trim().toLowerCase());
       if (same) return r.done(same.id);
-      const body = r.markdown ? (withMath(BlockNoteEditor.create({ schema }).tryParseMarkdownToBlocks(r.markdown) as unknown as MdBlock[]) as unknown as PartialBlock[]) : undefined;
+      const body = r.markdown ? (withMath(BlockNoteEditor.create({ schema }).tryParseMarkdownToBlocks(neridaSafeMarkdown(r.markdown)) as unknown as MdBlock[]) as unknown as PartialBlock[]) : undefined;
       const id = await createTagged(r.title, [], null, body);
       if (!id) return;
       r.done(id);
@@ -1661,7 +1664,7 @@ export default function App() {
             <HomeSwitch />
             {neridaHome ? (
               <NeridaPanel pageId={null} home />
-            ) : homeMode === "dashboard" ? (
+            ) : settings.homeStyle === "student" ? (
             <StudyHome
               key={homeKey}
               userName={settings.userName}
@@ -1791,6 +1794,7 @@ export default function App() {
       )}
       <NeridaCardsHost />
       <NeridaEditUI />
+      <MalwareAlert />
       <NeridaOutlineUI />
       {savePrompt && (
         <SavePrompt

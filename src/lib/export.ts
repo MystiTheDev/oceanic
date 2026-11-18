@@ -6,7 +6,7 @@
 import { BlockNoteEditor, type PartialBlock } from "@blocknote/core";
 import { schema } from "../editor/schema";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save } from "./dialog";
 import { strToU8, zipSync } from "fflate";
 import type { PageMeta } from "../data/workspace";
 import { api } from "../data/api";

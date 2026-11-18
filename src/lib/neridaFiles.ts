@@ -1,5 +1,6 @@
 import mammoth from "mammoth";
 import { pageText, pdfjs } from "../pdf/pdfjs";
+import { relevantPassages, type SourceBook } from "./neridaGuard";
 
 /* Attachments for Nerida: turn a dropped/picked file into plain text the model
  * can read. Backend only for now; the composer's attach button is not wired yet. */
@@ -33,5 +34,7 @@ export async function extractFileText(file: File): Promise<Attachment> {
 }
 
 /** Prompt section for attachments, appended to the notes context. */
-export const attachmentsContext = (files: Attachment[]) =>
-  files.map((f) => `### File: ${f.name}${f.truncated ? " (truncated)" : ""}\n${f.text}`).join("\n\n");
+export const attachmentsContext = (files: Attachment[], book?: SourceBook, question = "") =>
+  book
+    ? files.map((f) => book.add("file", `File "${f.name}"${f.truncated ? " (truncated)" : ""}`, relevantPassages(f.text, question, 8000))).filter(Boolean).join("\n\n")
+    : files.map((f) => `### File: ${f.name}${f.truncated ? " (truncated)" : ""}\n${f.text}`).join("\n\n");

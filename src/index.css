@@ -156,3 +156,20 @@
 .oc-bar-in { animation: oc-bar-in 220ms cubic-bezier(.2,.8,.2,1) both; }
 .oc-bar-out { animation: oc-bar-in 160ms ease-in reverse both; }
 @media (prefers-reduced-motion: reduce) { .oc-bar-in, .oc-bar-out { animation: none; } }
+
+/* Malware warning (MalwareAlert): card pops in with a shake, shield pulses, rings ripple out. */
+.oc-malware-backdrop { animation: oc-malware-fade 0.2s ease-out both; }
+.oc-malware-card { animation: oc-malware-pop 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) both, oc-malware-shake 0.5s 0.45s ease-in-out both; }
+.oc-malware-shield { animation: oc-malware-pulse 1.6s ease-in-out infinite; }
+.oc-malware-ring { animation: oc-malware-ripple 1.6s ease-out infinite; }
+.oc-malware-glow { animation: oc-malware-pulse 2.4s ease-in-out infinite; }
+.oc-malware-item { animation: oc-malware-rise 0.35s ease-out both; }
+@keyframes oc-malware-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes oc-malware-pop { from { opacity: 0; transform: scale(0.85) translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes oc-malware-shake { 0%, 100% { transform: none; } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(2px); } }
+@keyframes oc-malware-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: 0.8; } }
+@keyframes oc-malware-ripple { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.9); opacity: 0; } }
+@keyframes oc-malware-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .oc-malware-backdrop, .oc-malware-card, .oc-malware-shield, .oc-malware-ring, .oc-malware-glow, .oc-malware-item { animation: none; }
+}

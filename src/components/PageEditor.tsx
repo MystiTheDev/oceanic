@@ -342,6 +342,30 @@ export function PageEditor({
   }, [changes, editor]);
   useEffect(() => () => setPending({ count: 0, accept: () => {}, reject: () => {} }), []);
 
+  // What gets saved: the note without Nerida's pending changes (replaced blocks as they were, added
+  // blocks left out), so a change only reaches disk once you accept it.
+  const changesRef = useRef(changes);
+  changesRef.current = changes;
+  const savedDoc = () => {
+    const pending = changesRef.current;
+    if (!pending.length) return editor.document as Block[];
+    const byId = new Map(pending.map((c) => [c.newId, c]));
+    const strip = (bs: Block[]): Block[] =>
+      bs.flatMap((b) => {
+        const c = byId.get(b.id);
+        if (c && !c.old) return [];
+        const base = c?.old ? ({ ...b, ...c.old } as Block) : b;
+        return [{ ...base, children: strip((b.children ?? []) as Block[]) } as Block];
+      });
+    return strip(editor.document as Block[]);
+  };
+  // Accept / reject settle after the editor's own change event: save again once they do.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (!settled.current) return void (settled.current = true);
+    onDocChange(page.id, savedDoc());
+  }, [changes]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Nerida flashcards: selection → generator for this page; saved cards → the "Flashcards" toggle at the end.
   useEffect(() => {
     const onSel = (e: Event) => {
@@ -567,7 +591,7 @@ export function PageEditor({
           editor={editor}
           theme="dark"
           onChange={() => {
-            onDocChange(page.id, editor.document as Block[]);
+            onDocChange(page.id, savedDoc());
             setEmpty(isEmptyDoc(editor.document as Block[]));
           }}
           formattingToolbar={false}

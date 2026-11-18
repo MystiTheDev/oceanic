@@ -222,7 +222,7 @@ function Providers() {
     if (!form) return;
     setMsg("Loading models…");
     try {
-      await setKey(DRAFT_KEY, form.key || null);
+      await setKey(DRAFT_KEY, form.key || null, form.baseUrl);
       const available = await listModels(form.baseUrl, DRAFT_KEY);
       setForm({ ...form, available });
       setMsg(available.length ? "" : "No models returned. Type a model name below.");
@@ -241,7 +241,7 @@ function Providers() {
     if (!form.name.trim() || !form.baseUrl.trim() || !models.length) return setMsg("Add a name, URL and at least one model.");
     const p: Provider = { id: uid(), name: form.name.trim(), baseUrl: form.baseUrl.trim().replace(/\/+$/, ""), models };
     try {
-      await setKey(p.id, form.key || null);
+      await setKey(p.id, form.key || null, p.baseUrl);
       saveProviders([...providers, p]);
       cancel();
     } catch (e) {

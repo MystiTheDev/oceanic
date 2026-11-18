@@ -1056,7 +1056,7 @@ function DashboardGrid({ cards, editing, onDone }: { cards: Record<string, React
 
   return (
     <>
-      <div className="-mb-3 flex items-center justify-end gap-2">
+      <div className="relative z-[60] -mb-3 flex items-center justify-end gap-2">
         {editing && (
           <>
             <span className="mr-auto text-[12px] text-neutral-500">Drag cards anywhere · drag the corner to resize</span>
