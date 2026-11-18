@@ -1,3 +1,11 @@
+# 🌊 Oceanic v2.0.6: Trace and filter in Atlas
+
+- 🧭 Trace a path between two ideas: right-click a card, choose Trace to…, then click another card. Atlas lights up the shortest route and opens any collapsed groups along the way.
+- 🔍 A new Filter menu in Atlas: show cards by tag (all or any), learning state or group. Cards that don't match fade out.
+- 🔗 Hide relationship types from the same Filter menu.
+- 💾 Atlas remembers your filters between sessions.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.5: Safer imports and a stronger Nerida
 
 - 🛡️ On Windows, imported notes and zip files are checked by your antivirus first. If it flags something, the import stops and Oceanic warns you.

@@ -73,6 +73,34 @@ export function neighborIds(edges: CanvasEdge[], id: string): Set<string> {
  * a concept always comes after the ones it depends on. `cycle` lists the
  * nodes found on a dependency loop; they are skipped, never looped over.
  */
+/** One hop of a trace: the edge crossed between two cards. */
+export type TraceStep = { from: string; to: string; edge: CanvasEdge };
+/** Shortest path from `a` to `b`, ignoring arrow direction (BFS). Null when no path exists. */
+export function trace(edges: CanvasEdge[], a: string, b: string): TraceStep[] | null {
+  if (a === b) return [];
+  const adj = new Map<string, { to: string; edge: CanvasEdge }[]>();
+  const add = (x: string, to: string, edge: CanvasEdge) => adj.set(x, [...(adj.get(x) ?? []), { to, edge }]);
+  for (const e of edges) (add(e.sourceId, e.targetId, e), add(e.targetId, e.sourceId, e));
+  const prev = new Map<string, TraceStep>();
+  const queue = [a];
+  const seen = new Set([a]);
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const { to, edge } of adj.get(cur) ?? []) {
+      if (seen.has(to)) continue;
+      seen.add(to);
+      prev.set(to, { from: cur, to, edge });
+      if (to === b) {
+        const steps: TraceStep[] = [];
+        for (let at = b; at !== a; at = prev.get(at)!.from) steps.unshift(prev.get(at)!);
+        return steps;
+      }
+      queue.push(to);
+    }
+  }
+  return null;
+}
+
 export function prerequisites(edges: CanvasEdge[], target: string): { order: string[]; cycle: string[] } {
   const deps = new Map<string, string[]>();
   for (const e of edges) {

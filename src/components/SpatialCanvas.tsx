@@ -24,6 +24,7 @@ import {
   Palette,
   PenLine,
   Plus,
+  Route,
   ScanSearch,
   Sparkles,
   Spline,
@@ -47,7 +48,11 @@ import {
 } from "../data/api";
 import { AtlasGuide } from "./AtlasGuide";
 import { AtlasGroups, GROUP_HEADER } from "./AtlasGroups";
-import { mapChecks, OPEN_CONCEPT, pendingConcept, setPendingConcept, isConceptId, prerequisites, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
+import { mapChecks, OPEN_CONCEPT, pendingConcept, setPendingConcept, isConceptId, prerequisites, REL_LABELS, SYMMETRIC_TYPES, trace, type TraceStep } from "../data/atlas";
+
+/** Card filters: a card must match every active section; tags match all or any. */
+type CardFilters = { tags: string[]; tagMode: "all" | "any"; states: Concept["state"][]; groups: string[] };
+const NO_FILTERS: CardFilters = { tags: [], tagMode: "any", states: [], groups: [] };
 import { ConceptInspector } from "./ConceptInspector";
 import { AtlasLegend } from "./AtlasLegend";
 import { MUTED_STROKE, PALETTE, REL_COLORS } from "../data/atlas";
@@ -213,6 +218,36 @@ export function SpatialCanvas({
   const [query, setQuery] = useState("");
   /** Prerequisite pathway shown for this concept ("What should I understand first?"). */
   const [pathFor, setPathFor] = useState<string | null>(null);
+  /** Card filters (tags, learning state, group); cards that don't match fade. Kept in settings. */
+  const [filters, setFilters] = useState<CardFilters>(NO_FILTERS);
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => {
+        if (s.atlasFilters) setFilters({ ...NO_FILTERS, ...JSON.parse(s.atlasFilters) });
+        if (s.atlasHiddenTypes) setHiddenTypes(new Set(JSON.parse(s.atlasHiddenTypes)));
+      })
+      .catch(() => {});
+  }, []);
+  const updateFilters = (f: CardFilters) => {
+    setFilters(f);
+    api.setSetting("atlasFilters", JSON.stringify(f)).catch(() => {});
+  };
+  const toggleType = (t: RelType) =>
+    setHiddenTypes((h) => {
+      const next = h.has(t) ? new Set([...h].filter((x) => x !== t)) : new Set([...h, t]);
+      api.setSetting("atlasHiddenTypes", JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
+  /** Trace: `pick` is the start card while waiting for the user to click the end card. */
+  const [tracePick, setTracePick] = useState<string | null>(null);
+  const [traceAB, setTraceAB] = useState<{ a: string; b: string } | null>(null);
+  useEffect(() => {
+    if (!tracePick) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setTracePick(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tracePick]);
   /** Read-only note text per page, fetched once the map is zoomed in far enough. */
   const [previews, setPreviews] = useState<Map<string, string>>(new Map());
   /** True briefly while the camera eases to a programmatic target (fit, search, focus). */
@@ -557,12 +592,18 @@ export function SpatialCanvas({
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     gesture.current = { kind: "pan", startX: e.clientX, startY: e.clientY, cam: camera };
     setSelected(null);
+    setTracePick(null);
     setEditingEdge(null);
   };
 
   const onCardDown = (e: PointerEvent, id: string) => {
     if (e.button !== 0 || !positions) return;
     e.stopPropagation();
+    if (tracePick) {
+      if (id !== tracePick) startTrace(tracePick, id);
+      setTracePick(null);
+      return;
+    }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     gesture.current = {
       kind: "card",
@@ -929,6 +970,21 @@ export function SpatialCanvas({
     ]);
   };
 
+  /** Show the shortest path from a to b; open any collapsed group it passes through. */
+  const startTrace = (a: string, b: string) => {
+    setTraceAB({ a, b });
+    setFocusTrail([]);
+    setPathFor(null);
+    const steps = trace(traceEdges, a, b);
+    const ids = steps ? [a, ...steps.map((s) => s.to)] : [a, b];
+    for (const g of groups) if (g.collapsed && ids.some((id) => groupOfCard(id)?.id === g.id)) saveGroup(g, { collapsed: false });
+  };
+  const traceItem = (id: string): MenuItem => ({
+    label: "Trace to…",
+    icon: <Route className="size-4" />,
+    onSelect: () => (setSelected(id), setTracePick(id)),
+  });
+
   const groupItem = (id: string): MenuItem => {
     const cur = groupOfCard(id);
     return {
@@ -962,12 +1018,14 @@ export function SpatialCanvas({
     openContextMenu(e, isConceptId(page.id) ? [
       { label: "Focus", icon: <Crosshair className="size-4" />, onSelect: () => enterFocus(page.id) },
       { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(page.id) },
+      traceItem(page.id),
       groupItem(page.id),
       "divider",
       { label: "Delete concept", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => deleteConcept(page.id) },
     ] : [
       { label: "Open", icon: <FileText className="size-4" />, onSelect: () => onOpenPage(page.id) },
       { label: "Open in new tab", icon: <AppWindow className="size-4" />, onSelect: () => onOpenInNewTab(page.id) },
+      traceItem(page.id),
       groupItem(page.id),
       "divider",
       {
@@ -1104,8 +1162,25 @@ export function SpatialCanvas({
     (f) => !ignored.has(f.key),
   );
   const inPath = path ? new Set([pathFor!, ...path.order]) : null;
-  /** Cards kept bright: the pathway wins over Focus View. */
-  const bright = inPath ?? inFocus;
+  /** Trace follows every relationship type the filter shows, in either direction. */
+  const traceEdges = canvasEdges.filter((e) => !hiddenTypes.has(e.relType));
+  const traceSteps = traceAB ? trace(traceEdges, traceAB.a, traceAB.b) : null;
+  const inTrace = traceAB ? new Set(traceSteps ? [traceAB.a, ...traceSteps.map((s) => s.to)] : [traceAB.a, traceAB.b]) : null;
+  const traceKeys = new Set((traceSteps ?? []).map((s) => [s.edge.sourceId, s.edge.targetId].sort().join("|")));
+  /** Cards kept bright: a trace wins over the pathway, which wins over Focus View. */
+  const bright = inTrace ?? inPath ?? inFocus;
+  /** Cards that don't match the card filters (they fade). */
+  const filterCount = filters.tags.length + filters.states.length + filters.groups.length + hiddenTypes.size;
+  const filteredOut = (id: string) => {
+    const c = concepts.find((x) => x.id === id);
+    const tags = (c ? c.tags : pages.find((p) => p.id === id)?.tags) ?? [];
+    if (filters.tags.length && !(filters.tagMode === "all" ? filters.tags.every((t) => tags.includes(t)) : filters.tags.some((t) => tags.includes(t))))
+      return true;
+    if (filters.states.length && !(c && filters.states.includes(c.state))) return true;
+    if (filters.groups.length && !filters.groups.includes(groupOfCard(id)?.id ?? "")) return true;
+    return false;
+  };
+  const allTags = [...new Set([...concepts.flatMap((c) => c.tags), ...pageList.flatMap((p) => p.tags ?? [])])].sort();
   const q = query.trim().toLowerCase();
   const hits = q
     ? pages
@@ -1143,7 +1218,7 @@ export function SpatialCanvas({
   return (
     <div
       ref={viewport}
-      className="oc-fade-in relative h-full w-full cursor-grab touch-none overflow-hidden select-none active:cursor-grabbing"
+      className={`oc-fade-in relative h-full w-full touch-none overflow-hidden select-none ${tracePick ? "cursor-crosshair [&_*]:!cursor-crosshair" : "cursor-grab active:cursor-grabbing"}`}
       style={{
         backgroundColor: "var(--oc-canvas)",
         backgroundImage: camera.k < 0.45 ? "none" : "radial-gradient(color-mix(in srgb, var(--oc-canvas-dot) 65%, transparent) 1px, transparent 1px)",
@@ -1246,8 +1321,13 @@ export function SpatialCanvas({
                   <g
                     key={edge.key}
                     opacity={
-                      bright && !(bright.has(edge.source) && bright.has(edge.target) && (!inPath || edge.relType === "depends_on"))
+                      bright &&
+                      !(inTrace
+                        ? traceKeys.has([edge.source, edge.target].sort().join("|"))
+                        : bright.has(edge.source) && bright.has(edge.target) && (!inPath || edge.relType === "depends_on"))
                         ? 0.08
+                        : filteredOut(edge.source) || filteredOut(edge.target)
+                          ? 0.15
                         : muted
                           ? 0.35
                           : dimmed && edge.source !== hub && edge.target !== hub
@@ -1378,7 +1458,7 @@ export function SpatialCanvas({
                   width: size.w,
                   height: size.h,
                   scale: scale < 1 ? String(scale) : undefined,
-                  opacity: bright && !bright.has(page.id) ? 0.12 : dimmed && !dimmed.has(page.id) ? 0.45 : out < 1 ? out : undefined,
+                  opacity: (bright && !bright.has(page.id)) || filteredOut(page.id) ? 0.12 : dimmed && !dimmed.has(page.id) ? 0.45 : out < 1 ? out : undefined,
                   outline: level !== "dot" && page.id === (pathFor ?? focus) ? "2px solid var(--color-sky-400)" : "2px solid transparent",
                   outlineOffset: 3,
                   zIndex: dragging ? 5 : child ? undefined : 1,
@@ -1453,7 +1533,12 @@ export function SpatialCanvas({
                     </span>
                   )}
                 </div>
-                {path && path.order.includes(page.id) && (
+                {inTrace?.has(page.id) && traceSteps && (
+                  <span className="oc-pop-in absolute -left-2 -top-2 grid size-5 place-items-center rounded-full bg-amber-500 text-[11px] font-semibold text-white shadow shadow-black/40">
+                    {page.id === traceAB!.a ? 1 : traceSteps.findIndex((s) => s.to === page.id) + 2}
+                  </span>
+                )}
+                {!inTrace && path && path.order.includes(page.id) && (
                   <span className="oc-pop-in absolute -left-2 -top-2 grid size-5 place-items-center rounded-full bg-violet-500 text-[11px] font-semibold text-white shadow shadow-black/40">
                     {path.order.indexOf(page.id) + 1}
                   </span>
@@ -1545,18 +1630,20 @@ export function SpatialCanvas({
         const id = selected;
         const p = id ? shown.get(id) : undefined;
         const page = id ? pages.find((x) => x.id === id) : undefined;
-        if (!id || !p || !page || level === "dot" || draft || gesture.current?.kind === "card") return null;
+        const moving = gesture.current?.kind === "card" && gesture.current.moved;
+        if (!id || !p || !page || level === "dot" || draft || moving || tracePick) return null;
         const s = sizeOf(id);
         const isConcept = isConceptId(id);
         return (
           <CardToolbar
-            key={id}
+            key={`toolbar-${id}`}
             x={camera.x + p.x * camera.k}
             y={camera.y + (p.y - s.h / 2) * camera.k}
             color={cardColors[id] ?? null}
             isConcept={isConcept}
             onFocus={() => enterFocus(id)}
             onConnect={(e) => onHandleDown(e, id, "right")}
+            onTrace={() => setTracePick(id)}
             onColor={(c) => setCardColor(id, c)}
             onOpen={() => onOpenPage(id)}
             onDelete={() => {
@@ -1570,7 +1657,49 @@ export function SpatialCanvas({
 
       {/* Concept inspector (screen space) */}
       {(() => {
-        const c = concepts.find((x) => x.id === selected);
+        if (traceAB) {
+          const label = (s: TraceStep) => {
+            const forward = s.edge.sourceId === s.from;
+            const verb = REL_LABELS[s.edge.relType].toLowerCase();
+            const [x, y] = forward ? [s.from, s.to] : [s.to, s.from];
+            return `${pageTitle(x)} ${verb} ${pageTitle(y)}${s.edge.label ? ` — “${s.edge.label}”` : ""}`;
+          };
+          return (
+            <div
+              onPointerDown={(e) => e.stopPropagation()}
+              className="oc-pop-in absolute right-3 top-3 z-20 flex max-h-[calc(100%-24px)] w-[300px] flex-col rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] shadow-xl shadow-black/40"
+            >
+              <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
+                <Route className="size-4 text-amber-300" />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-neutral-100">
+                  {pageTitle(traceAB.a)} → {pageTitle(traceAB.b)}
+                </span>
+                <button type="button" aria-label="Close trace" onClick={() => setTraceAB(null)} className="grid size-6 cursor-pointer place-items-center rounded text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100">
+                  <X className="size-3.5" />
+                </button>
+              </div>
+              {traceSteps ? (
+                <ol className="overflow-y-auto p-1.5 text-[12.5px]">
+                  {[traceAB.a, ...traceSteps.map((s) => s.to)].map((id, i) => (
+                    <li key={id}>
+                      <button type="button" onClick={() => panTo(id)} className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-neutral-200 hover:bg-white/[0.05]">
+                        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-[11px] font-semibold text-white">{i + 1}</span>
+                        <span className="truncate">{pageTitle(id)}</span>
+                      </button>
+                      {i < traceSteps.length && <p className="ml-[18px] border-l border-white/10 py-1 pl-4 text-[11.5px] text-neutral-500">{label(traceSteps[i])}</p>}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="px-3 py-4 text-[12.5px] text-neutral-400">
+                  No connection between {pageTitle(traceAB.a)} and {pageTitle(traceAB.b)}
+                  {hiddenTypes.size ? " with the relationship types shown." : " yet."}
+                </p>
+              )}
+            </div>
+          );
+        }
+        const c = tracePick ? undefined : concepts.find((x) => x.id === selected);
         return c ? (
           <ConceptInspector
             key={c.id}
@@ -1657,13 +1786,14 @@ export function SpatialCanvas({
           </div>
           <button
             type="button"
-            title="Filter relationship types"
+            title="Filter"
             onClick={() => setFilterOpen((o) => !o)}
-            className={`grid size-8 cursor-pointer place-items-center rounded-lg border bg-neutral-800/90 backdrop-blur ${
-              hiddenTypes.size ? "border-sky-500/60 text-sky-300" : "border-white/[0.08] text-neutral-400 hover:text-neutral-200"
+            className={`flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border bg-neutral-800/90 px-2.5 text-[12px] backdrop-blur ${
+              filterCount ? "border-sky-500/60 text-sky-300" : "border-white/[0.08] text-neutral-400 hover:text-neutral-200"
             }`}
           >
             <Filter className="size-3.5" />
+            {filterCount > 0 && <span>Filter · {filterCount}</span>}
           </button>
           {findings.length > 0 && (
             <button
@@ -1698,24 +1828,85 @@ export function SpatialCanvas({
             ))}
           </div>
         )}
-        {filterOpen && (
-          <div className="flex w-[264px] flex-wrap gap-1 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1.5 shadow-xl shadow-black/50">
-            {REL_TYPES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() =>
-                  setHiddenTypes((h) => (h.has(t) ? new Set([...h].filter((x) => x !== t)) : new Set([...h, t])))
-                }
-                className={`h-6 cursor-pointer rounded-md border px-1.5 text-[11px] transition-colors duration-100 ${
-                  hiddenTypes.has(t)
-                    ? "border-white/[0.06] text-neutral-600 line-through"
-                    : "border-sky-500/50 bg-sky-500/10 text-neutral-200"
-                }`}
-              >
-                {REL_LABELS[t]}
-              </button>
-            ))}
+        {filterOpen && (() => {
+          const chip = (on: boolean) =>
+            `h-6 cursor-pointer rounded-md border px-1.5 text-[11px] transition-colors duration-100 ${
+              on ? "border-sky-500/50 bg-sky-500/10 text-neutral-200" : "border-white/[0.06] text-neutral-500 hover:text-neutral-300"
+            }`;
+          const flip = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+          const head = "px-0.5 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500";
+          return (
+            <div className="max-h-[70vh] w-[288px] overflow-y-auto rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-2 shadow-xl shadow-black/50">
+              <div className="flex items-center justify-between">
+                <p className={head + " pt-0"}>Relationships</p>
+                {filterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateFilters(NO_FILTERS);
+                      setHiddenTypes(new Set());
+                      api.setSetting("atlasHiddenTypes", "[]").catch(() => {});
+                    }}
+                    className="cursor-pointer text-[11px] text-sky-300 hover:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {REL_TYPES.map((t) => (
+                  <button key={t} type="button" onClick={() => toggleType(t)} className={chip(!hiddenTypes.has(t)) + (hiddenTypes.has(t) ? " line-through" : "")}>
+                    {REL_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-between">
+                <p className={head}>Tags</p>
+                <div className="mt-1 flex rounded-md border border-white/[0.08] p-0.5 text-[10.5px]">
+                  {(["all", "any"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => updateFilters({ ...filters, tagMode: m })}
+                      className={`cursor-pointer rounded px-1.5 ${filters.tagMode === m ? "bg-white/[0.08] text-neutral-100" : "text-neutral-500"}`}
+                    >
+                      {m === "all" ? "All of these" : "Any of these"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {allTags.length ? allTags.map((t) => (
+                  <button key={t} type="button" onClick={() => updateFilters({ ...filters, tags: flip(filters.tags, t) })} className={chip(filters.tags.includes(t))}>
+                    #{t}
+                  </button>
+                )) : <span className="text-[11px] text-neutral-600">No tags yet</span>}
+              </div>
+              <p className={head}>Learning state</p>
+              <div className="flex flex-wrap gap-1">
+                {(Object.keys(STATE_LABEL) as Concept["state"][]).map((s) => (
+                  <button key={s} type="button" onClick={() => updateFilters({ ...filters, states: flip(filters.states, s) })} className={chip(filters.states.includes(s)) + " flex items-center gap-1"}>
+                    <span className="size-1.5 rounded-full" style={{ background: STATE_DOT[s] }} />
+                    {STATE_LABEL[s]}
+                  </button>
+                ))}
+              </div>
+              <p className={head}>Group</p>
+              <div className="flex flex-wrap gap-1">
+                {groups.length ? groups.map((g) => (
+                  <button key={g.id} type="button" onClick={() => updateFilters({ ...filters, groups: flip(filters.groups, g.id) })} className={chip(filters.groups.includes(g.id))}>
+                    {g.name}
+                  </button>
+                )) : <span className="text-[11px] text-neutral-600">No groups yet</span>}
+              </div>
+            </div>
+          );
+        })()}
+        {tracePick && (
+          <div className="oc-pop-in flex items-center gap-2 rounded-lg border border-amber-400/40 bg-neutral-800/95 px-2.5 py-1.5 text-[12px] text-amber-100 backdrop-blur">
+            <Route className="size-3.5 text-amber-300" />
+            Click a card to trace from {pageTitle(tracePick)}
+            <span className="text-neutral-500">· Esc to cancel</span>
           </div>
         )}
         {focus && (
@@ -1785,7 +1976,7 @@ export function SpatialCanvas({
 }
 
 /** Small toolbar above the selected card: focus, connect, colour, open (notes), delete. */
-function CardToolbar({ x, y, color, isConcept, onFocus, onConnect, onColor, onOpen, onDelete }: {
+function CardToolbar({ x, y, color, isConcept, onFocus, onConnect, onTrace, onColor, onOpen, onDelete }: {
   /** Screen position of the card's top centre. */
   x: number;
   y: number;
@@ -1793,6 +1984,7 @@ function CardToolbar({ x, y, color, isConcept, onFocus, onConnect, onColor, onOp
   isConcept: boolean;
   onFocus: () => void;
   onConnect: (e: PointerEvent) => void;
+  onTrace: () => void;
   onColor: (c: string | null) => void;
   onOpen: () => void;
   onDelete: () => void;
@@ -1807,6 +1999,7 @@ function CardToolbar({ x, y, color, isConcept, onFocus, onConnect, onColor, onOp
     >
       <button type="button" title="Focus" aria-label="Focus" onClick={onFocus} className={btn}><Crosshair className="size-3.5" /></button>
       <button type="button" title="Drag to connect" aria-label="Connect" onPointerDown={onConnect} className={`${btn} cursor-crosshair`}><Spline className="size-3.5" /></button>
+      <button type="button" title="Trace to… (then click a card)" aria-label="Trace to" onClick={onTrace} className={btn}><Route className="size-3.5" /></button>
       <button type="button" title="Color" aria-label="Color" onClick={() => setPicking((p) => !p)} className={btn}>
         <span className="size-3 rounded-full border border-white/30" style={{ background: color ? PALETTE[color]?.color : "transparent" }} />
       </button>
