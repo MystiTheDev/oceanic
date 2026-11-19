@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, animate, motion, useScroll, useTransform, type Transition } from "motion/react";
 import {
-  ArrowUpLeft, CalendarDays, Clock, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, Pin, Plus,
+  ArrowUpLeft, CalendarDays, Check, Clock, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
 } from "lucide-react";
 import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
@@ -24,7 +24,7 @@ export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 type TabId = "home" | "pages";
 const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
-type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page";
+type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page" | "note";
 
 type Props = {
   userName: string;
@@ -49,6 +49,7 @@ type Props = {
   onPin: (id: string) => void;
   onDuplicate: (id: string) => void;
   onTrash: (id: string) => void;
+  onRename: (id: string, title: string) => void;
   onRestore: (id: string) => void;
   onDeleteForever: (id: string) => void;
 };
@@ -183,6 +184,20 @@ export function MobileShell(p: Props) {
     return () => window.clearTimeout(id);
   }, [query]);
   const [focused, setFocused] = useState(false);
+  // Long-press a note card or row: its action sheet.
+  const [noteId, setNoteId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [title, setTitle] = useState("");
+  const note = pages.find((x) => x.id === noteId);
+  const hold = (id: string) => ({
+    onContextMenu: (e: React.MouseEvent) => (e.preventDefault(), buzz(), setNoteId(id), setRenaming(false), setSheet("note")),
+  });
+  const share = async (x: PageMeta) => {
+    const [row] = await api.getPagePreviews([x.id]).catch(() => []);
+    const text = [x.title || "Untitled", row?.text].filter(Boolean).join("\n\n");
+    if (navigator.share) navigator.share({ title: x.title || "Untitled", text }).catch(() => {});
+    else navigator.clipboard?.writeText(text);
+  };
   const saveRecents = (next: string[]) => (setRecents(next), localStorage.setItem(RECENT_KEY, JSON.stringify(next)));
   const remember = (term: string) => {
     term = term.trim();
@@ -288,7 +303,7 @@ export function MobileShell(p: Props) {
                 {shown.length ? (
                   <motion.div key={recentTab} className="ocm-cards" >
                     {shown.map((x, i) => (
-                      <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...slideIn(i, recentTab === "recent" ? -1 : 1)} {...press}>
+                      <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...slideIn(i, recentTab === "recent" ? -1 : 1)} {...press}>
                         {x.pinned && (
                           <span className="ocm-pin" aria-label="Pinned">
                             <Pin size={13} />
@@ -319,7 +334,7 @@ export function MobileShell(p: Props) {
         <div className="ocm-card-head">Shortcuts {more}</div>
         <div className="ocm-shortcuts">
           {pinned.map((x, i) => (
-            <motion.button key={x.id} className="ocm-shortcut ocm-glass" onClick={() => p.onOpen(x.id)} {...rise(i + 3)} {...press}>
+            <motion.button key={x.id} className="ocm-shortcut ocm-glass" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...rise(i + 3)} {...press}>
               {x.icon || "📄"} {x.title || "Untitled"}
             </motion.button>
           ))}
@@ -364,7 +379,7 @@ export function MobileShell(p: Props) {
                 <div className="ocm-card-head">Due soon {more}</div>
                 {soon.length ? (
                   soon.map((x, i) => (
-                    <motion.button key={x.id} className="ocm-due" onClick={() => p.onOpen(x.id)} {...rise(i + 3)} {...press}>
+                    <motion.button key={x.id} className="ocm-due" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...rise(i + 3)} {...press}>
                       <span>
                         {x.icon} {x.title || "Untitled"}
                       </span>
@@ -471,6 +486,38 @@ export function MobileShell(p: Props) {
                 ) : (
                   <p className="ocm-empty">Trash is empty.</p>
                 )}
+              </>
+            )}
+            {sheet === "note" && note && (
+              <>
+                {renaming ? (
+                  <form className="ocm-rename-row" onClick={(e) => e.stopPropagation()} onSubmit={(e) => (e.preventDefault(), p.onRename(note.id, title.trim()), setRenaming(false))}>
+                    <input className="ocm-rename" autoFocus value={title} placeholder="Untitled" enterKeyHint="done" onChange={(e) => setTitle(e.target.value)} onFocus={(e) => e.target.select()} />
+                    <button type="submit" aria-label="Save title">
+                      <Check size={20} />
+                    </button>
+                  </form>
+                ) : (
+                  <h2 className="ocm-sheet-title">{note.icon || "📄"} {note.title || "Untitled"}</h2>
+                )}
+                <button className="ocm-item" onClick={() => run(() => p.onPin(note.id))}>
+                  <Pin size={20} /> {note.pinned ? "Unpin" : "Pin"}
+                </button>
+                <button className="ocm-item" onClick={() => run(() => p.onDuplicate(note.id))}>
+                  <Copy size={20} /> Duplicate
+                </button>
+                <button className="ocm-item" onClick={(e) => (e.stopPropagation(), buzz(), setTitle(note.title), setRenaming(true))}>
+                  <PenLine size={20} /> Rename
+                </button>
+                <button className="ocm-item" onClick={() => run(() => share(note))}>
+                  <Share2 size={20} /> Share as text
+                </button>
+                <button className="ocm-item" disabled style={{ opacity: 0.45 }}>
+                  <Share2 size={20} /> Share as .ocean <em>Phase 6</em>
+                </button>
+                <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(note.id))}>
+                  <Trash2 size={20} /> Move to Trash
+                </button>
               </>
             )}
             {sheet === "page" && openPage && (
@@ -601,7 +648,7 @@ export function MobileShell(p: Props) {
               )}
               <div className="ocm-list">
                 {listed.map((x, i) => (
-                  <motion.button key={x.id} className="ocm-row" onClick={() => (q && remember(query), p.onOpen(x.id))} {...rise(i)} {...press}>
+                  <motion.button key={x.id} className="ocm-row" onClick={() => (q && remember(query), p.onOpen(x.id))} {...hold(x.id)} {...rise(i)} {...press}>
                     <span className="ocm-row-icon">{x.icon || "📄"}</span>
                     <span className="ocm-row-main">
                       <span className="ocm-row-title"><Highlight text={x.title || "Untitled"} query={query} /></span>

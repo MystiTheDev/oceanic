@@ -1445,7 +1445,8 @@ export default function App() {
           onWorkspace={selectWorkspace}
           onPin={togglePin}
           onDuplicate={duplicatePage}
-          onTrash={askTrashPage}
+          onTrash={trashPage}
+          onRename={(id, title) => (patchPage(id, { title }), api.renamePage(id, title).catch(report("Rename")))}
           onRestore={restorePage}
           onDeleteForever={deleteForever}
           openPage={mobilePageOpen && activeTabId !== HOME_TAB ? activePage : null}

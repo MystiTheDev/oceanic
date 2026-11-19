@@ -485,3 +485,9 @@
 .ocm-root, .ocm { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .ocm-root :is(input, textarea, [contenteditable="true"]), .ocm-root :is(input, textarea, [contenteditable="true"]) *,
 .ocm :is(input, textarea) { -webkit-user-select: text; user-select: text; }
+
+/* Note action sheet header and in-place rename. */
+.ocm-sheet-title { padding: 2px 14px 10px; font-size: 17px; font-weight: 700; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-rename-row { display: flex; gap: 8px; margin: 0 10px 10px; }
+.ocm-rename-row button { display: grid; place-items: center; width: 46px; border-radius: 14px; color: #fff; background: var(--color-sky-500); }
+.ocm-rename { flex: 1; min-width: 0; padding: 10px 14px; border-radius: 14px; font-size: 16px; font-weight: 600; color: var(--oc-text-strong); background: rgba(var(--oc-ink), 0.06); outline: 2px solid var(--color-sky-500); }
