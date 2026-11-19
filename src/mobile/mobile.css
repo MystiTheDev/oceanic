@@ -321,17 +321,60 @@
   box-shadow: 0 0 6px var(--ocm-accent);
 }
 .ocm-plus {
+  position: relative;
   display: grid;
   place-items: center;
   width: 58px;
   height: 58px;
   color: #fff;
+  /* Bright sky-blue glass: strong tint, bright rim, soft outer glow. */
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0)),
-    color-mix(in srgb, var(--ocm-accent) 55%, transparent);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.04) 60%),
+    color-mix(in srgb, #4fb4ff 72%, transparent);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 6px rgba(0, 60, 140, 0.25),
+    0 0 18px rgba(79, 180, 255, 0.55),
+    0 10px 24px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
+  animation: ocm-plus-glow 4s ease-in-out infinite;
+}
+.ocm-plus svg { filter: drop-shadow(0 1px 2px rgba(0, 40, 100, 0.35)); }
+/* Water ripple ring: once in a while at idle, and on every press/hover. */
+.ocm-plus::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  border: 2px solid rgba(150, 215, 255, 0.85);
+  opacity: 0;
+  pointer-events: none;
+  animation: ocm-plus-ripple 4s ease-out infinite;
+}
+.ocm-plus:active,
+.ocm-plus:hover { animation: ocm-plus-glow-hot 0.9s ease-out; }
+.ocm-plus:active::after,
+.ocm-plus:hover::after { animation: ocm-plus-ripple-hot 0.7s ease-out; }
+@keyframes ocm-plus-glow {
+  0%, 70%, 100% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 18px rgba(79, 180, 255, 0.55), 0 10px 24px rgba(0, 0, 0, 0.25); }
+  85% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 30px rgba(79, 180, 255, 0.85), 0 10px 24px rgba(0, 0, 0, 0.25); }
+}
+@keyframes ocm-plus-glow-hot {
+  0% { box-shadow: inset 0 1.5px 0 #fff, inset 0 0 14px rgba(255, 255, 255, 0.5), 0 0 40px rgba(110, 200, 255, 1), 0 10px 24px rgba(0, 0, 0, 0.25); }
+  100% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 18px rgba(79, 180, 255, 0.55), 0 10px 24px rgba(0, 0, 0, 0.25); }
+}
+@keyframes ocm-plus-ripple {
+  0%, 72% { transform: scale(1); opacity: 0; }
+  74% { opacity: 0.8; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes ocm-plus-ripple-hot {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ocm-pill button { transition: none; }
+  .ocm-plus, .ocm-plus::after { animation: none !important; }
 }
 
 /* ---------- Pages search */
@@ -405,3 +448,20 @@
 .ocm-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--oc-text-strong); }
 .ocm-pagebar-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocm-editor { flex: 1; min-height: 0; overflow: hidden; }
+
+/* ---------- Evernote-style Home additions */
+.ocm-find { width: 100%; margin-bottom: 14px; font-size: 15px; }
+.ocm-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.ocm-tile { position: relative; overflow: hidden; display: flex; align-items: flex-start; gap: 6px; height: 104px; padding: 14px; border-radius: 18px; color: #fff; font-size: 15px; font-weight: 700; }
+.ocm-tile-page { background: linear-gradient(140deg, #22c55e, #15803d); }
+.ocm-tile-task { background: linear-gradient(140deg, #a855f7, #6d28d9); }
+.ocm-tile-art { position: absolute; right: -6px; bottom: -10px; opacity: 0.35; transform: rotate(-12deg); }
+.ocm-card-head { align-items: center; }
+.ocm-more { display: grid; place-items: center; width: 32px; height: 28px; margin-left: auto; border-radius: 8px; color: var(--ocm-muted); }
+.ocm-tabs { display: flex; gap: 16px; }
+.ocm-tabs button { padding-bottom: 4px; color: var(--ocm-muted); border-bottom: 2px solid transparent; }
+.ocm-tabs button.on { color: var(--oc-text-strong); border-color: var(--ocm-accent); }
+.ocm-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 20px; }
+.ocm-shortcut { display: block; min-width: 0; height: 44px; line-height: 44px; padding: 0 12px; border-radius: 12px; font-size: 14px; font-weight: 600; text-align: left; color: var(--oc-text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ocm-off span { opacity: 0.4; }
+.ocm-trash button:disabled { opacity: 0.25; }
