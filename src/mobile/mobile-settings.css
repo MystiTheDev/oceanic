@@ -80,3 +80,10 @@ button.ocs-row:active { background: rgba(var(--oc-ink), 0.06); }
 @keyframes ocs-in { from { transform: translateX(24px); opacity: 0; } }
 @keyframes ocs-up { from { transform: translateY(40%); opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) { .ocs, .ocs-scroll, .ocs-sheet { animation: none; } }
+
+/* Tags & status (MobileTags). */
+.oct-dot { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%; }
+.oct-name { display: flex; gap: 12px; align-items: center; margin: 0 10px 8px; padding: 10px 12px; border-radius: 12px; background: var(--oc-raised); }
+.oct-name .ocs-input { text-align: left; }
+.oct-pages { max-height: 40vh; overflow-y: auto; }
+.oct-danger { color: var(--color-red-500); font-weight: 600; }

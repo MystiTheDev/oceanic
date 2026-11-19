@@ -7,12 +7,12 @@ export type MetaChoice = { meta: boolean; newTags: string[] } | null;
  * Asked before importing .ocean notes that carry date/status/tags:
  * note only, or note plus its properties — and which unknown tags to create.
  */
-export function ImportMetaDialog({ titles, existingTags, newTags, onDone }: { titles: string[]; existingTags: string[]; newTags: string[]; onDone: (c: MetaChoice) => void }) {
+export function ImportMetaDialog({ titles, existingTags, newTags, onDone, sheet }: { titles: string[]; existingTags: string[]; newTags: string[]; onDone: (c: MetaChoice) => void; sheet?: boolean }) {
   const [meta, setMeta] = useState(true);
   const [picked, setPicked] = useState<Set<string>>(new Set(newTags));
   const flip = (t: string) => setPicked((s) => (s.has(t) ? (s.delete(t), new Set(s)) : new Set(s.add(t))));
   return (
-    <Modal onClose={() => onDone(null)} className="w-[440px] p-5">
+    <Modal onClose={() => onDone(null)} className="w-[440px] p-5" sheet={sheet}>
       <h2 className="text-[16px] font-semibold text-neutral-100">Import {titles.length === 1 ? `“${titles[0] || "Untitled"}”` : `${titles.length} notes`}</h2>
       <p className="mt-1 text-[13px] text-neutral-400">This file includes a date, status and tags. What do you want to import?</p>
       <div className="mt-4 flex flex-col gap-2">

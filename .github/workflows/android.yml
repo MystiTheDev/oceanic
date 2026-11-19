@@ -1,0 +1,73 @@
+# Android releases live on the `android` branch, apart from the desktop ones.
+# Push a tag like `android-v2.0.6` on that branch: this builds the signed arm64
+# APK and publishes it as its own release (never marked "latest", so the desktop
+# updater's releases/latest link is untouched).
+# Secrets: ANDROID_KEYSTORE (base64 of the .jks), ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+name: Android
+
+on:
+  push:
+    tags:
+      - "android-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android
+
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "platforms;android-37.0"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: Write signing key
+        working-directory: src-tauri/gen/android
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}"
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+          } > keystore.properties
+
+      - name: Build APK
+        run: npx tauri android build --apk --target aarch64
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#android-v}"
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
+          cp "$apk" "Oceanic_${version}_android_arm64.apk"
+          gh release create "$tag" "Oceanic_${version}_android_arm64.apk" \
+            --title "Oceanic Android v${version}" \
+            --notes "Android build (arm64). Download the APK on your phone and install it; updates install over the old version and keep your notes." \
+            --latest=false

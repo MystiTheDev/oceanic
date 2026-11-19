@@ -94,6 +94,8 @@ import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
+import { onOpenedFile, shareFile } from "./mobile/share";
+import { buildOceanFile } from "./lib/oceanFile";
 import { MobileSettings } from "./mobile/MobileSettings";
 import { MobileUpdater } from "./mobile/MobileUpdater";
 
@@ -781,14 +783,24 @@ export default function App() {
       if (tags.join("\u0000") !== p.tags.join("\u0000")) changeProperties(p.id, { ...propsOf(p), tags });
     }
   };
+  const editLibrary = (fn: (tags: string[]) => string[]) =>
+    setTagLibrary((prev) => {
+      const next = [...new Set(fn(prev))];
+      api.setSetting("tagLibrary", JSON.stringify(next)).catch(report("Save tags"));
+      return next;
+    });
   const renameTag = (from: string, to: string) => {
     editTags((tags) => tags.map((t) => (t === from ? to : t)));
+    editLibrary((tags) => tags.map((t) => (t === from ? to : t)));
     if (tagColorMap[from]) {
       const { [from]: c, ...rest } = tagColorMap;
       changeTagColor(to, c, rest);
     }
   };
-  const deleteTag = (tag: string) => editTags((tags) => tags.filter((t) => t !== tag));
+  const deleteTag = (tag: string) => {
+    editTags((tags) => tags.filter((t) => t !== tag));
+    editLibrary((tags) => tags.filter((t) => t !== tag));
+  };
   /** Tag library: tags created in Tags & status (or via "Add new tag"). */
   const createTag = (tag: string, color: string) => {
     setTagLibrary((prev) => {
@@ -1231,11 +1243,10 @@ export default function App() {
       }
     });
     // .ocean / .omap opened from Explorer (at launch or while running).
-    const openFile = async (path: string) => {
-      const bytes = await readFileBytes(path);
-      const name = path.split(/[\\/]/).pop()!;
+    const openFile = async (path: string) => openBytes(path.split(/[\\/]/).pop()!, await readFileBytes(path));
+    const openBytes = async (name: string, bytes: Uint8Array) => {
       setView("document");
-      if (/\.omap$/i.test(path)) {
+      if (/\.omap$/i.test(name)) {
         const r = await importOmap(bytes);
         keys.current.openPage(mindmapEntry(r.id));
         if (r.existing) setNotice({ text: `“${r.title}” is already in Oceanic, so the existing map was opened`, key: Date.now() });
@@ -1247,6 +1258,7 @@ export default function App() {
       key: Date.now(),
     })).catch(() => {});
     void invoke<string | null>("launch_file").then((p) => { if (p) void openFile(p); }).catch(() => {});
+    if (isMobile) onOpenedFile(async (f) => openBytes(f.name, new Uint8Array(await f.arrayBuffer())));
     const offFile = listen<string>("open-file", ({ payload }) => void openFile(payload));
     const offPage = listen<string>("tray-open-page", ({ payload }) => {
       setView("document");
@@ -1445,6 +1457,11 @@ export default function App() {
           onWorkspace={selectWorkspace}
           onPin={togglePin}
           onDuplicate={duplicatePage}
+          onExport={(id) =>
+            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true)
+              .then((b) => shareFile(`${livePages.find((x) => x.id === id)?.title || "Untitled"}.ocean`, b))
+              .catch(report("Export"))
+          }
           onTrash={trashPage}
           onRename={(id, title) => (patchPage(id, { title }), api.renamePage(id, title).catch(report("Rename")))}
           onRestore={restorePage}
@@ -1981,9 +1998,9 @@ export default function App() {
         />
       )}
       <Tooltip />
-      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} />}
+      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} sheet={isMobile} />}
       {dupAsk && (
-        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5">
+        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5" sheet={isMobile}>
           <h2 className="text-[15px] font-semibold text-neutral-100">“{dupAsk.title}” is already in Oceanic</h2>
           <p className="mt-1 text-[13px] text-neutral-400">An identical note exists. What should happen?</p>
           <div className="mt-4 flex justify-end gap-2">

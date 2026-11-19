@@ -48,6 +48,7 @@ type Props = {
   onWorkspace: (id: string) => void;
   onPin: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onExport: (id: string) => void;
   onTrash: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onRestore: (id: string) => void;
@@ -512,8 +513,8 @@ export function MobileShell(p: Props) {
                 <button className="ocm-item" onClick={() => run(() => share(note))}>
                   <Share2 size={20} /> Share as text
                 </button>
-                <button className="ocm-item" disabled style={{ opacity: 0.45 }}>
-                  <Share2 size={20} /> Share as .ocean <em>Phase 6</em>
+                <button className="ocm-item" onClick={() => run(() => p.onExport(note.id))}>
+                  <Share2 size={20} /> Share as .ocean
                 </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(note.id))}>
                   <Trash2 size={20} /> Move to Trash
@@ -527,6 +528,9 @@ export function MobileShell(p: Props) {
                 </button>
                 <button className="ocm-item" onClick={() => run(() => p.onDuplicate(openPage.id))}>
                   <Copy size={20} /> Duplicate
+                </button>
+                <button className="ocm-item" onClick={() => run(() => p.onExport(openPage.id))}>
+                  <Share2 size={20} /> Export
                 </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(openPage.id))}>
                   <Trash2 size={20} /> Move to Trash
