@@ -6,11 +6,15 @@ export function Modal({
   children,
   onClose,
   className = "w-[400px]",
+  sheet,
 }: {
   children: ReactNode;
   onClose?: () => void;
   className?: string;
+  /** Phones: a bottom sheet instead of a centered dialog. */
+  sheet?: boolean;
 }) {
+  if (sheet) className += " oc-sheet";
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();

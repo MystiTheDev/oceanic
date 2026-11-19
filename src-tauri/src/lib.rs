@@ -663,6 +663,16 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build());
+    // Android: share sheet for export, .ocean files opened from other apps.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("share")
+            .setup(|_, api| {
+                api.register_android_plugin("io.github.mystithedev.oceanic", "SharePlugin")?;
+                Ok(())
+            })
+            .build(),
+    );
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

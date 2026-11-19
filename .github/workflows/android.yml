@@ -1,0 +1,73 @@
+# Builds the signed Android APK (arm64) when a release is published and attaches it.
+# Secrets: ANDROID_KEYSTORE (base64 of the .jks), ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+name: Android
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach the APK to (e.g. v2.0.6)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android
+
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "platforms;android-37.0"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: Write signing key
+        working-directory: src-tauri/gen/android
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}"
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+          } > keystore.properties
+
+      - name: Build APK
+        run: npx tauri android build --apk --target aarch64
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
+          cp "$apk" "Oceanic_${TAG#v}_android_arm64.apk"
+          gh release upload "$TAG" "Oceanic_${TAG#v}_android_arm64.apk" --clobber

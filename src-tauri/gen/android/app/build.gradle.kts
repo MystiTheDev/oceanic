@@ -25,6 +25,18 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    // Release signing: keystore.properties (keyAlias, password, storeFile) next to
+    // this project's root build.gradle.kts. CI writes it from GitHub secrets.
+    val keystore = rootProject.file("keystore.properties")
+    if (keystore.exists()) {
+        val props = Properties().apply { keystore.inputStream().use { load(it) } }
+        signingConfigs.create("release") {
+            keyAlias = props["keyAlias"] as String
+            keyPassword = props["password"] as String
+            storeFile = file(props["storeFile"] as String)
+            storePassword = props["password"] as String
+        }
+    }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -39,6 +51,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             optimization {
                enable = true
             }

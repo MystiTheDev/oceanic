@@ -308,3 +308,8 @@
 .ocm-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--oc-text-strong); }
 .ocm-pagebar-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocm-editor { flex: 1; min-height: 0; overflow: hidden; }
+
+/* Modal with `sheet`: a bottom sheet on phones (import questions). */
+[data-oc-modal]:has(> .oc-sheet) { place-items: end stretch; }
+.oc-sheet { width: 100% !important; max-height: 90vh; overflow-y: auto; border-radius: 22px 22px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; animation: ocs-up 0.22s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.oc-sheet .justify-end { flex-wrap: wrap; }

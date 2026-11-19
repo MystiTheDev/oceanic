@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, animate, motion, useScroll, useTransform, type Transition } from "motion/react";
 import {
   CalendarDays, ChevronLeft, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, Pin, Plus,
-  RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
+  RotateCcw, Search, Settings, Share2, Sun, Tag, Trash2, X,
 } from "lucide-react";
 import { api, type WorkspaceRecord } from "../data/api";
 import type { PageMeta } from "../data/workspace";
@@ -43,6 +43,7 @@ type Props = {
   onWorkspace: (id: string) => void;
   onPin: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onExport: (id: string) => void;
   onTrash: (id: string) => void;
   onRestore: (id: string) => void;
   onDeleteForever: (id: string) => void;
@@ -254,6 +255,9 @@ export function MobileShell(p: Props) {
                 </button>
                 <button className="ocm-item" onClick={() => run(() => p.onDuplicate(openPage.id))}>
                   <Copy size={20} /> Duplicate
+                </button>
+                <button className="ocm-item" onClick={() => run(() => p.onExport(openPage.id))}>
+                  <Share2 size={20} /> Export
                 </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(openPage.id))}>
                   <Trash2 size={20} /> Move to Trash

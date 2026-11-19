@@ -220,11 +220,8 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
           <Row title="In Trash" value={String(trashCount)} />
           <Row title="Stored" value="On this phone only" />
         </section>
-        <section className="ocs-group">
-          <Row title="Export all as .ocean" value="Coming soon" />
-          <Row title="Import .ocean" value="Coming soon" />
-        </section>
-        <p className="ocs-note">Uninstalling Oceanic deletes its notes. Export a backup first once export arrives.</p>
+        <p className="ocs-note">Export: open a page, tap ⋯ → Export. Import: open a .ocean file from Files or a chat.</p>
+        <p className="ocs-note">Uninstalling Oceanic deletes its notes. Export the ones you want to keep first.</p>
       </>
     );
   } else if (screen === "deleting") {
