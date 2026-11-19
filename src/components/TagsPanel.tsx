@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MoreHorizontal, Palette, PenLine, Tag, Trash2, X } from "lucide-react";
 import type { PageStatus } from "../data/api";
 import type { PageMeta } from "../data/workspace";
@@ -7,6 +7,7 @@ import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { Modal, ModalButton } from "./Modal";
 import { StatusBadge, TagChip } from "./PageProperties";
 import { TagPicker } from "./TagPicker";
+import { isMobile } from "../mobile/MobileShell";
 
 type TagsPanelProps = {
   /** Live pages of every workspace. */
@@ -67,6 +68,90 @@ export function TagsPanel({ pages, onOpenPage, onRenameTag, onDeleteTag, onTagCo
       "divider",
       { label: "Delete tag", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => setConfirmDelete(tag) },
     ]);
+
+  // Phone: one column. Status and tag chips (long-press a tag for options), matching pages below.
+  useEffect(() => {
+    if (!isMobile) return;
+    history.pushState({ oc: "tags" }, "");
+    window.addEventListener("popstate", onClose);
+    return () => window.removeEventListener("popstate", onClose);
+  }, []);
+  if (isMobile) {
+    const chip = (on: boolean) => `ocm-chip ${on ? "ocm-chip-sel" : ""}`;
+    return (
+      <div className="ocm" style={{ position: "fixed", inset: 0, zIndex: 50 }}>
+        <div className="ocm-scroll">
+          <header className="ocm-title flex items-start">
+            <div className="flex-1">
+              <h1>Tags &amp; status</h1>
+              <p>Pick chips to see their pages</p>
+            </div>
+            <button aria-label="Close" className="ocm-more" onClick={() => history.back()}>
+              <X size={20} />
+            </button>
+          </header>
+          <p className="ocm-card-head !px-0">Status</p>
+          <div className="flex flex-wrap gap-2 pb-4">
+            {(Object.keys(STATUSES) as PageStatus[]).map((st) => (
+              <button key={st} className={chip(statuses.has(st))} onClick={() => toggle(statuses, st, setStatuses)}>
+                <StatusBadge status={st} small /> <em>{statusCount(st)}</em>
+              </button>
+            ))}
+          </div>
+          <div className="ocm-card-head relative !px-0">
+            Tags
+            <button className="ocm-more whitespace-nowrap text-sky-400" style={{ width: "auto" }} onClick={() => setCreating((v) => !v)}>+ New tag</button>
+            {creating && <TagPicker className="inset-x-0 top-8" library={library} exclude={library} onPick={() => {}} onCreate={onCreateTag} onClose={() => setCreating(false)} />}
+          </div>
+          <div className="flex flex-wrap gap-2 pb-4">
+            {allTags.length === 0 && <p className="ocm-empty">No tags yet.</p>}
+            {allTags.map((t) =>
+              renaming === t ? (
+                <input key={t} autoFocus defaultValue={t} className="ocm-chip" onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== t) onRenameTag(t, v);
+                  setRenaming(null);
+                }} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+              ) : (
+                <button key={t} className={chip(tags.has(t))} onClick={() => toggle(tags, t, setTags)} onContextMenu={(e) => (e.preventDefault(), tagMenu(e, t))}>
+                  <Tag size={13} /> {t} <em>{tagCounts.get(t) ?? 0}</em>
+                </button>
+              ),
+            )}
+          </div>
+          {filtering && (
+            <div className="ocm-card-head !px-0">
+              {matches.length} {matches.length === 1 ? "page" : "pages"}
+              <button className="ocm-more" style={{ width: "auto" }} onClick={() => (setTags(new Set()), setStatuses(new Set()))}>Clear</button>
+            </div>
+          )}
+          <div className="ocm-list">
+            {filtering && matches.length === 0 && <p className="ocm-empty">No pages match.</p>}
+            {matches.map((pg) => (
+              <button key={pg.id} className="ocm-row" onClick={() => (onOpenPage(pg.id), onClose())}>
+                <span className="ocm-row-icon">{pg.icon || "📄"}</span>
+                <span className="ocm-row-main">
+                  <span className="ocm-row-title">{pg.title || "Untitled"}</span>
+                </span>
+                {pg.status && <StatusBadge status={pg.status} small />}
+              </button>
+            ))}
+          </div>
+        </div>
+        {confirmDelete && (
+          <Modal onClose={() => setConfirmDelete(null)}>
+            <div className="flex flex-col gap-3 p-5">
+              <h2 className="text-[15px] font-semibold text-neutral-100">Delete tag “{confirmDelete}”?</h2>
+              <div className="flex justify-end gap-2">
+                <ModalButton onClick={() => setConfirmDelete(null)}>Cancel</ModalButton>
+                <ModalButton variant="danger" onClick={() => (onDeleteTag(confirmDelete), tags.delete(confirmDelete), setConfirmDelete(null))}>Delete tag</ModalButton>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </div>
+    );
+  }
 
   return (
     <Modal onClose={onClose} className="flex h-[540px] w-[min(820px,92vw)]">

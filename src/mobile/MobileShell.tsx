@@ -11,7 +11,8 @@ import {
   CalendarDays, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, Pin, Plus,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
 } from "lucide-react";
-import { api, type WorkspaceRecord } from "../data/api";
+import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
+import { Highlight } from "../components/SearchModal";
 import type { PageMeta } from "../data/workspace";
 import { Avatar } from "../components/SettingsModal";
 import "./mobile.css";
@@ -21,6 +22,7 @@ import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } 
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 
 type TabId = "home" | "pages";
+const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
 type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page";
 
@@ -171,6 +173,22 @@ export function MobileShell(p: Props) {
   const [filter, setFilter] = useState<Filter>(null);
   const [recentTab, setRecentTab] = useState<"recent" | "suggested">("recent");
   const searchRef = useRef<HTMLInputElement>(null);
+  // Pages search: full-text over titles and content (same search as the desktop).
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [recents, setRecents] = useState<string[]>(() => JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]"));
+  useEffect(() => {
+    const term = query.trim();
+    if (!term) return setHits([]);
+    const id = window.setTimeout(() => api.searchPages(term, false).then(setHits).catch(() => setHits([])), 150);
+    return () => window.clearTimeout(id);
+  }, [query]);
+  const remember = (term: string) => {
+    term = term.trim();
+    if (!term) return;
+    const next = [term, ...recents.filter((x) => x !== term)].slice(0, 8);
+    setRecents(next);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  };
   const sorted = useMemo(() => [...pages].sort(byEdited), [pages]);
   const previews = usePreviews(sorted.map((x) => x.id));
 
@@ -230,9 +248,10 @@ export function MobileShell(p: Props) {
     go("pages");
   };
   const q = query.trim().toLowerCase();
-  const listed = sorted.filter(
+  // While searching, list full-text hits in rank order; snippets by page id.
+  const hit = Object.fromEntries(hits.map((h) => [h.pageId, h.snippet]));
+  const listed = (q ? hits.flatMap((h) => pages.filter((x) => x.id === h.pageId)) : sorted).filter(
     (x) =>
-      (!q || (x.title || "Untitled").toLowerCase().includes(q)) &&
       (!filter || ("tag" in filter ? x.tags?.includes(filter.tag) : x.parentId === filter.folder)),
   );
 
@@ -524,7 +543,6 @@ export function MobileShell(p: Props) {
                 </div>
               </motion.header>
 
-              {/* Opens the Pages search until the Search tab (phase 3) lands. */}
               <motion.button className="ocm-search ocm-glass ocm-find" onClick={() => (buzz(), openFilter(null), setTimeout(() => searchRef.current?.focus(), 300))} {...rise(0)} {...press}>
                 <Search size={18} /> Find any page
               </motion.button>
@@ -550,27 +568,43 @@ export function MobileShell(p: Props) {
                   {"tag" in filter ? <Tag size={13} /> : <FileText size={13} />} {"tag" in filter ? filter.tag : filter.title} <X size={14} />
                 </button>
               )}
-              <label className="ocm-search">
+              <form className="ocm-search" onSubmit={(e) => (e.preventDefault(), remember(query), searchRef.current?.blur())}>
                 <Search size={18} />
-                <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search page titles" />
+                <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all pages" enterKeyHint="search" />
                 {query && (
-                  <button aria-label="Clear" onClick={() => setQuery("")}>
+                  <button type="button" aria-label="Clear" onClick={() => setQuery("")}>
                     <X size={16} />
                   </button>
                 )}
-              </label>
+              </form>
+              {!q && recents.length > 0 && (
+                <div className="ocm-recents">
+                  {recents.map((t) => (
+                    <button key={t} className="ocm-chip" onClick={() => (buzz(), setQuery(t))}>
+                      <RotateCcw size={13} /> {t}
+                    </button>
+                  ))}
+                  <button className="ocm-chip" aria-label="Clear recent searches" onClick={() => (buzz(), setRecents([]), localStorage.removeItem(RECENT_KEY))}>
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
               <div className="ocm-list">
                 {listed.map((x, i) => (
-                  <motion.button key={x.id} className="ocm-row" onClick={() => p.onOpen(x.id)} {...rise(i)} {...press}>
+                  <motion.button key={x.id} className="ocm-row" onClick={() => (q && remember(query), p.onOpen(x.id))} {...rise(i)} {...press}>
                     <span className="ocm-row-icon">{x.icon || "📄"}</span>
                     <span className="ocm-row-main">
-                      <span className="ocm-row-title">{x.title || "Untitled"}</span>
-                      {previews[x.id] && <span className="ocm-row-preview">{previews[x.id]}</span>}
+                      <span className="ocm-row-title"><Highlight text={x.title || "Untitled"} query={query} /></span>
+                      {q && hit[x.id] ? (
+                        <span className="ocm-row-preview"><Highlight text={hit[x.id]} /></span>
+                      ) : (
+                        previews[x.id] && <span className="ocm-row-preview">{previews[x.id]}</span>
+                      )}
                     </span>
                     <span className="ocm-row-date">{edited(x.updatedAt)}</span>
                   </motion.button>
                 ))}
-                {!listed.length && <p className="ocm-empty">{q ? `No page titles match “${query}”.` : "No pages here."}</p>}
+                {!listed.length && <p className="ocm-empty">{q ? `No pages match “${query}”.` : "No pages here."}</p>}
               </div>
             </motion.div>
           )}
@@ -594,12 +628,9 @@ export function MobileShell(p: Props) {
               {tab === id && <motion.span layoutId="ocm-dot" className="ocm-dot" transition={spring} />}
             </motion.button>
           ))}
-          {/* Calendar and Search arrive in the next step. */}
+          {/* Calendar arrives in a later phase. */}
           <button disabled aria-label="Calendar (coming soon)">
             <CalendarDays size={22} />
-          </button>
-          <button disabled aria-label="Search (coming soon)">
-            <Search size={22} />
           </button>
         </div>
         <motion.button className="ocm-plus ocm-liquid" aria-label="New page" onClick={() => (buzz(), p.onCreate())} whileTap={{ scale: 0.82, rotate: 90 }} transition={spring}>

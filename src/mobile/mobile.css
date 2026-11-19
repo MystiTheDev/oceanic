@@ -470,3 +470,12 @@
 .ocm-shortcut { display: block; min-width: 0; height: 44px; line-height: 44px; padding: 0 12px; border-radius: 12px; font-size: 14px; font-weight: 600; text-align: left; color: var(--oc-text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ocm-off span { opacity: 0.4; }
 .ocm-trash button:disabled { opacity: 0.25; }
+
+/* Selected filter chip (Tags & status). */
+.ocm-chip-sel { background: color-mix(in srgb, var(--ocm-accent) 45%, transparent); border-color: var(--ocm-accent); }
+.ocm-recents { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 10px; }
+
+/* Long-press shouldn't select labels; only editable text is selectable. */
+.ocm-root, .ocm { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.ocm-root :is(input, textarea, [contenteditable="true"]), .ocm-root :is(input, textarea, [contenteditable="true"]) *,
+.ocm :is(input, textarea) { -webkit-user-select: text; user-select: text; }
