@@ -48,3 +48,67 @@ The phases are built in this order. Each phase gets its own commit on the `andro
 - Opens on the desktop scene's final pose: the logo has already risen, the wordmark shows and there's a short shimmer. The desktop status line and loading bar are dropped.
 - Exit: waves rise up and reveal Home.
 - Android's native splash (API 31+ and the theme) uses the same background colour, so there's no white flash before it.
+
+## Phase 3 addition: rework the Tags & status menu
+- Today the phone shows the desktop two-pane "Tags & status" modal. The right pane is squeezed so narrow that its title wraps to "Tags / & / status".
+- Rework it as a single-column phone screen or bottom sheet:
+  - status and tag chips with counts;
+  - selecting chips shows the matching pages below, in the same list;
+  - "+ New tag" stays.
+
+## Phase 7: LAN sync (no account, no server)
+This affects the desktop app too, so it's planned with its own questions and sessions once phases 3 to 6 are done.
+
+**Scope**
+- Two devices only, for now: one phone and one laptop.
+- They sync directly over a shared network: home Wi-Fi, the phone's hotspot, or USB/Bluetooth tethering.
+- No internet and no account needed.
+
+**Pairing and security**
+- **Pairing:**
+  - In Settings → Sync → Pair a device, the desktop app shows a QR code and a 6-digit code side by side. The phone either scans the QR code with its camera or types the code.
+  - The QR code carries the laptop's address and a random secret key.
+  - The 6-digit code works through a PAKE handshake, which turns the short code into the same strong key, so a guess can't be checked offline. The code expires after 2 minutes.
+  - Either way you pair once, and both devices remember each other.
+- **Encryption:** all traffic is encrypted and authenticated with that key. Any device without the key is rejected.
+- **Unpairing:** either device can unpair the other, which rotates the key. A lost or stolen device can no longer sync.
+
+**Data model**
+- **Note content:** stored as Yjs updates (BlockNote supports Yjs), so offline edits on both sides merge at the text level.
+- **Page metadata** (title, tags, status, dates, pin, trash): last edit wins per field, using hybrid logical clocks.
+- **Change queue:** each device keeps a queue of unsent changes, and a sync swaps both queues.
+
+**Transport**
+- **Discovery:** mDNS, but only on trusted networks. Fallbacks: the peer's last known IP, and the hotspot gateway (the phone, usually `192.168.43.1`).
+- **Fallbacks without a shared network:**
+  - USB tethering or Bluetooth tethering (PAN). Each creates a small network between the two devices, so the same sync code runs unchanged.
+  - The app gives a short how-to for both.
+- **Resumable transfers:** changes go in numbered chunks, each acknowledged. A drop resumes from the last acknowledged chunk.
+- **No half-written notes:** each change is applied in one database transaction, or not at all.
+- **Attachments:** text syncs first; attachments (images, PDFs, sketches) follow in the background. There's an option to hold files over N MB while on a hotspot.
+
+**When it syncs**
+- **Laptop:** Oceanic keeps listening while closed to the tray, and there's a "Start in tray with Windows" option. On wake from sleep, it offers its pending changes immediately.
+- **Phone:**
+  - When the phone joins a trusted network, Android wakes Oceanic. A short foreground job shows a "Syncing notes…" notification, syncs, and stops.
+  - Optionally, a small listener runs on trusted networks so the laptop can pull from the phone. Android requires a persistent notification for this.
+- **Manual:** a "Sync now" button on both devices.
+- **Battery savers:** the app prompts the user to set battery use to "Unrestricted" on phones that kill background apps (Xiaomi, Oppo, Vivo, Samsung).
+
+**Trusted networks**
+- **On a new network**, the app asks "Sync notes on '<name>'?" with Always, Just this time and Never.
+- **On networks that aren't trusted**, the app doesn't announce itself or sync.
+- **Settings → Sync networks:** a list to review or remove networks.
+- **Network names:** Android needs the location permission to read Wi-Fi names, and the app explains why when it asks. If permission is denied, it falls back to the router's address (BSSID), or asks every time.
+
+**Safety net**
+- **Version history:** before a synced change is applied to a note, the previous version is saved. Settings shows a "Version history" for each page with a restore button, keeping the last N versions or 30 days.
+- **Sync log and status:**
+  - a status dot showing synced, syncing, pending or error;
+  - Settings → Sync shows the last sync time, the paired device, the network, and what changed (pages added, edited or deleted);
+  - errors in plain language.
+
+**Open questions for later**
+- The listening port, and whether the Windows Firewall prompt needs an installer rule.
+- Whether to keep version history on both devices or only on the laptop.
+- How sync interacts with Trash: a page deleted on one device while it was edited on the other.

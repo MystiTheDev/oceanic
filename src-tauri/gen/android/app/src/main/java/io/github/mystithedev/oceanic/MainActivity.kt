@@ -18,4 +18,9 @@ class MainActivity : TauriActivity() {
       insets
     }
   }
+
+  // The WebView paints white until the page loads; match the splash's night colour.
+  override fun onWebViewCreate(webView: android.webkit.WebView) {
+    webView.setBackgroundColor(0xFF020A18.toInt())
+  }
 }
