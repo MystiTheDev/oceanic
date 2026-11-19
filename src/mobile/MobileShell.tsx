@@ -88,6 +88,18 @@ function timeOfDay() {
   return h >= 5 && h < 8 ? "dawn" : h < 17 && h >= 8 ? "day" : h >= 17 && h < 20 ? "dusk" : "night";
 }
 
+/** Current time of day; rechecks every minute and when the app comes back to the front. */
+function useTimeOfDay() {
+  const [tod, setTod] = useState(timeOfDay);
+  useEffect(() => {
+    const check = () => setTod(timeOfDay());
+    const id = window.setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => (window.clearInterval(id), document.removeEventListener("visibilitychange", check));
+  }, []);
+  return tod;
+}
+
 function edited(iso?: string) {
   if (!iso) return "";
   const t = Date.parse(iso);
@@ -139,6 +151,7 @@ const TABS = [
 
 export function MobileShell(p: Props) {
   const prefs = useMobilePrefs();
+  const tod = useTimeOfDay();
   const { pages, openPage } = p;
   const [tab, setTab] = useState<TabId>("home");
   const [dir, setDir] = useState(1);
@@ -322,11 +335,11 @@ export function MobileShell(p: Props) {
         <AnimatePresence mode="wait" initial={false}>
           {tab === "home" ? (
             <motion.div key="home" initial={{ opacity: 0, x: -40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 * dir }} transition={calm}>
-              <motion.header className={`ocm-hero ocm-${timeOfDay()}`} style={{ y: heroY, opacity: heroFade }}>
+              <motion.header className={`ocm-hero ocm-${tod}`} style={{ y: heroY, opacity: heroFade }}>
                 {/* Sun low at dawn/dusk, high by day; a moon and twinkling stars at night. */}
                 <span className="ocm-sun" aria-hidden />
-                {timeOfDay() === "night" &&
-                  [12, 28, 47, 63, 80, 91, 36, 70].map((x, i) => (
+                {/* Stars stay mounted so they can fade in and out with the sky. */}
+                {[12, 28, 47, 63, 80, 91, 36, 70].map((x, i) => (
                     <span key={i} className="ocm-star" style={{ left: `${x}%`, top: `${8 + ((i * 37) % 50)}%`, animationDelay: `${i * 0.4}s` }} aria-hidden />
                   ))}
                 <Waves />
@@ -465,30 +478,33 @@ export function MobileShell(p: Props) {
       </div>
 
       <nav className="ocm-nav">
-        <div className="ocm-pill">
+        {/* Liquid-glass refraction: the backdrop is displaced by a smooth noise map. */}
+        <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
+          <filter id="ocm-refract" x="0" y="0" width="100%" height="100%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="n" />
+            <feGaussianBlur in="n" stdDeviation="2" result="m" />
+            <feDisplacementMap in="SourceGraphic" in2="m" scale="38" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </svg>
+        <div className="ocm-pill ocm-liquid">
           {TABS.map(([id, Icon, label]) => (
-            <motion.button key={id} layout className={tab === id ? "on" : ""} onClick={() => go(id)} transition={spring} whileTap={{ scale: 0.92 }}>
-              {/* The accent pill slides between tabs. */}
-              {tab === id && <motion.span layoutId="ocm-active" className="ocm-active" transition={spring} />}
-              <Icon size={20} />
-              {tab === id && (
-                <motion.span initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={spring}>
-                  {label}
-                </motion.span>
-              )}
+            <motion.button key={id} className={tab === id ? "on" : ""} aria-label={label} onClick={() => go(id)} whileTap={{ scale: 0.88 }} transition={spring}>
+              <Icon size={22} />
+              {/* The dot slides between tabs. */}
+              {tab === id && <motion.span layoutId="ocm-dot" className="ocm-dot" transition={spring} />}
             </motion.button>
           ))}
           {/* Calendar and Search arrive in the next step. */}
           <button disabled aria-label="Calendar (coming soon)">
-            <CalendarDays size={20} />
+            <CalendarDays size={22} />
           </button>
           <button disabled aria-label="Search (coming soon)">
-            <Search size={20} />
+            <Search size={22} />
           </button>
-          <motion.button className="ocm-plus" aria-label="New page" onClick={() => (buzz(), p.onCreate())} whileTap={{ scale: 0.82, rotate: 90 }} transition={spring}>
-            <Plus size={22} />
-          </motion.button>
         </div>
+        <motion.button className="ocm-plus ocm-liquid" aria-label="New page" onClick={() => (buzz(), p.onCreate())} whileTap={{ scale: 0.82, rotate: 90 }} transition={spring}>
+          <Plus size={24} />
+        </motion.button>
       </nav>
     </motion.div>
   );

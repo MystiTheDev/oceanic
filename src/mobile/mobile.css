@@ -44,7 +44,6 @@
   padding: 24px 16px 56px;
   overflow: hidden;
   background: linear-gradient(175deg, var(--sky1), var(--sky2) 55%, var(--oc-canvas));
-  transition: background 1s;
 }
 /* Sun / moon: position and colour set per time of day below. */
 .ocm-sun {
@@ -59,9 +58,21 @@
   pointer-events: none;
 }
 .ocm-night .ocm-sun { box-shadow: inset -14px -6px 0 0 rgba(0, 0, 0, 0.25), 0 0 30px 6px var(--sun-glow); }
+/* Registered so the sky, sun and sea animate smoothly when the time of day changes. */
+@property --sky1 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sky2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sun { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sun-glow { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --wave { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sea { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sun-y { syntax: "<percentage>"; inherits: true; initial-value: 50%; }
+.ocm-hero { transition: --sky1 3s, --sky2 3s, --sun 3s, --sun-glow 3s, --wave 3s, --sea 3s, --sun-y 3s ease-in-out; }
+.ocm-sun { transition: box-shadow 3s; }
+.ocm-star { opacity: 0; transition: opacity 3s; }
+.ocm-night .ocm-star { opacity: 1; }
 .ocm-star { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; animation: ocm-twinkle 2.6s ease-in-out infinite alternate; }
-@keyframes ocm-twinkle { from { opacity: 0.2; } to { opacity: 0.9; } }
-@media (prefers-reduced-motion: reduce) { .ocm-star { animation: none; } }
+@keyframes ocm-twinkle { from { transform: scale(0.5); filter: brightness(0.4); } to { transform: scale(1); filter: none; } }
+@media (prefers-reduced-motion: reduce) { .ocm-star { animation: none; } .ocm-hero, .ocm-sun, .ocm-star { transition: none; } }
 .ocm-hero h1 { color: #fff !important; }
 .ocm-hero p, .ocm-stats { color: rgba(255, 255, 255, 0.85) !important; }
 /* Time-of-day skies, kept soft so text stays readable in both themes. */
@@ -256,7 +267,7 @@
 }
 .ocm-row-date { flex-shrink: 0; font-size: 12px; color: var(--ocm-muted); padding-top: 3px; }
 
-/* ---------- Floating pill tab bar, centred, + at its end */
+/* ---------- Floating liquid-glass tab bar (icons only), + as its own glass circle */
 .ocm-nav {
   position: absolute;
   left: 0;
@@ -264,55 +275,63 @@
   bottom: calc(16px + max(env(safe-area-inset-bottom, 0px), 16px));
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 12px;
   pointer-events: none;
 }
-.ocm-pill {
+.ocm-liquid {
   pointer-events: auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 6px;
   border-radius: 999px;
-  /* Clear glass: mostly see-through, strong blur, bright top edge. */
-  background: linear-gradient(180deg, rgba(var(--oc-ink), 0.10), rgba(var(--oc-ink), 0.04));
-  backdrop-filter: blur(22px) saturate(1.8);
-  -webkit-backdrop-filter: blur(22px) saturate(1.8);
-  border: 1px solid rgba(var(--oc-ink), 0.14);
+  /* Light, medium frost; bright rim on top, soft one below. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  /* Plain blur first: kept wherever the SVG filter isn't supported. */
+  backdrop-filter: blur(10px) saturate(1.7);
+  -webkit-backdrop-filter: blur(10px) saturate(1.7);
+  backdrop-filter: url(#ocm-refract) blur(10px) saturate(1.7) brightness(1.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 10px 30px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k)));
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 18px rgba(255, 255, 255, 0.06),
+    0 10px 28px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
 }
+.ocm-pill { display: flex; align-items: center; gap: 4px; padding: 5px 8px; }
 .ocm-pill button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 46px;
-  padding: 0 13px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 48px;
   border-radius: 999px;
-  color: var(--ocm-muted);
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 0.2s, color 0.2s;
+  color: var(--oc-text-strong);
+  opacity: 0.7;
+  transition: color 0.2s, opacity 0.2s;
 }
-.ocm-pill button { position: relative; }
-.ocm-pill button > :not(.ocm-active) { position: relative; z-index: 1; }
-.ocm-pill button.on { padding: 0 16px; color: var(--oc-text-strong); }
-.ocm-active {
+.ocm-pill button.on { color: var(--ocm-accent); opacity: 1; }
+.ocm-pill button:disabled { opacity: 0.3; }
+.ocm-dot {
   position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ocm-accent) 28%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--ocm-accent);
-}
-.ocm-pill button:disabled { opacity: 0.35; }
-.ocm-pill .ocm-plus {
-  width: 46px;
-  padding: 0;
-  margin-left: 4px;
-  justify-content: center;
-  color: #fff;
+  bottom: 4px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 9px;
   background: var(--ocm-accent);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--ocm-accent) 50%, transparent);
+  box-shadow: 0 0 6px var(--ocm-accent);
+}
+.ocm-plus {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0)),
+    color-mix(in srgb, var(--ocm-accent) 55%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ocm-pill button { transition: none; }
 }
 
 /* ---------- Pages search */
