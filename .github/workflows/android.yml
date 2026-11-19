@@ -1,15 +1,14 @@
-# Builds the signed Android APK (arm64) when a release is published and attaches it.
+# Android releases live on the `android` branch, apart from the desktop ones.
+# Push a tag like `android-v2.0.6` on that branch: this builds the signed arm64
+# APK and publishes it as its own release (never marked "latest", so the desktop
+# updater's releases/latest link is untouched).
 # Secrets: ANDROID_KEYSTORE (base64 of the .jks), ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
 name: Android
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag to build and attach the APK to (e.g. v2.0.6)
-        required: true
+  push:
+    tags:
+      - "android-v*"
 
 permissions:
   contents: write
@@ -17,12 +16,8 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ env.TAG }}
 
       - uses: actions/setup-java@v4
         with:
@@ -64,10 +59,15 @@ jobs:
       - name: Build APK
         run: npx tauri android build --apk --target aarch64
 
-      - name: Attach to release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#android-v}"
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
-          cp "$apk" "Oceanic_${TAG#v}_android_arm64.apk"
-          gh release upload "$TAG" "Oceanic_${TAG#v}_android_arm64.apk" --clobber
+          cp "$apk" "Oceanic_${version}_android_arm64.apk"
+          gh release create "$tag" "Oceanic_${version}_android_arm64.apk" \
+            --title "Oceanic Android v${version}" \
+            --notes "Android build (arm64). Download the APK on your phone and install it; updates install over the old version and keep your notes." \
+            --latest=false
