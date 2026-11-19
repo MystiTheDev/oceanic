@@ -12,10 +12,10 @@ import {
 import { useBlockNoteEditor, type DefaultReactSuggestionItem, type SuggestionMenuProps } from "@blocknote/react";
 import type { BlockNoteEditor } from "@blocknote/core";
 import "./mobile-editor.css";
+import { buzz } from "./mobilePrefs";
 
 type Editor = BlockNoteEditor<any, any, any>;
 
-const buzz = () => navigator.vibrate?.(8);
 
 const suggestions = (editor: Editor) =>
   editor.getExtension("suggestionMenu") as { openSuggestionMenu: (c: string) => void; closeMenu: () => void } | undefined;

@@ -94,6 +94,7 @@ import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
+import { MobileSettings } from "./mobile/MobileSettings";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
 const HOME_TAB = "home-tab";
@@ -2026,7 +2027,16 @@ export default function App() {
           onClose={() => setAppSearchOpen(false)}
         />
       )}
-      {settingsOpen && (
+      {settingsOpen && isMobile && (
+        <MobileSettings
+          settings={settings}
+          onChange={changeSettings}
+          onClose={() => setSettingsOpen(false)}
+          pageCount={livePages.length}
+          trashCount={trashedPages.length}
+        />
+      )}
+      {settingsOpen && !isMobile && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}
       {loaded && askName && (

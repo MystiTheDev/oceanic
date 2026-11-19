@@ -15,6 +15,7 @@ import { api, type WorkspaceRecord } from "../data/api";
 import type { PageMeta } from "../data/workspace";
 import { Avatar } from "../components/SettingsModal";
 import "./mobile.css";
+import { buzz, useMobilePrefs } from "./mobilePrefs";
 
 /** True inside the Android (or iOS) app. */
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -75,9 +76,6 @@ function CountUp({ value }: { value: number }) {
   return <>{shown}</>;
 }
 
-/** Light tap feedback on supported phones. */
-const buzz = () => navigator.vibrate?.(8);
-
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
@@ -133,6 +131,7 @@ const TABS = [
 ] as const;
 
 export function MobileShell(p: Props) {
+  const prefs = useMobilePrefs();
   const { pages, openPage } = p;
   const [tab, setTab] = useState<TabId>("home");
   const [dir, setDir] = useState(1);
@@ -420,8 +419,8 @@ export function MobileShell(p: Props) {
   );
 
   return (
-    // "user": follows Android's Remove animations setting.
-    <MotionConfig reducedMotion="user">
+    // "user": follows Android's Remove animations setting; Settings can force them off.
+    <MotionConfig reducedMotion={prefs.reduceMotion ? "always" : "user"}>
       <div className="ocm-root">
         <AnimatePresence initial={false}>{screen}</AnimatePresence>
         {sheets}
