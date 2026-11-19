@@ -637,6 +637,24 @@ fn launch_file(scope: State<Scope>) -> Option<String> {
     Some(f)
 }
 
+#[cfg(target_os = "android")]
+struct ApkUpdater(tauri::plugin::PluginHandle<tauri::Wry>);
+
+/// Downloads a release APK (progress 0-100, or -1 if unknown) and opens the installer.
+/// Fails with "needs-permission" after sending the user to "Install unknown apps".
+#[tauri::command]
+#[allow(unused_variables)]
+async fn apk_install(app: AppHandle, url: String, on_progress: tauri::ipc::Channel<serde_json::Value>) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    return app
+        .state::<ApkUpdater>()
+        .0
+        .run_mobile_plugin::<()>("install", serde_json::json!({ "url": url, "onProgress": on_progress }))
+        .map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    Err("Android only".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -663,6 +681,16 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build());
+    // Android self-updater: Kotlin side in gen/android (UpdaterPlugin.kt).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("apk-updater")
+            .setup(|app, api| {
+                app.manage(ApkUpdater(api.register_android_plugin("io.github.mystithedev.oceanic", "UpdaterPlugin")?));
+                Ok(())
+            })
+            .build(),
+    );
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -729,6 +757,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            apk_install,
             #[cfg(desktop)]
             ai::ai_status,
             #[cfg(desktop)]

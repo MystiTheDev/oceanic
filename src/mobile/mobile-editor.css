@@ -109,3 +109,18 @@
 }
 .ocme-pop button { display: grid; place-items: center; width: 40px; height: 38px; border-radius: 8px; color: var(--oc-text-strong); }
 .ocme-pop button:active { background: rgba(var(--oc-ink), 0.1); }
+
+/* ---------- Update sheet (MobileUpdater) */
+.ocu-bg { z-index: 90; }
+.ocu-sheet { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.ocu-notes { max-height: 36vh; overflow-y: auto; padding: 0 10px 12px; white-space: pre-line; font-size: 14px; line-height: 1.5; color: rgba(var(--oc-ink), 0.72); }
+.ocu-error { padding: 0 10px 10px; font-size: 13.5px; color: #e5484d; }
+.ocu-actions { display: flex; flex-direction: column; gap: 6px; padding: 4px 6px 0; }
+.ocu-actions button { padding: 12px; border-radius: 12px; font-size: 15px; font-weight: 600; color: var(--oc-text-strong); }
+.ocu-actions button:active { background: rgba(var(--oc-ink), 0.08); }
+.ocu-actions .ocu-primary { background: var(--color-sky-500); color: #fff; }
+.ocu-progress { position: relative; margin: 4px 10px 0; height: 44px; border-radius: 12px; overflow: hidden; background: rgba(var(--oc-ink), 0.08); }
+.ocu-progress span { position: absolute; inset: 0 auto 0 0; background: var(--color-sky-500); opacity: 0.35; transition: width 0.2s; }
+.ocu-progress span.ocu-indef { animation: ocu-pulse 1.2s ease-in-out infinite alternate; }
+.ocu-progress em { position: relative; display: grid; place-items: center; height: 100%; font-style: normal; font-size: 14px; font-weight: 600; color: var(--oc-text-strong); }
+@keyframes ocu-pulse { from { opacity: 0.15; } to { opacity: 0.4; } }

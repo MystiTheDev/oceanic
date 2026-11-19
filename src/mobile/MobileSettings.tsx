@@ -10,6 +10,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { ACCENTS, Avatar, type AppSettings } from "../components/SettingsModal";
 import { setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
 import { buzz, setMobilePref, useMobilePrefs } from "./mobilePrefs";
+import { checkForUpdates } from "./MobileUpdater";
 import "./mobile-settings.css";
 
 type Screen = "main" | "profile" | "appearance" | "editor" | "calendar" | "data" | "deleting" | "about";
@@ -23,7 +24,6 @@ type Props = {
   trashCount: number;
 };
 
-const RELEASES = "https://github.com/MystiTheDev/oceanic/releases/latest";
 
 /** A picked photo, cut to a 128px square data URL (same format as the PC app). */
 function toAvatar(file: File): Promise<string> {
@@ -79,6 +79,7 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
   const [stack, setStack] = useState<Screen[]>(["main"]);
   const [choice, setChoice] = useState<Choice | null>(null);
   const [version, setVersion] = useState("");
+  const [updateState, setUpdateState] = useState("");
   const prefs = useMobilePrefs();
   const { ask } = useConfirmDelete();
   const screen = stack[stack.length - 1];
@@ -247,10 +248,18 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
           <span>Version {version || "…"}</span>
         </div>
         <section className="ocs-group">
-          <Row title="Check for updates" onClick={() => void openUrl(RELEASES)} />
+          <Row
+            title="Check for updates"
+            value={updateState}
+            onClick={async () => {
+              setUpdateState("Checking…");
+              const r = await checkForUpdates();
+              setUpdateState(r === "none" ? "Up to date" : r === "error" ? "Couldn't check" : "");
+            }}
+          />
           <Row title="Report a bug" onClick={() => void openUrl("https://github.com/MystiTheDev/oceanic/issues")} />
         </section>
-        <p className="ocs-note">Updates open the GitHub releases page. Install the new APK over this one; your notes stay.</p>
+        <p className="ocs-note">Oceanic checks for updates once a day. Updating installs the new APK over this one; your notes stay.</p>
       </>
     );
   }
