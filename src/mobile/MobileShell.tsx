@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, animate, motion, useScroll, useTransform, type Transition } from "motion/react";
 import {
-  CalendarDays, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, Pin, Plus,
+  ArrowUpLeft, CalendarDays, Clock, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, Pin, Plus,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
 } from "lucide-react";
 import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
@@ -182,12 +182,12 @@ export function MobileShell(p: Props) {
     const id = window.setTimeout(() => api.searchPages(term, false).then(setHits).catch(() => setHits([])), 150);
     return () => window.clearTimeout(id);
   }, [query]);
+  const [focused, setFocused] = useState(false);
+  const saveRecents = (next: string[]) => (setRecents(next), localStorage.setItem(RECENT_KEY, JSON.stringify(next)));
   const remember = (term: string) => {
     term = term.trim();
     if (!term) return;
-    const next = [term, ...recents.filter((x) => x !== term)].slice(0, 8);
-    setRecents(next);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    saveRecents([term, ...recents.filter((x) => x !== term)].slice(0, 8));
   };
   const sorted = useMemo(() => [...pages].sort(byEdited), [pages]);
   const previews = usePreviews(sorted.map((x) => x.id));
@@ -570,23 +570,33 @@ export function MobileShell(p: Props) {
               )}
               <form className="ocm-search" onSubmit={(e) => (e.preventDefault(), remember(query), searchRef.current?.blur())}>
                 <Search size={18} />
-                <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all pages" enterKeyHint="search" />
+                <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all pages" enterKeyHint="search" onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
                 {query && (
                   <button type="button" aria-label="Clear" onClick={() => setQuery("")}>
                     <X size={16} />
                   </button>
                 )}
               </form>
-              {!q && recents.length > 0 && (
-                <div className="ocm-recents">
+              {/* Recent searches: shown while the empty box is focused. Pointer-down keeps the keyboard up. */}
+              {focused && !q && recents.length > 0 && (
+                <div className="ocm-recents" onPointerDown={(e) => e.preventDefault()}>
+                  <div className="ocm-recents-head">
+                    Recent searches
+                    <button onClick={() => (buzz(), saveRecents([]))}>Clear</button>
+                  </div>
                   {recents.map((t) => (
-                    <button key={t} className="ocm-chip" onClick={() => (buzz(), setQuery(t))}>
-                      <RotateCcw size={13} /> {t}
-                    </button>
+                    <div key={t} className="ocm-recent">
+                      <button className="ocm-recent-term" onClick={() => (buzz(), setQuery(t), remember(t), searchRef.current?.blur())}>
+                        <Clock size={17} /> <span>{t}</span>
+                      </button>
+                      <button aria-label={`Put “${t}” in the search box`} onClick={() => setQuery(t + " ")}>
+                        <ArrowUpLeft size={17} />
+                      </button>
+                      <button aria-label={`Remove “${t}”`} onClick={() => (buzz(), saveRecents(recents.filter((x) => x !== t)))}>
+                        <X size={17} />
+                      </button>
+                    </div>
                   ))}
-                  <button className="ocm-chip" aria-label="Clear recent searches" onClick={() => (buzz(), setRecents([]), localStorage.removeItem(RECENT_KEY))}>
-                    <X size={13} />
-                  </button>
                 </div>
               )}
               <div className="ocm-list">

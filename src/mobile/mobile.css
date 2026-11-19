@@ -473,7 +473,13 @@
 
 /* Selected filter chip (Tags & status). */
 .ocm-chip-sel { background: color-mix(in srgb, var(--ocm-accent) 45%, transparent); border-color: var(--ocm-accent); }
-.ocm-recents { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 10px; }
+.ocm-recents { margin: -4px 0 12px; padding: 6px 4px; border-radius: 18px; background: rgba(var(--oc-ink), 0.04); }
+.ocm-recents-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--ocm-muted); }
+.ocm-recents-head button { color: var(--ocm-accent); font-weight: 600; }
+.ocm-recent { display: flex; align-items: center; }
+.ocm-recent button { display: grid; place-items: center; width: 40px; height: 44px; color: var(--ocm-muted); }
+.ocm-recent .ocm-recent-term { display: flex; flex: 1; min-width: 0; width: auto; gap: 12px; padding: 0 12px; font-size: 15px; color: var(--oc-text-strong); justify-content: flex-start; }
+.ocm-recent-term span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Long-press shouldn't select labels; only editable text is selectable. */
 .ocm-root, .ocm { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
