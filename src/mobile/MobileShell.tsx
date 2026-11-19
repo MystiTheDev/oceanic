@@ -492,7 +492,7 @@ export function MobileShell(p: Props) {
               <>
                 {renaming ? (
                   <form className="ocm-rename-row" onClick={(e) => e.stopPropagation()} onSubmit={(e) => (e.preventDefault(), p.onRename(note.id, title.trim()), setRenaming(false))}>
-                    <input className="ocm-rename" autoFocus value={title} placeholder="Untitled" enterKeyHint="done" onChange={(e) => setTitle(e.target.value)} onFocus={(e) => e.target.select()} />
+                    <input className="ocm-rename" autoFocus value={title} placeholder="Untitled" enterKeyHint="go" onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.form?.requestSubmit())} onChange={(e) => setTitle(e.target.value)} onFocus={(e) => e.target.select()} />
                     <button type="submit" aria-label="Save title">
                       <Check size={20} />
                     </button>
