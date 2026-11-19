@@ -1477,6 +1477,14 @@ export default function App() {
             setMobilePageOpen(true);
             void createPage(null);
           }}
+          onCreateTask={async () => {
+            setView("document");
+            setMobilePageOpen(true);
+            const today = new Date().toLocaleDateString("en-CA");
+            const id = await createPage(null, today);
+            if (id) changeProperties(id, { dueDate: today, status: "not_started", tags: [] });
+          }}
+          visitedAt={visitedAt}
         />
       ) : (
       <>

@@ -112,3 +112,7 @@ This affects the desktop app too, so it's planned with its own questions and ses
 - The listening port, and whether the Windows Firewall prompt needs an installer rule.
 - Whether to keep version history on both devices or only on the laptop.
 - How sync interacts with Trash: a page deleted on one device while it was edited on the other.
+
+## Later phase: Quick actions row (from the Evernote Home study)
+- A row of square buttons on Home: Camera, Scan, Files, Audio, each adding to a new page.
+- Needs native Android plugins (camera/scan, file picker, mic recording), so it gets its own phase.

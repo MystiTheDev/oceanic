@@ -1,16 +1,20 @@
 /** Phone-only preferences (this device only), kept in localStorage. */
 import { useSyncExternalStore } from "react";
 
-export type MobilePrefs = { haptics: boolean; reduceMotion: boolean };
+/** Home sections in their default order; the user can hide and reorder them. */
+export const HOME_SECTIONS = { create: "New page & task", recent: "Recent pages", shortcuts: "Shortcuts", tags: "Tags & collections", due: "Due soon" };
+export type HomeSection = keyof typeof HOME_SECTIONS;
+export type MobilePrefs = { haptics: boolean; reduceMotion: boolean; homeOrder: HomeSection[]; homeHidden: HomeSection[] };
+const DEFAULTS: MobilePrefs = { haptics: true, reduceMotion: false, homeOrder: Object.keys(HOME_SECTIONS) as HomeSection[], homeHidden: [] };
 
 const KEY = "oceanic.mobilePrefs";
 const listeners = new Set<() => void>();
 
 function read(): MobilePrefs {
   try {
-    return { haptics: true, reduceMotion: false, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
   } catch {
-    return { haptics: true, reduceMotion: false };
+    return DEFAULTS;
   }
 }
 

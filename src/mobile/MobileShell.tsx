@@ -5,7 +5,7 @@
  * the avatar. Android's back gesture closes sheets and pages.
  * Animations use Motion and follow Android's "Remove animations" setting.
  */
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, animate, motion, useScroll, useTransform, type Transition } from "motion/react";
 import {
   CalendarDays, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, Pin, Plus,
@@ -251,13 +251,14 @@ export function MobileShell(p: Props) {
                     {(["recent", "suggested"] as const).map((t) => (
                       <button key={t} className={recentTab === t ? "on" : ""} onClick={() => (buzz(), setRecentTab(t))}>
                         {t === "recent" ? "Recent" : "Suggested"}
+                        {recentTab === t && <motion.span layoutId="ocm-tab-line" className="ocm-tab-line" transition={spring} />}
                       </button>
                     ))}
                   </span>
                   {more}
                 </div>
                 {shown.length ? (
-                  <div className="ocm-cards">
+                  <motion.div key={recentTab} className="ocm-cards" initial={{ opacity: 0, x: recentTab === "recent" ? -30 : 30 }} animate={{ opacity: 1, x: 0 }} transition={calm}>
                     {shown.map((x, i) => (
                       <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...rise(i + 1)} {...press}>
                         {x.pinned && (
@@ -277,7 +278,7 @@ export function MobileShell(p: Props) {
                         <span>{sorted.length} pages</span>
                       </motion.button>
                     )}
-                  </div>
+                  </motion.div>
                 ) : (
                   <p className="ocm-empty">No pages yet. Tap + to write one.</p>
                 )}
@@ -400,14 +401,14 @@ export function MobileShell(p: Props) {
                     setMobilePref({ homeOrder: o });
                   };
                   return (
-                    <div key={id} className={`ocm-trash ${off ? "ocm-off" : ""}`}>
+                    <motion.div key={id} layout transition={spring} className={`ocm-trash ${off ? "ocm-off" : ""}`}>
                       <span>{HOME_SECTIONS[id]}</span>
                       <button aria-label="Move up" disabled={!i} onClick={() => move(-1)}><ChevronUp size={18} /></button>
                       <button aria-label="Move down" disabled={i === prefs.homeOrder.length - 1} onClick={() => move(1)}><ChevronDown size={18} /></button>
                       <button aria-label={off ? "Show" : "Hide"} onClick={() => (buzz(), setMobilePref({ homeHidden: off ? prefs.homeHidden.filter((h) => h !== id) : [...prefs.homeHidden, id] }))}>
                         {off ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </>
@@ -518,7 +519,16 @@ export function MobileShell(p: Props) {
               <motion.button className="ocm-search ocm-glass ocm-find" onClick={() => (buzz(), openFilter(null), setTimeout(() => searchRef.current?.focus(), 300))} {...rise(0)} {...press}>
                 <Search size={18} /> Find any page
               </motion.button>
-              {prefs.homeOrder.filter((id) => !prefs.homeHidden.includes(id)).map((id) => <Fragment key={id}>{home[id]}</Fragment>)}
+              {/* Sections glide to their new order and fade when hidden or shown. */}
+              <AnimatePresence initial={false}>
+                {prefs.homeOrder
+                  .filter((id) => !prefs.homeHidden.includes(id))
+                  .map((id) => (
+                    <motion.div key={id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spring}>
+                      {home[id]}
+                    </motion.div>
+                  ))}
+              </AnimatePresence>
             </motion.div>
           ) : (
             <motion.div key="pages" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
