@@ -1,3 +1,4 @@
+#[cfg(desktop)]
 mod ai;
 mod db;
 mod scope;
@@ -9,9 +10,13 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+#[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State};
+#[cfg(desktop)]
+use tauri::WindowEvent;
 use tauri_plugin_notification::NotificationExt;
 
 /* ---------------------------------------------------------------- storage */
@@ -33,6 +38,9 @@ fn finish_splash(app: AppHandle) {
     if let Some(splash) = app.get_webview_window("splash") {
         let _ = splash.eval(SPLASH_FINISH_JS);
     }
+    // Android/iOS: no splash window, so reveal the page once it has loaded.
+    #[cfg(mobile)]
+    show_main(&app);
 }
 
 /// The splash page calls this when its sequence is done: close it and reveal
@@ -49,15 +57,22 @@ fn close_splash(app: AppHandle) {
 /// the splash, kept on top, finishes and then closes via `close_splash`.
 #[tauri::command]
 fn reveal_main(app: AppHandle) {
+    #[cfg(mobile)]
+    show_main(&app);
+    #[cfg(desktop)]
     if let Some(splash) = app.get_webview_window("splash") {
         let _ = splash.set_always_on_top(true);
     }
+    #[cfg(desktop)]
     show_main(&app);
+    #[cfg(desktop)]
     if let Some(splash) = app.get_webview_window("splash") {
         let _ = splash.set_focus();
     }
     // Close it ourselves once its zoom-out has played, rather than waiting on the page.
+    #[cfg(desktop)]
     let handle = app.clone();
+    #[cfg(desktop)]
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(900));
         if let Some(splash) = handle.get_webview_window("splash") {
@@ -321,7 +336,10 @@ fn docs_rename(scope: State<Scope>, path: String, name: String) -> Result<String
 #[tauri::command]
 fn docs_trash(scope: State<Scope>, path: String) -> Result<(), String> {
     let path = scope.check(&path)?;
-    trash::delete(&path).map_err(|e| e.to_string())
+    #[cfg(desktop)]
+    return trash::delete(&path).map_err(|e| e.to_string());
+    #[cfg(mobile)]
+    std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
 /// "Name copy.docx" next to the original; returns its path.
@@ -389,6 +407,14 @@ fn sketch_default_dir(app: AppHandle) -> Result<String, String> {
 
 /* ------------------------------------------------------------------- tray */
 
+#[cfg(mobile)]
+fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval("document.documentElement.classList.add('oc-reveal')");
+    }
+}
+
+#[cfg(desktop)]
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -399,6 +425,7 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 /// Tray left-click: hide only when Oceanic is already in front; if it's hidden,
 /// minimised or behind other windows, bring it to the front instead.
 fn toggle_main(app: &AppHandle) {
@@ -414,6 +441,7 @@ fn toggle_main(app: &AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 /// A second launch of the Oceanic executable (desktop shortcut, taskbar, …)
 /// lands here inside the FIRST instance. If the main window is already
 /// visible, restore + focus it; if the app is still initializing behind the
@@ -446,6 +474,7 @@ struct RecentItem {
     title: String,
 }
 
+#[cfg(desktop)]
 /// Tray menu, grouped: show · create/search · apps & views · quit.
 fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem], today: &[RecentItem]) -> tauri::Result<Menu<tauri::Wry>> {
     let item = |id: &str, label: &str| MenuItem::with_id(app, id, label, true, None::<&str>);
@@ -518,13 +547,18 @@ fn tray_menu(app: &AppHandle, recent: &[RecentItem], docs: &[RecentItem], today:
 /// The app sends its last opened pages so the tray's "Recent pages" stays current.
 #[tauri::command]
 fn set_tray_recent(app: AppHandle, items: Vec<RecentItem>, docs: Option<Vec<RecentItem>>, today: Option<Vec<RecentItem>>) -> Result<(), String> {
+    #[cfg(mobile)]
+    let _ = (app, items, docs, today);
+    #[cfg(desktop)]
     let menu = tray_menu(&app, &items, &docs.unwrap_or_default(), &today.unwrap_or_default()).map_err(|e| e.to_string())?;
+    #[cfg(desktop)]
     if let Some(tray) = app.tray_by_id("main") {
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
+#[cfg(desktop)]
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = tray_menu(app, &[], &[], &[])?;
 
@@ -564,6 +598,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(desktop)]
 /// The window's X hides to the tray unless "close to tray" is turned off in
 /// Settings. The first time, a notification says Oceanic is still running.
 fn on_close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
@@ -604,7 +639,10 @@ fn launch_file(scope: State<Scope>) -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Desktop-only plugins: single instance, window state, self-updater.
+    #[cfg(desktop)]
+    let builder = builder
         // Must be the FIRST plugin: on a second launch of the executable
         // (desktop shortcut, taskbar, …) the new process forwards to this
         // running one and exits immediately.
@@ -616,7 +654,6 @@ pub fn run() {
                 let _ = app.emit("open-file", file);
             }
         }))
-        .plugin(tauri_plugin_opener::init())
         // Remember the main window's size, position and maximized state between launches.
         // Visibility is left alone: the splash decides when the window appears.
         .plugin(
@@ -625,10 +662,12 @@ pub fn run() {
                 .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    builder
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let dir = storage_dir(app.handle())?;
@@ -642,12 +681,17 @@ pub fn run() {
             };
             app.manage(Scope::load(app.handle(), legacy)?);
             app.manage(db::Db(Mutex::new(conn)));
+            #[cfg(desktop)]
+            app.manage(ai::Ai::default());
+            #[cfg(desktop)]
             build_tray(app.handle())?;
 
             // Splash watcher: the splash page runs its own timeline and calls
             // `close_splash` when done. This thread only covers failure
             // paths: a page that never signalled, or a stuck/blank page.
+            #[cfg(desktop)]
             let handle = app.handle().clone();
+            #[cfg(desktop)]
             std::thread::spawn(move || {
                 // Give the app ample time to load before treating the splash
                 // as stuck (the page auto-leaves after 12s on its own too).
@@ -672,7 +716,10 @@ pub fn run() {
             });
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, _event| {
+            #[cfg(desktop)]
+            let (window, event) = (_window, _event);
+            #[cfg(desktop)]
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Only the main window hides to the tray; other windows
                 // (the splash) close normally.
@@ -681,18 +728,28 @@ pub fn run() {
                 }
             }
         })
-        .manage(ai::Ai::default())
         .invoke_handler(tauri::generate_handler![
+            #[cfg(desktop)]
             ai::ai_status,
+            #[cfg(desktop)]
             ai::ai_download,
+            #[cfg(desktop)]
             ai::ai_cancel_download,
+            #[cfg(desktop)]
             ai::ai_delete_model,
+            #[cfg(desktop)]
             ai::ai_start,
+            #[cfg(desktop)]
             ai::ai_gpus,
+            #[cfg(desktop)]
             ai::ai_chat,
+            #[cfg(desktop)]
             ai::ai_stop,
+            #[cfg(desktop)]
             ai::ai_set_key,
+            #[cfg(desktop)]
             ai::ai_list_models,
+            #[cfg(desktop)]
             ai::web_get,
             scope::pick_open,
             scope::pick_save,
@@ -790,8 +847,10 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|_app, _event| {
+            #[cfg(desktop)]
+            if let tauri::RunEvent::Exit = _event {
+                let app = _app;
                 ai::shutdown(&app.state::<ai::Ai>());
             }
         });

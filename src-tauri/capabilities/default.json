@@ -17,5 +17,10 @@
     "clipboard-manager:allow-write-text",
     "updater:default",
     "process:allow-restart"
+  ],
+  "platforms": [
+    "windows",
+    "macOS",
+    "linux"
   ]
 }

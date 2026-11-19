@@ -93,6 +93,7 @@ import { OPEN_PDF, type PdfTarget } from "./pdf/importPdf";
 import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
+import { MobileShell, isMobile } from "./mobile/MobileShell";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
 const HOME_TAB = "home-tab";
@@ -1310,6 +1311,9 @@ export default function App() {
     .filter((p) => p.trashedAt)
     .sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0));
   const activePage = allLivePages.find((p) => p.id === activePageId) ?? null;
+  // Phone: always start on Home; a page shows only once opened in this session
+  // (restored desktop tabs would otherwise reopen the last page).
+  const [mobilePageOpen, setMobilePageOpen] = useState(false);
   // Student tags exist from the start (Home widgets + Calendar chips use them).
   useEffect(() => {
     if (!loaded) return;
@@ -1423,6 +1427,57 @@ export default function App() {
 
   return (
     <div ref={appRoot} className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100">
+      {isMobile ? (
+        <MobileShell
+          userName={settings.userName}
+          avatar={settings.avatar}
+          theme={resolvedTheme === "light" ? "light" : "dark"}
+          pages={livePages}
+          trashed={trashedPages}
+          workspaces={workspaces}
+          workspaceId={activeWorkspaceId}
+          onSettings={() => setSettingsOpen(true)}
+          onTags={() => setTagsOpen(true)}
+          onToggleTheme={() => changeSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" })}
+          onWorkspace={selectWorkspace}
+          onPin={togglePin}
+          onDuplicate={duplicatePage}
+          onTrash={askTrashPage}
+          onRestore={restorePage}
+          onDeleteForever={deleteForever}
+          openPage={mobilePageOpen && activeTabId !== HOME_TAB ? activePage : null}
+          editor={
+            activePage &&
+            docs[activePage.id] && (
+              <PageEditor
+                key={`m:${activePage.id}`}
+                page={activePage}
+                doc={docs[activePage.id]}
+                onTitleChange={changeTitle}
+                onDocChange={changeDoc}
+                onIconChange={changeIcon}
+                linksVersion={linksVersion}
+                properties={propertiesFor(activePage)}
+              />
+            )
+          }
+          onOpen={(id) => {
+            setView("document");
+            setMobilePageOpen(true);
+            openPage(id);
+          }}
+          onBack={() => {
+            setMobilePageOpen(false);
+            if (activeTab && !PINNED.has(activeTab.id)) closeTabNow(activeTab.id);
+          }}
+          onCreate={() => {
+            setView("document");
+            setMobilePageOpen(true);
+            void createPage(null);
+          }}
+        />
+      ) : (
+      <>
       {!inDocEditor && (
       <TitleBar
         tabs={tabInfos}
@@ -1784,6 +1839,8 @@ export default function App() {
           )}
         </main>
       </div>
+      </>
+      )}
 
       <UpdateUI />
       <SpellUI />

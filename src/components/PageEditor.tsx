@@ -40,7 +40,9 @@ import { FontButton } from "./FontButton";
 import { fontStack } from "../lib/fonts";
 import { BlockHandleMenu } from "./BlockHandleMenu";
 import { getSeedBlocks, type PageMeta } from "../data/workspace";
-import { editorExtensions, getPageLinkItems, getSlashItems, schema } from "../editor/schema";
+import { editorExtensions, getPageLinkItems, getSlashItems, mobileEditorExtensions, schema } from "../editor/schema";
+import { isMobile } from "../mobile/MobileShell";
+import { MobileBlockSheet, MobileSelectionPopup, MobileToolbar } from "../mobile/MobileEditorKit";
 import { editorContextMenu } from "../editor/editorMenu";
 import { openContextMenu } from "./ContextMenu";
 
@@ -231,7 +233,7 @@ export function PageEditor({
     schema,
     initialContent: (doc ?? getSeedBlocks(page.id)) as never,
     dictionary,
-    extensions: editorExtensions,
+    extensions: isMobile ? mobileEditorExtensions : editorExtensions,
     uploadFile,
   });
 
@@ -598,13 +600,24 @@ export function PageEditor({
           slashMenu={false}
           sideMenu={false}
         >
-          <SideMenuController
-            sideMenu={(props) => <SideMenu {...props} dragHandleMenu={BlockHandleMenu} />}
-          />
-          <SuggestionMenuController
-            triggerCharacter="/"
-            getItems={async (query) => getSlashItems(editor, query)}
-          />
+          {/* Phones: no drag handles; "/" opens a bottom sheet without the AI items. */}
+          {!isMobile && (
+            <SideMenuController
+              sideMenu={(props) => <SideMenu {...props} dragHandleMenu={BlockHandleMenu} />}
+            />
+          )}
+          {isMobile ? (
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) => getSlashItems(editor, query).filter((i) => i.group !== "Nerida")}
+              suggestionMenuComponent={MobileBlockSheet}
+            />
+          ) : (
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) => getSlashItems(editor, query)}
+            />
+          )}
           {/* Link to page: `[[` (wiki-style) and `@` (Notion's mention) */}
           <SuggestionMenuController
             triggerCharacter="[["
@@ -614,8 +627,9 @@ export function PageEditor({
             triggerCharacter="@"
             getItems={async (query) => getPageLinkItems(editor, query, page.id)}
           />
-          <FormattingToolbarController formattingToolbar={SelectionToolbar} />
+          <FormattingToolbarController formattingToolbar={isMobile ? MobileSelectionPopup : SelectionToolbar} />
         </BlockNoteView>
+        {isMobile && <MobileToolbar editor={editor as never} />}
         </div>
       </div>
       </div>

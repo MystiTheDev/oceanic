@@ -348,9 +348,12 @@ fn builder(app: &AppHandle, o: &PickOptions) -> tauri_plugin_dialog::FileDialogB
             }
         }
     }
+    #[cfg(desktop)]
     if let Some(w) = app.get_webview_window("main") {
         d = d.set_parent(&w);
     }
+    #[cfg(mobile)]
+    let _ = app;
     d
 }
 
@@ -360,7 +363,12 @@ fn builder(app: &AppHandle, o: &PickOptions) -> tauri_plugin_dialog::FileDialogB
 pub async fn pick_open(app: AppHandle, scope: State<'_, Scope>, options: PickOptions) -> Result<serde_json::Value, String> {
     let d = builder(&app, &options);
     let out = if options.directory {
-        let Some(p) = d.blocking_pick_folder().and_then(to_path) else { return Ok(serde_json::Value::Null) };
+        // Android has no folder picker: storage stays in the app's own folder.
+        #[cfg(mobile)]
+        let picked = None::<tauri_plugin_dialog::FilePath>;
+        #[cfg(desktop)]
+        let picked = d.blocking_pick_folder();
+        let Some(p) = picked.and_then(to_path) else { return Ok(serde_json::Value::Null) };
         if options.purpose.as_deref() == Some("storage") {
             // Not a general grant: only good for one move_storage call.
             *scope.storage_pick.lock().unwrap() = resolve(&p).map(|r| (r, Instant::now()));
