@@ -60,6 +60,12 @@ const spring: Transition = { type: "spring", stiffness: 380, damping: 24, mass: 
 const calm: Transition = { duration: 0.2, ease: [0.2, 0, 0, 1] };
 /** Springy press feedback for cards, rows and buttons. */
 const press = { whileTap: { scale: 0.96 } };
+/** Carousel cards that slide in from the side (dir 1 = from the right), one after another. */
+const slideIn = (i: number, dir: number) => ({
+  initial: { opacity: 0, x: 80 * dir },
+  animate: { opacity: 1, x: 0 },
+  transition: { ...spring, delay: Math.min(i, 6) * 0.06 },
+});
 /** Items that rise up one after another when a screen appears. */
 const rise = (i: number) => ({
   initial: { opacity: 0, y: 18 },
@@ -154,6 +160,9 @@ const TABS = [
 export function MobileShell(p: Props) {
   const prefs = useMobilePrefs();
   const tod = useTimeOfDay();
+  // The Home list slides back in after a page closes, but not on app launch.
+  const launched = useRef(false);
+  useEffect(() => void (launched.current = true), []);
   const { pages, openPage } = p;
   const [tab, setTab] = useState<TabId>("home");
   const [dir, setDir] = useState(1);
@@ -258,9 +267,9 @@ export function MobileShell(p: Props) {
                   {more}
                 </div>
                 {shown.length ? (
-                  <motion.div key={recentTab} className="ocm-cards" initial={{ opacity: 0, x: recentTab === "recent" ? -30 : 30 }} animate={{ opacity: 1, x: 0 }} transition={calm}>
+                  <motion.div key={recentTab} className="ocm-cards" >
                     {shown.map((x, i) => (
-                      <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...rise(i + 1)} {...press}>
+                      <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...slideIn(i, recentTab === "recent" ? -1 : 1)} {...press}>
                         {x.pinned && (
                           <span className="ocm-pin" aria-label="Pinned">
                             <Pin size={13} />
@@ -273,7 +282,7 @@ export function MobileShell(p: Props) {
                       </motion.button>
                     ))}
                     {recentTab === "recent" && (
-                      <motion.button className="ocm-note ocm-glass ocm-seeall" onClick={() => openFilter(null)} {...rise(shown.length + 1)} {...press}>
+                      <motion.button className="ocm-note ocm-glass ocm-seeall" onClick={() => openFilter(null)} {...slideIn(shown.length, -1)} {...press}>
                         See all
                         <span>{sorted.length} pages</span>
                       </motion.button>
@@ -481,7 +490,7 @@ export function MobileShell(p: Props) {
     <motion.div
       key="list"
       className="ocm ocm-layer"
-      initial={{ x: "-25%", opacity: 0.6 }}
+      initial={launched.current ? { x: "-25%", opacity: 0.6 } : false}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: "-25%", opacity: 0.6 }}
       transition={spring}
@@ -520,7 +529,7 @@ export function MobileShell(p: Props) {
                 <Search size={18} /> Find any page
               </motion.button>
               {/* Sections glide to their new order and fade when hidden or shown. */}
-              <AnimatePresence initial={false}>
+              <AnimatePresence>
                 {prefs.homeOrder
                   .filter((id) => !prefs.homeHidden.includes(id))
                   .map((id) => (
@@ -604,7 +613,8 @@ export function MobileShell(p: Props) {
     // "user": follows Android's Remove animations setting; Settings can force them off.
     <MotionConfig reducedMotion={prefs.reduceMotion ? "always" : "user"}>
       <div className="ocm-root">
-        <AnimatePresence initial={false}>{screen}</AnimatePresence>
+        {/* No initial={false} here: Motion would then block entrance animations of everything inside. */}
+        <AnimatePresence>{screen}</AnimatePresence>
         {sheets}
       </div>
     </MotionConfig>

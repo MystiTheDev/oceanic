@@ -647,11 +647,12 @@ export default function App() {
 
   const report = (what: string) => (e: unknown) => console.error(`${what} failed`, e);
 
-  const createPage = async (parentId: string | null, dueDate: string | null = null) => {
+  const createPage = async (parentId: string | null, dueDate: string | null = null, blocks?: PartialBlock[]) => {
     try {
       const page = toMeta(await api.createPage(parentId, activeWorkspaceId, dueDate));
       setPages((prev) => [...prev, page]);
-      setDocs((prev) => ({ ...prev, [page.id]: getSeedBlocks(page.id) }));
+      setDocs((prev) => ({ ...prev, [page.id]: blocks ?? getSeedBlocks(page.id) }));
+      if (blocks) scheduleSave(page.id);
       // On the calendar a new page opens in the side peek; a new subpage in the centered peek (Notion).
       setPeekCenter(!!parentId && view !== "calendar");
       if (view === "calendar" || parentId) setPeekId(page.id);
@@ -1481,8 +1482,12 @@ export default function App() {
             setView("document");
             setMobilePageOpen(true);
             const today = new Date().toLocaleDateString("en-CA");
-            const id = await createPage(null, today);
-            if (id) changeProperties(id, { dueDate: today, status: "not_started", tags: [] });
+            // One empty checklist item (Enter adds more), with the caret already in it.
+            const blockId = crypto.randomUUID();
+            const id = await createPage(null, today, [{ id: blockId, type: "checkListItem" }]);
+            if (!id) return;
+            changeProperties(id, { dueDate: today, status: "not_started", tags: [] });
+            window.dispatchEvent(new CustomEvent("oc-open-block", { detail: { pageId: id, blockId } }));
           }}
           visitedAt={visitedAt}
         />
