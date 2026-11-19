@@ -361,10 +361,13 @@ export function PageEditor({
       });
     return strip(editor.document as Block[]);
   };
+  const lastDoc = useRef(JSON.stringify(editor.document));
   // Accept / reject settle after the editor's own change event: save again once they do.
-  const settled = useRef(false);
+  // Compares with the last list (not a "first run" flag) so StrictMode's double mount doesn't save.
+  const settled = useRef(changes);
   useEffect(() => {
-    if (!settled.current) return void (settled.current = true);
+    if (settled.current === changes) return;
+    settled.current = changes;
     onDocChange(page.id, savedDoc());
   }, [changes]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -593,6 +596,10 @@ export function PageEditor({
           editor={editor}
           theme="dark"
           onChange={() => {
+            // Only real edits save: opening a page (or BlockNote normalising it) must not bump updatedAt.
+            const json = JSON.stringify(editor.document);
+            if (json === lastDoc.current) return;
+            lastDoc.current = json;
             onDocChange(page.id, savedDoc());
             setEmpty(isEmptyDoc(editor.document as Block[]));
           }}

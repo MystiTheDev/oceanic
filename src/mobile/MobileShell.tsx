@@ -21,6 +21,7 @@ import { buzz, useMobilePrefs } from "./mobilePrefs";
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 
 type TabId = "home" | "pages";
+type Filter = null | { tag: string } | { folder: string; title: string };
 type Sheet = null | "profile" | "trash" | "workspaces" | "page";
 
 type Props = {
@@ -81,6 +82,12 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
+/** Hero sky by hour: dawn 5–8, day 8–17, dusk 17–20, night otherwise. */
+function timeOfDay() {
+  const h = new Date().getHours();
+  return h >= 5 && h < 8 ? "dawn" : h < 17 && h >= 8 ? "day" : h >= 17 && h < 20 ? "dusk" : "night";
+}
+
 function edited(iso?: string) {
   if (!iso) return "";
   const t = Date.parse(iso);
@@ -120,7 +127,7 @@ function Waves() {
     <svg className="ocm-waves" viewBox="0 0 400 140" preserveAspectRatio="none" aria-hidden>
       <path d="M-100 64 C-30 40 30 100 100 70 C170 40 230 100 300 70 S430 40 500 64 V140 H-100Z" opacity="0.14" className="ocm-w1" />
       <path d="M-100 88 C-20 66 50 118 120 92 S240 66 320 90 S440 118 500 88 V140 H-100Z" opacity="0.2" className="ocm-w2" />
-      <path d="M-100 110 C-10 96 60 130 140 112 S250 96 340 114 S450 128 500 110 V140 H-100Z" opacity="0.28" className="ocm-w3" />
+      <path d="M-100 110 C-10 96 60 130 140 112 S250 96 340 114 S450 128 500 110 V140 H-100Z" className="ocm-w3" />
     </svg>
   );
 }
@@ -137,6 +144,7 @@ export function MobileShell(p: Props) {
   const [dir, setDir] = useState(1);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>(null);
   const sorted = useMemo(() => [...pages].sort(byEdited), [pages]);
   const previews = usePreviews(sorted.map((x) => x.id));
 
@@ -172,9 +180,31 @@ export function MobileShell(p: Props) {
   const soon = pages
     .filter((x) => x.dueDate && x.status !== "done" && Date.parse(x.dueDate + "T00:00") - today() < 7 * DAY)
     .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
-  const recent = [...sorted.filter((x) => x.pinned), ...sorted.filter((x) => !x.pinned)].slice(0, 6);
+  const recent = [...sorted.filter((x) => x.pinned), ...sorted.filter((x) => !x.pinned)].slice(0, 8);
+  const tags = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const x of pages) for (const t of x.tags ?? []) n.set(t, (n.get(t) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1]);
+  }, [pages]);
+  const folders = useMemo(
+    () =>
+      sorted
+        .filter((x) => !x.parentId)
+        .map((x) => ({ page: x, count: pages.filter((c) => c.parentId === x.id).length }))
+        .filter((f) => f.count),
+    [sorted, pages],
+  );
+  const openFilter = (f: Filter) => {
+    setFilter(f);
+    setQuery("");
+    go("pages");
+  };
   const q = query.trim().toLowerCase();
-  const listed = q ? sorted.filter((x) => (x.title || "Untitled").toLowerCase().includes(q)) : sorted;
+  const listed = sorted.filter(
+    (x) =>
+      (!q || (x.title || "Untitled").toLowerCase().includes(q)) &&
+      (!filter || ("tag" in filter ? x.tags?.includes(filter.tag) : x.parentId === filter.folder)),
+  );
 
   const sheets = (
     <AnimatePresence>
@@ -292,7 +322,13 @@ export function MobileShell(p: Props) {
         <AnimatePresence mode="wait" initial={false}>
           {tab === "home" ? (
             <motion.div key="home" initial={{ opacity: 0, x: -40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 * dir }} transition={calm}>
-              <motion.header className="ocm-hero" style={{ y: heroY, opacity: heroFade }}>
+              <motion.header className={`ocm-hero ocm-${timeOfDay()}`} style={{ y: heroY, opacity: heroFade }}>
+                {/* Sun low at dawn/dusk, high by day; a moon and twinkling stars at night. */}
+                <span className="ocm-sun" aria-hidden />
+                {timeOfDay() === "night" &&
+                  [12, 28, 47, 63, 80, 91, 36, 70].map((x, i) => (
+                    <span key={i} className="ocm-star" style={{ left: `${x}%`, top: `${8 + ((i * 37) % 50)}%`, animationDelay: `${i * 0.4}s` }} aria-hidden />
+                  ))}
                 <Waves />
                 <div className="ocm-hero-row">
                   <div>
@@ -311,25 +347,27 @@ export function MobileShell(p: Props) {
                 </div>
               </motion.header>
 
-              <motion.section className="ocm-card" {...rise(0)}>
-                <button className="ocm-card-head" onClick={() => go("pages")}>
+              <motion.section className="ocm-sec" {...rise(0)}>
+                <button className="ocm-card-head" onClick={() => openFilter(null)}>
                   Recent pages <span>›</span>
                 </button>
                 {recent.length ? (
                   <div className="ocm-cards">
                     {recent.map((x, i) => (
-                      <motion.button key={x.id} className="ocm-note" onClick={() => p.onOpen(x.id)} {...rise(i + 1)} {...press}>
-                        <span className="ocm-note-icon">
-                          {x.icon || "📄"}
-                          {x.pinned && <Pin size={13} className="ocm-pin" />}
-                        </span>
+                      <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...rise(i + 1)} {...press}>
+                        {x.pinned && (
+                          <span className="ocm-pin" aria-label="Pinned">
+                            <Pin size={13} />
+                          </span>
+                        )}
+                        <span className="ocm-note-icon">{x.icon || "📄"}</span>
                         <span className="ocm-note-title">{x.title || "Untitled"}</span>
                         <span className="ocm-note-preview">{previews[x.id] ?? ""}</span>
                         <span className="ocm-note-date">{edited(x.updatedAt)}</span>
                       </motion.button>
                     ))}
                     {sorted.length > recent.length && (
-                      <motion.button className="ocm-note ocm-seeall" onClick={() => go("pages")} {...rise(recent.length + 1)} {...press}>
+                      <motion.button className="ocm-note ocm-glass ocm-seeall" onClick={() => openFilter(null)} {...rise(recent.length + 1)} {...press}>
                         See all
                         <span>{sorted.length} pages</span>
                       </motion.button>
@@ -340,7 +378,39 @@ export function MobileShell(p: Props) {
                 )}
               </motion.section>
 
-              <motion.section className="ocm-card" {...rise(2)}>
+              {(tags.length > 0 || folders.length > 0) && (
+                <motion.section className="ocm-sec" {...rise(1)}>
+                  <div className="ocm-card-head">Tags &amp; collections</div>
+                  {tags.length > 0 && (
+                    <div className="ocm-chips">
+                      {tags.map(([t, n], i) => (
+                        <motion.button key={t} className="ocm-chip" onClick={() => (buzz(), openFilter({ tag: t }))} {...rise(i + 2)} {...press}>
+                          <Tag size={13} /> {t} <em>{n}</em>
+                        </motion.button>
+                      ))}
+                    </div>
+                  )}
+                  {folders.length > 0 && (
+                    <div className="ocm-folders">
+                      {folders.map(({ page: x, count }, i) => (
+                        <motion.button
+                          key={x.id}
+                          className="ocm-folder ocm-glass"
+                          onClick={() => (buzz(), openFilter({ folder: x.id, title: x.title || "Untitled" }))}
+                          {...rise(i + 3)}
+                          {...press}
+                        >
+                          <span className="ocm-folder-icon">{x.icon || "📁"}</span>
+                          <span className="ocm-folder-title">{x.title || "Untitled"}</span>
+                          <span className="ocm-folder-n">{count} {count === 1 ? "page" : "pages"}</span>
+                        </motion.button>
+                      ))}
+                    </div>
+                  )}
+                </motion.section>
+              )}
+
+              <motion.section className="ocm-card ocm-glass" {...rise(2)}>
                 <div className="ocm-card-head">Due soon</div>
                 {soon.length ? (
                   soon.map((x, i) => (
@@ -362,6 +432,11 @@ export function MobileShell(p: Props) {
                 <h1>Pages</h1>
                 <p>{pages.length} pages · last edited first</p>
               </header>
+              {filter && (
+                <button className="ocm-chip ocm-chip-on" onClick={() => (buzz(), setFilter(null))}>
+                  {"tag" in filter ? <Tag size={13} /> : <FileText size={13} />} {"tag" in filter ? filter.tag : filter.title} <X size={14} />
+                </button>
+              )}
               <label className="ocm-search">
                 <Search size={18} />
                 <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search page titles" />
@@ -382,7 +457,7 @@ export function MobileShell(p: Props) {
                     <span className="ocm-row-date">{edited(x.updatedAt)}</span>
                   </motion.button>
                 ))}
-                {q && !listed.length && <p className="ocm-empty">No page titles match “{query}”.</p>}
+                {!listed.length && <p className="ocm-empty">{q ? `No page titles match “${query}”.` : "No pages here."}</p>}
               </div>
             </motion.div>
           )}

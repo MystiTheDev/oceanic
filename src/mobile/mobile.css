@@ -31,6 +31,8 @@
 .ocm-w1 { animation: ocm-drift 14s ease-in-out infinite alternate; }
 .ocm-w2 { animation: ocm-drift 10s ease-in-out infinite alternate-reverse; }
 .ocm-w3 { animation: ocm-drift 7s ease-in-out infinite alternate; }
+/* Front wave is near-solid sea, so the sun sinks behind it. */
+.ocm-w3 { fill: var(--sea, var(--wave)); opacity: 0.92; }
 /* Paths extend 100 units past each side, so drifting never shows an edge. */
 @keyframes ocm-drift { from { transform: translateX(-60px); } to { transform: translateX(60px); } }
 @media (prefers-reduced-motion: reduce) { .ocm-waves path { animation: none; } }
@@ -41,14 +43,39 @@
   margin: -8px -16px 16px;
   padding: 24px 16px 56px;
   overflow: hidden;
-  background: linear-gradient(170deg, color-mix(in srgb, var(--ocm-accent) 30%, transparent), transparent 80%);
+  background: linear-gradient(175deg, var(--sky1), var(--sky2) 55%, var(--oc-canvas));
+  transition: background 1s;
 }
+/* Sun / moon: position and colour set per time of day below. */
+.ocm-sun {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  right: 22%;
+  top: var(--sun-y, 50%);
+  background: var(--sun);
+  box-shadow: 0 0 40px 14px var(--sun-glow);
+  pointer-events: none;
+}
+.ocm-night .ocm-sun { box-shadow: inset -14px -6px 0 0 rgba(0, 0, 0, 0.25), 0 0 30px 6px var(--sun-glow); }
+.ocm-star { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; animation: ocm-twinkle 2.6s ease-in-out infinite alternate; }
+@keyframes ocm-twinkle { from { opacity: 0.2; } to { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) { .ocm-star { animation: none; } }
+.ocm-hero h1 { color: #fff !important; }
+.ocm-hero p, .ocm-stats { color: rgba(255, 255, 255, 0.85) !important; }
+/* Time-of-day skies, kept soft so text stays readable in both themes. */
+/* Sky gradients run into the canvas so the banner melts into the page. */
+.ocm-dawn { --sea: #9f3a5a; --sky1: #f9a8d4; --sky2: #fdba74; --sun: #fff1c1; --sun-glow: rgba(253, 186, 116, 0.8); --sun-y: 58%; --wave: #fb7185; }
+.ocm-day { --sea: #0369a1; --sky1: #38bdf8; --sky2: #7dd3fc; --sun: #fffbe6; --sun-glow: rgba(255, 244, 180, 0.8); --sun-y: 10%; --wave: #0ea5e9; }
+.ocm-dusk { --sea: #7c2d12; --sky1: #6d28d9; --sky2: #f97316; --sun: #fdba74; --sun-glow: rgba(249, 115, 22, 0.75); --sun-y: 62%; --wave: #c2410c; }
+.ocm-night { --sea: #1e1b4b; --sky1: #0b1035; --sky2: #1e1b4b; --sun: #e2e8f0; --sun-glow: rgba(226, 232, 240, 0.35); --sun-y: 14%; --wave: #312e81; }
 .ocm-waves {
   position: absolute;
   inset: auto 0 0 0;
   width: 100%;
   height: 90px;
-  fill: var(--ocm-accent);
+  fill: var(--wave, var(--ocm-accent));
   pointer-events: none;
 }
 .ocm-hero-row { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -79,6 +106,16 @@
   background: var(--oc-raised);
   border: 1px solid var(--ocm-line);
 }
+.ocm-sec { margin: 0 -16px 18px; }
+.ocm-sec > .ocm-card-head { padding-left: 20px; padding-right: 20px; }
+/* Frosted glass panels. */
+.ocm-glass {
+  background: linear-gradient(160deg, rgba(var(--oc-ink), 0.09), rgba(var(--oc-ink), 0.03)) !important;
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  border: 1px solid rgba(var(--oc-ink), 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 24px rgba(0, 0, 0, calc(0.25 * var(--oc-shadow-k)));
+}
 .ocm-card-head {
   display: flex;
   justify-content: space-between;
@@ -94,26 +131,40 @@
 
 .ocm-cards {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   overflow-x: auto;
-  padding: 0 16px 4px;
+  padding: 2px 20px 10px;
+  scroll-padding: 0 20px;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
 .ocm-note {
   display: flex;
   flex-direction: column;
-  flex: 0 0 160px;
-  height: 188px;
-  padding: 12px;
-  border-radius: 14px;
+  flex: 0 0 72%;
+  height: 196px;
+  padding: 16px;
+  border-radius: 20px;
   background: var(--oc-canvas);
   border: 1px solid var(--ocm-line);
   text-align: left;
   scroll-snap-align: start;
 }
 .ocm-note-icon { position: relative; font-size: 28px; line-height: 1; margin-bottom: 8px; }
-.ocm-pin { position: absolute; top: -2px; right: -16px; color: var(--ocm-accent); }
+.ocm-note { position: relative; }
+.ocm-pin {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--ocm-accent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ocm-accent) 50%, transparent);
+}
 .ocm-seeall { align-items: center; justify-content: center; gap: 4px; font-weight: 600; color: var(--ocm-accent); }
 .ocm-seeall span { font-size: 12px; font-weight: 400; color: var(--ocm-muted); }
 .ocm-note-title {
@@ -127,12 +178,12 @@
 }
 .ocm-note-preview {
   margin-top: 6px;
-  max-height: calc(4 * 1.4em);
-  font-size: 12.5px;
+  max-height: calc(3 * 1.4em);
+  font-size: 13.5px;
   line-height: 1.4;
   color: var(--ocm-muted);
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -151,6 +202,33 @@
 .ocm-due > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocm-due > span:last-child { flex-shrink: 0; color: var(--ocm-muted); }
 .ocm-due .ocm-overdue { color: #ef4444; }
+
+.ocm-seeall { flex-basis: 40%; }
+.ocm-note-title { font-size: 16px !important; }
+
+/* ---------- Tags & collections */
+.ocm-chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 20px 12px; scrollbar-width: none; }
+.ocm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--oc-text-strong);
+  background: color-mix(in srgb, var(--ocm-accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ocm-accent) 40%, transparent);
+}
+.ocm-chip em { font-style: normal; font-weight: 400; color: var(--ocm-muted); }
+.ocm-chip-on { margin: 0 0 8px; background: color-mix(in srgb, var(--ocm-accent) 30%, transparent); }
+.ocm-folders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 20px; }
+.ocm-folder { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px; border-radius: 18px; text-align: left; min-width: 0; }
+.ocm-folder-icon { font-size: 24px; margin-bottom: 4px; }
+.ocm-folder-title { width: 100%; font-size: 14.5px; font-weight: 600; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-folder-n { font-size: 12px; color: var(--ocm-muted); }
 
 /* ---------- Pages list */
 .ocm-list { display: flex; flex-direction: column; }
