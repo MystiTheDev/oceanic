@@ -777,14 +777,24 @@ export default function App() {
       if (tags.join("\u0000") !== p.tags.join("\u0000")) changeProperties(p.id, { ...propsOf(p), tags });
     }
   };
+  const editLibrary = (fn: (tags: string[]) => string[]) =>
+    setTagLibrary((prev) => {
+      const next = [...new Set(fn(prev))];
+      api.setSetting("tagLibrary", JSON.stringify(next)).catch(report("Save tags"));
+      return next;
+    });
   const renameTag = (from: string, to: string) => {
     editTags((tags) => tags.map((t) => (t === from ? to : t)));
+    editLibrary((tags) => tags.map((t) => (t === from ? to : t)));
     if (tagColorMap[from]) {
       const { [from]: c, ...rest } = tagColorMap;
       changeTagColor(to, c, rest);
     }
   };
-  const deleteTag = (tag: string) => editTags((tags) => tags.filter((t) => t !== tag));
+  const deleteTag = (tag: string) => {
+    editTags((tags) => tags.filter((t) => t !== tag));
+    editLibrary((tags) => tags.filter((t) => t !== tag));
+  };
   /** Tag library: tags created in Tags & status (or via "Add new tag"). */
   const createTag = (tag: string, color: string) => {
     setTagLibrary((prev) => {
