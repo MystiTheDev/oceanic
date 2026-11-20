@@ -8,6 +8,8 @@ import { ExportDialog } from "./ExportDialog";
 import { Toast } from "./Toast";
 import { NeridaMark } from "./NeridaOrb";
 import { openNeridaCards } from "./NeridaCards";
+import { TestSetup } from "./TestSetup";
+import { askNerida } from "../lib/neridaPdf";
 import { nerida, useNerida } from "../lib/nerida";
 
 type PageHeaderProps = {
@@ -40,6 +42,7 @@ export function PageHeader({
 }: PageHeaderProps) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [testOpen, setTestOpen] = useState(false);
   const [notice, setNotice] = useState<{ message: string; key: number } | null>(null);
   const now = useNow(30_000);
   const neridaOpen = useNerida().open;
@@ -57,6 +60,9 @@ export function PageHeader({
     else if (action === "trash") onTrash(page.id);
     else if (action === "export") setExportOpen(true);
     else if (action === "flashcards") openNeridaCards({ pageId: page.id });
+    else if (action === "test") setTestOpen(true);
+    // Goes through the agent's make_mindmap tool and its review card: one code path.
+    else if (action === "mindmap") (nerida.set({ agent: true }), askNerida({ text: `Read the note "${page.title || "Untitled"}" and make a mind map of it (up to 6 branches, 5 points each), linked to that note.`, send: true }));
     else if (action === "atlas") window.dispatchEvent(new CustomEvent(HEADINGS_TO_ATLAS, { detail: { pageId: page.id } }));
     else if (action === "rename") {
       const title = document.querySelector<HTMLInputElement>("input[data-page-title]");
@@ -136,6 +142,7 @@ export function PageHeader({
         />
       )}
 
+      {testOpen && <TestSetup pages={pages} initialNotes={[page.id]} onClose={() => setTestOpen(false)} />}
       {exportOpen && (
         <ExportDialog
           page={page}

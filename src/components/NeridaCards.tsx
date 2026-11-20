@@ -3,7 +3,7 @@ import { ThinkingStatus } from "./NeridaEffort";
 import { isTauri } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
 import { builtin, engine, MODEL_NAMES, modelLabel, nerida, useNerida } from "../lib/nerida";
-import { gatherText, generateCards, saveCards, stopGenerating, type CardStyle, type Difficulty, type GenCard } from "../lib/neridaStudy";
+import { gatherText, generateCards, saveCards, setScience, stopGenerating, type CardStyle, type Difficulty, type GenCard } from "../lib/neridaStudy";
 import { Modal, ModalButton } from "./Modal";
 import { neridaNote, pdfPages } from "../lib/neridaPdf";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -94,6 +94,10 @@ function NeridaCards({ pageId, selection, pdf, onClose }: Req & { onClose: () =>
             <div className="flex gap-1.5">
               {(["easy", "medium", "hard"] as const).map((d) => <button key={d} type="button" onClick={() => setLevel(d)} className={chip(level === d)}>{d[0].toUpperCase() + d.slice(1)}</button>)}
             </div>
+            <label className="mt-4 flex cursor-pointer items-center gap-2 text-[13px] text-neutral-300">
+              <input type="checkbox" onChange={(e) => setScience(e.target.checked)} className="accent-teal-400" />
+              Science: ask for reasons, laws and theorems
+            </label>
             {!selection && !pdf && (
               <label className="mt-4 flex cursor-pointer items-center gap-2 text-[13px] text-neutral-300">
                 <input type="checkbox" checked={related} onChange={(e) => setRelated(e.target.checked)} className="accent-teal-400" />

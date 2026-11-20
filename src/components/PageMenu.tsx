@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { NeridaMark } from "./NeridaOrb";
 import { Copy, Download, Lightbulb, PenLine, Star, Trash2 } from "lucide-react";
 
-export type PageMenuAction = "favorite" | "rename" | "duplicate" | "export" | "flashcards" | "atlas" | "trash";
+export type PageMenuAction = "favorite" | "rename" | "duplicate" | "export" | "flashcards" | "test" | "mindmap" | "atlas" | "trash";
 
 type PageMenuProps = {
   /** Button the menu hangs from. */
@@ -56,6 +56,8 @@ export function PageMenu({
       ? [
           { id: "export" as const, label: "Export", icon: <Download className="size-4" /> },
           { id: "flashcards" as const, label: "Make flashcards with Nerida", icon: <NeridaMark size={16} /> },
+          { id: "test" as const, label: "Make practice test with Nerida", icon: <NeridaMark size={16} /> },
+          { id: "mindmap" as const, label: "Make mind map with Nerida", icon: <NeridaMark size={16} /> },
           { id: "atlas" as const, label: "Send headings to Atlas…", icon: <Lightbulb className="size-4" /> },
         ]
       : []),

@@ -57,8 +57,11 @@ const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").rep
 let stopped = false;
 export const stopGenerating = () => ((stopped = true), void engine.stop());
 
+/** Science notes: ask about the reason, law or theorem behind a fact. */
+let science = false;
+export const setScience = (on: boolean) => void (science = on);
 const ASK = (s: string, level: Difficulty) =>
-  `Sentence: ${s}\nWrite one question about ${LEVEL[level]} whose answer is a short phrase copied exactly from the sentence. Output one line:\nQ: <question> || A: <phrase from the sentence>`;
+  `Sentence: ${s}\nWrite one question about ${science ? "the reason, law or theorem in it" : LEVEL[level]} whose answer is a short phrase copied exactly from the sentence. Output one line:\nQ: <question> || A: <phrase from the sentence>`;
 const EXAMPLES = [
   [ASK("Ribosomes make proteins.", "medium"), "Q: What do ribosomes make? || A: proteins"],
   [ASK("Mitochondria produce ATP, the energy currency of the cell.", "medium"), "Q: What is the energy currency of the cell? || A: ATP"],
