@@ -17,9 +17,13 @@ export function Tooltip() {
       }, 450);
     };
     const hide = () => (window.clearTimeout(timer), setTip(null));
+    // Keyboard users get the same tip when Tab lands on a [data-tip] control.
+    const focus = (e: FocusEvent) => void (document.documentElement.hasAttribute("data-oc-kbd") && over(e as unknown as MouseEvent));
     document.addEventListener("mouseover", over);
+    document.addEventListener("focusin", focus);
+    document.addEventListener("focusout", hide);
     document.addEventListener("mousedown", hide);
-    return () => (document.removeEventListener("mouseover", over), document.removeEventListener("mousedown", hide), window.clearTimeout(timer));
+    return () => (document.removeEventListener("mouseover", over), document.removeEventListener("focusin", focus), document.removeEventListener("focusout", hide), document.removeEventListener("mousedown", hide), window.clearTimeout(timer));
   }, []);
   if (!tip) return null;
   const [name, key] = tip.text.split(/ \((.+)\)$/);

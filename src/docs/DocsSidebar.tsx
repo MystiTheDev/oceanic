@@ -3,6 +3,7 @@ import { Copy, ExternalLink, FileText, FolderOpen, House, Pencil, Plus, Trash2 }
 import { openContextMenu } from "../components/ContextMenu";
 import { requestDelete } from "../lib/confirmDelete";
 import docsLogo from "../assets/docs-logo.png";
+import { tell } from "../components/ConfirmDialog";
 import { docTitle, duplicateDoc, newUntitled, refreshFiles, renameDoc, replaceRecent, revealDoc, trashDoc, useDocs } from "./store";
 
 const ROW = "flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100";
@@ -36,7 +37,7 @@ export function DocsSidebar({
       onRenamed(path, to);
       void refreshFiles();
     } catch (e) {
-      alert(String(e));
+      void tell("Couldn't rename", String(e));
     }
   };
   const menu = (e: React.MouseEvent, path: string) =>

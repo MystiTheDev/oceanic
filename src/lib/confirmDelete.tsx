@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { Trash2, X } from "lucide-react";
 import { api } from "../data/api";
+import { tell } from "../components/ConfirmDialog";
 import { Modal, ModalButton } from "../components/Modal";
 
 /** One "Ask before deleting" switch per app (Settings → Deleting); all on by default. */
@@ -48,7 +49,7 @@ export const setOpenProbe = (probe: (entry: string) => boolean) => void (isOpen 
 /** Delete through the app's rules: blocked while open, confirmed when that app asks. */
 export function requestDelete(req: DeleteRequest) {
   const blocked = !!req.entry && isOpen(req.entry);
-  if (!blocked && !state.ask[req.app]) return void Promise.resolve(req.run()).catch((e) => alert(`Couldn't delete: ${e}`));
+  if (!blocked && !state.ask[req.app]) return void Promise.resolve(req.run()).catch((e) => void tell("Couldn't delete", String(e)));
   set({ pending: req, blocked });
 }
 

@@ -92,6 +92,7 @@ import { PdfReader } from "./pdf/PdfReader";
 import { OPEN_PDF, type PdfTarget } from "./pdf/importPdf";
 import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
+import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
@@ -576,7 +577,7 @@ export default function App() {
     const page = tabs.find((t) => t.id === tabId);
     const doc = page && currentPage(page).startsWith("doc:") ? currentPage(page).slice(4) : null;
     if (doc && isDirtyUntitled(doc)) setSavePrompt({ path: doc, proceed: () => closeTabNow(tabId) });
-    else if (page && currentPage(page).startsWith("sketch:") && isDirtySketch(currentPage(page).slice(7)) && !window.confirm("This sketch hasn't been saved. Close it and lose your drawing?")) return;
+    else if (page && currentPage(page).startsWith("sketch:") && isDirtySketch(currentPage(page).slice(7)) ) void ask({ title: "Close unsaved sketch?", body: "This sketch hasn't been saved. Close it and lose your drawing?", confirm: "Close" }).then((ok) => ok && closeTabNow(tabId));
     else closeTabNow(tabId);
   };
 
@@ -1961,6 +1962,7 @@ export default function App() {
         );
       }} onDone={() => setAppLoading(null)} />}
       <DeleteConfirmHost />
+      <ConfirmDialogHost />
       {embedding && (
         <EmbedInNoteModal
           sourceName={embedding.name}

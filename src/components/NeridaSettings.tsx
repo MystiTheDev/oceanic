@@ -7,6 +7,7 @@ import {
 } from "../lib/nerida";
 import { ModelMenu } from "./NeridaModelMenu";
 import { Bell, Cpu, Eye, Gauge, MessageSquareText, Sparkles, Star, type LucideIcon } from "lucide-react";
+import { ask } from "./ConfirmDialog";
 import { Switch } from "./SettingsModal";
 
 /* Nerida settings look: grouped cards, muted row icons, cyan→violet accent. */
@@ -43,7 +44,7 @@ export function NeridaSettings() {
     void refresh();
   };
   const remove = async (id: ModelId) => {
-    if (!confirm(`Delete ${MODEL_NAMES[id]}? You can download it again any time.`)) return;
+    if (!(await ask({ title: `Delete ${MODEL_NAMES[id]}?`, body: "You can download it again any time.", confirm: "Delete" }))) return;
     await invoke<void>("ai_delete_model", { model: id }).catch((e) => setErr(String(e)));
     void refresh();
   };
@@ -249,7 +250,7 @@ function Providers() {
     }
   };
   const remove = async (p: Provider) => {
-    if (!confirm(`Remove ${p.name}? Its saved API key is deleted too.`)) return;
+    if (!(await ask({ title: `Remove ${p.name}?`, body: "Its saved API key is deleted too.", confirm: "Remove" }))) return;
     await setKey(p.id, null).catch(() => {});
     saveProviders(providers.filter((x) => x.id !== p.id));
   };
@@ -352,7 +353,7 @@ function ModuleRow({ icon, name, size, about, lose, installed, busy, disabled, o
         <p className="text-[12px] text-neutral-500">{about}</p>
       </div>
       {installed ? (
-        <button type="button" disabled={busy} onClick={() => confirm(lose) && onDelete()} className="cursor-pointer rounded-md px-2.5 py-1 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-red-400 disabled:opacity-40">Delete</button>
+        <button type="button" disabled={busy} onClick={() => void ask({ title: "Delete?", body: lose, confirm: "Delete" }).then((ok) => ok && onDelete())} className="cursor-pointer rounded-md px-2.5 py-1 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-red-400 disabled:opacity-40">Delete</button>
       ) : (
         <button type="button" disabled={busy || disabled} onClick={onDownload} className={accentBtn}>{dlWaiting && dl?.label.endsWith(name.replace("Vision", "vision")) ?"Waiting for reply…" : "Download"}</button>
       )}

@@ -13,6 +13,7 @@ import { Modal, ModalButton } from "../components/Modal";
 import { Preview } from "../editor/mindmapBlock";
 import mindmapLogo from "../assets/mindmap-logo.png";
 import { ROOT, SUBJECTS, fromRecord, layout, logoOf, subjectOf, toRecord, type MNode } from "./model";
+import { tell } from "../components/ConfirmDialog";
 import { MapLogo, askNewMap, changeMapLogo } from "./MapDialogs";
 
 const SAVED = "oceanic:mindmap-saved";
@@ -215,10 +216,10 @@ export function MindmapGallery({ onOpen, openNow, onFocusTab, onCloseTab }: { on
                 try {
                   const r = await importOmap(await readFileBytes(f));
                   // Already in Oceanic: no duplicate, open the existing map.
-                  if (r.existing) window.alert(`“${r.title}” already exists in Oceanic, so it wasn't imported. Opening the existing map.`);
+                  if (r.existing) void tell("Already in Oceanic", `“${r.title}” already exists in Oceanic, so it wasn't imported. Opening the existing map.`);
                   onOpen(r.id);
                 } catch (e) {
-                  window.alert(`Couldn't open this mindmap: ${e instanceof Error ? e.message : e}`);
+                  void tell("Couldn't open this mindmap", String(e instanceof Error ? e.message : e));
                 }
               }}
               className="order-last ml-auto flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[12.5px] text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RotateCcw, Square, X } from "lucide-react";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { runOutline, stopEdit, type EssayType } from "../lib/neridaEdit";
+import { useEscape, useFocusTrap } from "../lib/overlay";
 import { neridaSafeMarkdown } from "../lib/neridaSafe";
 
 /** Outline generator (Docs + Notes): your topic, type, length and own ideas first, then a preview to insert. */
@@ -42,6 +43,9 @@ export function NeridaOutlineUI() {
     window.addEventListener(NERIDA_OUTLINE, open);
     return () => window.removeEventListener(NERIDA_OUTLINE, open);
   }, []);
+  const box = useRef<HTMLDivElement>(null);
+  useEscape(() => (phase === "run" && stopEdit(), setD(null)), !!d);
+  useFocusTrap(box, !!d);
   if (!d) return null;
 
   const close = () => (phase === "run" && stopEdit(), setD(null));
@@ -63,11 +67,11 @@ export function NeridaOutlineUI() {
 
   return createPortal(
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/50" onMouseDown={close}>
-      <div className="w-[440px] max-w-[calc(100vw-32px)] rounded-2xl border border-white/[0.1] bg-[var(--oc-surface)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.55)]" onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={box} role="dialog" aria-modal="true" aria-label="Outline with Nerida" tabIndex={-1} className="w-[440px] max-w-[calc(100vw-32px)] rounded-2xl border outline-none border-white/[0.1] bg-[var(--oc-surface)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.55)]" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center gap-2">
           <NeridaMark size={18} />
           <span className="flex-1 text-[14px] font-medium text-neutral-100">Outline with Nerida<BetaPill /></span>
-          <button type="button" onClick={close} className="cursor-pointer text-neutral-500 hover:text-neutral-200"><X className="size-4" /></button>
+          <button type="button" aria-label="Close" onClick={close} className="cursor-pointer rounded text-neutral-500 hover:text-neutral-200"><X className="size-4" /></button>
         </div>
 
         {phase === "ask" ? (

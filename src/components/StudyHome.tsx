@@ -17,6 +17,7 @@ import { Modal, ModalButton } from "./Modal";
 import { Empty, RecentCard, SectionTitle, StatusPill } from "./HomeView";
 import { ScrollRow } from "./ScrollRow";
 import { TestSetup } from "./TestSetup";
+import { useEscape } from "../lib/overlay";
 import { useTestHistory } from "../lib/quiz";
 
 type Block = { id?: string; type?: string; props?: Record<string, unknown>; content?: unknown; children?: Block[] };
@@ -120,6 +121,7 @@ export function StudyHome(props: {
 function CreateMenu(props: HomeProps) {
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState<null | "assignment" | "exam" | "test">(null);
+  useEscape(() => setOpen(false), open);
   const items: [string, string, ReactNode, () => void][] = [
     ["New page", "#5aa2e9", <Plus />, props.onNewPage],
     ["New assignment", "#38bdf8", <ListTodo />, () => setAdding("assignment")],
@@ -1017,6 +1019,7 @@ function settle(cards: GridCard[], moved: GridCard): GridCard[] {
 function DashboardGrid({ cards, editing, onDone }: { cards: Record<string, ReactNode>; editing: boolean; onDone: () => void }) {
   const { layout } = useStudy();
   const [adding, setAdding] = useState(false);
+  useEscape(() => setAdding(false), adding);
   const [live, setLive] = useState<GridCard[] | null>(null); // layout while dragging
   const gridRef = useRef<HTMLDivElement>(null);
   const cur = live ?? layout;

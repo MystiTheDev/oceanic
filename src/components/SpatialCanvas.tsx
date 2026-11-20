@@ -57,6 +57,7 @@ import { ConceptInspector } from "./ConceptInspector";
 import { AtlasLegend } from "./AtlasLegend";
 import { MUTED_STROKE, PALETTE, REL_COLORS } from "../data/atlas";
 import type { PageMeta } from "../data/workspace";
+import { ask } from "./ConfirmDialog";
 import { tagColor } from "../lib/colors";
 
 type Point = { x: number; y: number };
@@ -666,7 +667,7 @@ export function SpatialCanvas({
     }
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = async () => {
     const g = gesture.current;
     gesture.current = null;
     if (g?.kind === "group" && g.d) {
@@ -690,7 +691,7 @@ export function SpatialCanvas({
       const inside = !!curRect && p.x > curRect.x && p.x < curRect.x + curRect.w && p.y > curRect.y && p.y < curRect.y + curRect.h;
       const title = pages.find((x) => x.id === g.id)?.title || "this card";
       const putBack = () => setPositions((prev) => new Map(prev).set(g.id, g.origin));
-      if (cur && !inside && !window.confirm(`Take "${title}" out of the group "${cur.name}"?`)) return putBack();
+      if (cur && !inside && !(await ask({ title: "Take out of group?", body: `Take "${title}" out of the group "${cur.name}"?`, confirm: "Take out", tone: "warn" }))) return putBack();
       api.saveCanvasPositions([{ pageId: g.id, x: p.x, y: p.y }]).catch((e) => console.error("Saving canvas failed", e));
       const into = target ?? (cur && inside ? cur : null);
       if (into !== cur) void setGroupOf(g.id, into?.id ?? null);
@@ -1648,8 +1649,8 @@ export function SpatialCanvas({
             onOpen={() => onOpenPage(id)}
             onDelete={() => {
               if (isConcept) {
-                if (window.confirm(`Delete the concept "${page.title || "Untitled"}"? Its links and attachments go too.`)) void deleteConcept(id);
-              } else if (window.confirm(`Move "${page.title || "Untitled"}" to Trash?`)) onTrashPage(id);
+                void ask({ title: "Delete concept?", body: `"${page.title || "Untitled"}" will be deleted. Its links and attachments go too.`, confirm: "Delete" }).then((ok) => void (ok && deleteConcept(id)));
+              } else void ask({ title: "Move to Trash?", body: `"${page.title || "Untitled"}" will move to Oceanic's Trash.`, confirm: "Move to Trash" }).then((ok) => ok && onTrashPage(id));
             }}
           />
         );

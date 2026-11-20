@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Check, CornerDownLeft, Replace, RotateCcw, Sparkles, SpellCheck, Square, Wand2, X } from "lucide-react";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { NERIDA_EDIT, fixSpelling, isShort, runContinue, runEdit, stopEdit, synonyms, type EditAction, type NeridaEditDetail } from "../lib/neridaEdit";
+import { useEscape } from "../lib/overlay";
 import { editWarning } from "../lib/neridaGuard";
 
 /** Nerida's selection popup: pick Improve / Fix grammar / your own instruction, preview, then Replace or Insert below. */
@@ -35,6 +36,7 @@ export function NeridaEditUI() {
     return () => window.removeEventListener(NERIDA_EDIT, open);
   }, []);
 
+  useEscape(() => (phase === "run" && stopEdit(), setPop(null)), !!pop);
   if (!pop) return null;
   const close = () => (phase === "run" && stopEdit(), setPop(null));
   const go = async (action: EditAction) => {
@@ -90,7 +92,7 @@ export function NeridaEditUI() {
         <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2">
           <NeridaMark size={15} />
           <span className="flex-1 text-[12.5px] text-neutral-400">{pop.continue ? "Continue writing" : "Edit with Nerida"}<BetaPill /></span>
-          <button type="button" onClick={close} className="cursor-pointer text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
+          <button type="button" aria-label="Close" onClick={close} className="cursor-pointer rounded text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
         </div>
 
         {phase === "pick" ? (

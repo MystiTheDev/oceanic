@@ -1,22 +1,23 @@
-import { useEffect, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useEscape, useFocusTrap } from "../lib/overlay";
 
-/** Centered dialog over a dimmed backdrop; Escape or a backdrop click closes it. */
+/** Centered dialog over a dimmed backdrop; Escape or a backdrop click closes it. Tab stays inside; focus returns on close. */
 export function Modal({
   children,
   onClose,
   className = "w-[400px]",
+  label,
 }: {
   children: ReactNode;
   onClose?: () => void;
   className?: string;
+  /** Accessible name when the dialog has no visible heading. */
+  label?: string;
 }) {
-  useEffect(() => {
-    if (!onClose) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const box = useRef<HTMLDivElement>(null);
+  useEscape(onClose);
+  useFocusTrap(box);
 
   return createPortal(
     <div
@@ -25,7 +26,12 @@ export function Modal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
     >
       <div
-        className={`oc-pop-in max-h-[85vh] overflow-hidden rounded-xl border border-white/[0.08] bg-[var(--oc-surface)] shadow-2xl shadow-black/60 ${className}`}
+        ref={box}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        tabIndex={-1}
+        className={`oc-pop-in oc-dialog max-h-[85vh] overflow-hidden border border-white/[0.08] bg-[var(--oc-surface)] outline-none ${className}`}
       >
         {children}
       </div>
@@ -58,7 +64,34 @@ export function ModalButton({
       autoFocus={autoFocus}
       disabled={disabled}
       onClick={onClick}
-      className={`h-8 cursor-pointer rounded-md px-3 text-[13px] font-medium transition-colors duration-100 disabled:cursor-default disabled:opacity-40 ${look}`}
+      className={`oc-btn h-8 cursor-pointer px-3 text-[13px] font-medium disabled:cursor-default disabled:opacity-40 ${look}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Square icon-only button with a required label (screen readers + hover tooltip). */
+export function IconButton({
+  label,
+  onClick,
+  children,
+  className = "",
+  size = "size-7",
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+  size?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      data-tip={label}
+      onClick={onClick}
+      className={`oc-btn grid ${size} shrink-0 cursor-pointer place-items-center text-neutral-500 hover:bg-white/[0.08] hover:text-neutral-200 ${className}`}
     >
       {children}
     </button>

@@ -19,6 +19,7 @@ import { NeridaSettings } from "./NeridaSettings";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { Modal, ModalButton } from "./Modal";
 import { EmojiPicker } from "./EmojiPicker";
+import { useEscape } from "../lib/overlay";
 import logo from "../assets/logo-raw.png";
 
 export const ACCENTS = ["#2383e2", "#0ea5e9", "#14b8a6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#d946ef"];
@@ -430,6 +431,7 @@ export function Select<T extends string>({ value, onChange, options }: { value: 
   const [openUp, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ top: 0, right: 0, up: false });
+  useEscape(() => setOpen(false), openUp);
   const show = () => {
     const r = ref.current!.getBoundingClientRect();
     const up = r.bottom + 40 * options.length + 16 > window.innerHeight;
@@ -438,7 +440,7 @@ export function Select<T extends string>({ value, onChange, options }: { value: 
   };
   return (
     <>
-      <button ref={ref} type="button" onClick={show} className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13.5px] text-neutral-300 transition-colors hover:bg-white/[0.06] hover:text-neutral-100">
+      <button ref={ref} type="button" aria-haspopup="listbox" aria-expanded={openUp} onClick={show} className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13.5px] text-neutral-300 transition-colors hover:bg-white/[0.06] hover:text-neutral-100">
         {options.find(([v]) => v === value)?.[1] ?? value}
         <ChevronDown className="size-3.5 text-neutral-500" />
       </button>
