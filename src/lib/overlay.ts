@@ -66,3 +66,25 @@ export function trackKeyboardMode() {
   window.addEventListener("keydown", (e) => { if (e.key === "Tab") root.dataset.ocKbd = ""; }, true);
   window.addEventListener("pointerdown", () => { delete root.dataset.ocKbd; }, true);
 }
+
+/** Enter runs a dialog's main action while `active`, unless focus is on a button, list or text area (they handle Enter themselves). */
+export function useEnter(onEnter: (() => void) | undefined, active = true) {
+  const ref = useRef(onEnter);
+  ref.current = onEnter;
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.defaultPrevented || e.isComposing || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("button,a,select,textarea,[contenteditable='true'],[role='listbox'],[role='menu']")) return;
+      // Only the top-most dialog reacts.
+      const modals = document.querySelectorAll("[data-oc-modal]");
+      const top = modals[modals.length - 1];
+      if (top && t && !top.contains(t) && t !== document.body) return;
+      e.preventDefault();
+      ref.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
+}

@@ -107,6 +107,8 @@ export function Sidebar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [fileOver, setFileOver] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(true);
+  // Which row (tree or Favorites) was clicked, so only that copy shows as active.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const [privateOpen, setPrivateOpen] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["roadmap"]));
   const [menu, setMenu] = useState<{ pageId: string; anchor: HTMLElement } | null>(null);
@@ -210,6 +212,8 @@ export function Sidebar({
   const rowProps = {
     expanded,
     activePageId,
+    activeKey,
+    onActivateKey: setActiveKey,
     renamingKey,
     menuPageId: menu?.pageId ?? null,
     onToggleExpanded: toggleExpanded,
@@ -563,6 +567,9 @@ type PageTreeRowProps = {
   onRowContextMenu: (e: MouseEvent, page: PageMeta, rowKey: string) => void;
   /** Favorites mirror tree rows; give them their own expand/rename state. */
   expandKey?: string;
+  /** Row key last clicked; picks which copy of a favourited page is highlighted. */
+  activeKey: string | null;
+  onActivateKey: (key: string) => void;
 };
 
 function PageTreeRow(props: PageTreeRowProps) {
@@ -586,12 +593,18 @@ function PageTreeRow(props: PageTreeRowProps) {
     onDragEndRow,
     onRowContextMenu,
     expandKey = node.page.id,
+    activeKey,
+    onActivateKey,
   } = props;
   const { page } = node;
   const children = node.children;
   const hasChildren = children.length > 0;
   const isOpen = expanded.has(expandKey);
-  const active = activePageId === page.id;
+  const isFav = expandKey.startsWith("fav-");
+  // A favourited page shows in both lists: highlight the copy that was clicked,
+  // or the tree row when the page was opened from somewhere else.
+  const active =
+    activePageId === page.id && (activeKey === expandKey || (!isFav && activeKey !== `fav-${page.id}`));
   const renaming = renamingKey === expandKey;
   const menuOpen = menuPageId === page.id;
   // Only the Private tree reorders; Favorites rows are shortcuts.
@@ -601,7 +614,7 @@ function PageTreeRow(props: PageTreeRowProps) {
   return (
     <>
       <div
-        onClick={() => !renaming && onOpenPage(page.id)}
+        onClick={() => !renaming && (onActivateKey(expandKey), onOpenPage(page.id))}
         draggable={dnd}
         data-row-id={page.id}
         onDragStart={(e) => {
@@ -673,6 +686,10 @@ function PageTreeRow(props: PageTreeRowProps) {
           <span className="min-w-0 flex-1 truncate group-focus-within:pr-[44px] group-hover:pr-[44px]">
             {page.title || "Untitled"}
           </span>
+        )}
+        {/* The same note is also under Favorites: a small star says so. */}
+        {!renaming && !isFav && page.pinned && (
+          <Star aria-label="In Favorites" className="size-3 shrink-0 fill-current text-amber-400/70 group-hover:opacity-0" />
         )}
         {/* Collapsed parents show how many sub-pages they hold (hidden while hovering). */}
         {!renaming && hasChildren && !isOpen && (

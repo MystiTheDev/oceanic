@@ -8,6 +8,7 @@ import {
 import { ModelMenu } from "./NeridaModelMenu";
 import { Bell, Cpu, Eye, Gauge, MessageSquareText, Sparkles, Star, type LucideIcon } from "lucide-react";
 import { ask } from "./ConfirmDialog";
+import { useEscape } from "../lib/overlay";
 import { Switch } from "./SettingsModal";
 
 /* Nerida settings look: grouped cards, muted row icons, cyan→violet accent. */
@@ -228,7 +229,7 @@ function Providers() {
       setForm({ ...form, available });
       setMsg(available.length ? "" : "No models returned. Type a model name below.");
     } catch (e) {
-      setMsg(`Couldn't connect: ${e}`);
+      setMsg(connectError(e));
     }
   };
   const cancel = () => {
@@ -236,6 +237,9 @@ function Providers() {
     setMsg("");
     void setKey(DRAFT_KEY, null).catch(() => {});
   };
+  useEscape(cancel, !!form);
+  const urlBad = !!form?.baseUrl.trim() && !/^https?:\/\/[^\s/]+/i.test(form.baseUrl.trim());
+  const keyMissing = !!form && PRESETS[form.preset].needsKey && !form.key.trim();
   const save = async () => {
     if (!form) return;
     const models = [...new Set([...form.models, ...form.typed.split(",").map((m) => m.trim()).filter(Boolean)])];
@@ -278,13 +282,15 @@ function Providers() {
           ))}
         </div>
       ) : (
-        <div ref={formRef} className="mt-3 space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+        <div ref={formRef} onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && (e.target as HTMLInputElement).type !== "checkbox") { e.preventDefault(); void save(); } }}
+          className="mt-3 space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
           <input className={field} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input className={field} placeholder="Base URL, e.g. https://api.example.com/v1" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
+          <input className={field} placeholder="Base URL, e.g. https://api.example.com/v1" value={form.baseUrl} aria-invalid={urlBad} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
+          {urlBad && <p className="px-0.5 text-[12px] text-red-300">Start the URL with http:// or https://</p>}
           {PRESETS[form.preset].needsKey && (
             <input className={field} type="password" autoComplete="off" placeholder="API key" value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} />
           )}
-          <button type="button" onClick={() => void load()} className="cursor-pointer rounded-md border border-white/[0.1] px-2.5 py-1 text-[12.5px] text-neutral-300 hover:bg-white/[0.06]">Load models</button>
+          <button type="button" disabled={urlBad || !form.baseUrl.trim() || keyMissing} title={keyMissing ? "Add the API key first" : undefined} onClick={() => void load()} className="cursor-pointer rounded-md border border-white/[0.1] px-2.5 py-1 text-[12.5px] text-neutral-300 hover:bg-white/[0.06] disabled:cursor-default disabled:opacity-40">Load models</button>
           {form.available.length > 0 && (
             <div className="max-h-40 overflow-y-auto rounded-md border border-white/[0.06] p-1.5">
               {form.available.map((m) => (
@@ -378,4 +384,14 @@ function StyleSwitch({ value }: { value: "short" | "tutor" }) {
       ))}
     </div>
   );
+}
+
+/** Plain-language reason for a failed model list request (raw text kept at the end for support). */
+function connectError(e: unknown): string {
+  const raw = String(e instanceof Error ? e.message : e);
+  const why = /401|403|unauthor|invalid.*key/i.test(raw) ? "The API key was rejected. Check it and try again."
+    : /404/.test(raw) ? "No model list at this URL. Most providers need the address to end in /v1."
+    : /refused|error sending|connect|dns|timed? ?out|unreachable/i.test(raw) ? "Couldn't reach the server. Check the URL and that it's running."
+    : "Couldn't load models.";
+  return `${why} (${raw.slice(0, 160)})`;
 }

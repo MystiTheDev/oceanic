@@ -8,7 +8,7 @@ import { NeridaTaskCard } from "./NeridaTaskCard";
 import { GARBLED_NOTE, NERIDA_ASK, pageRange, pdfContext, readScanned, summarizePdf, type AskDetail } from "../lib/neridaPdf";
 import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
-import { ArrowUp, Check, ChevronDown, Copy, Download, FileInput, FileText, Globe, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, Check, ChevronDown, Copy, Download, FileInput, FileText, Globe, Loader2, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 import { usePageDirectory } from "../editor/pageDirectory";
 import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
 import { ASK_WHICH, editPrompt, proposalWarning, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
@@ -65,6 +65,7 @@ export function Markdown({ text, stream = false }: { text: string; stream?: bool
       out.push(<p key={i} className="flex gap-2 pl-1" style={{ marginLeft: (l.match(/^\s*/)![0].length / 2) * 12 }}><span className="text-neutral-500">{/^\s*\d/.test(l) ? l.trim().split(" ")[0] : "•"}</span><span>{inline(l.replace(/^\s*([-*]|\d+\.) /, ""))}</span></p>);
     else if (l.trim()) out.push(<p key={i} className="my-1.5">{inline(l)}</p>);
   }
+  if (stream) out.push(<span key="caret" className="oc-caret" aria-hidden />);
   return <div className="text-[13.5px] leading-relaxed text-neutral-200">{out}</div>;
 }
 
@@ -567,7 +568,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               }
             }}
             rows={Math.min(6, input.split("\n").length)}
-            placeholder={!ready ? "Download Nerida to start" : cmd ? "Type @ to pick a note" : "Ask Nerida anything…"}
+            placeholder={!isTauri() ? "Open the Oceanic desktop app to chat" : !ready ? "Download Nerida to start" : cmd ? "Type @ to pick a note" : "Ask Nerida anything…"}
             className="max-h-40 min-h-[40px] w-full resize-none bg-transparent px-1.5 pt-1 text-[13.5px] text-neutral-100 outline-none placeholder:text-neutral-500"
           />
           </div>
@@ -597,12 +598,6 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   return (
     <>
     <NeridaBetaCard />
-    {intro && (
-      <NeridaIntro
-        onLater={() => nerida.set(home ? { homeMode: "home" } : { open: false })}
-        onDownload={(m) => { setDefaultModel(`nerida:${m}`); setAuto(true); }}
-      />
-    )}
     <aside
       onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
       onDrop={(e) => { if (!ready || !e.dataTransfer.files.length) return; e.preventDefault(); e.stopPropagation(); void addFiles(e.dataTransfer.files); }}
@@ -643,6 +638,12 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       {/* conversation */}
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-3">
       <div className={home ? "mx-auto w-full max-w-3xl" : ""}>
+        {intro && (
+          <NeridaIntro
+            onLater={() => nerida.set(home ? { homeMode: "home" } : { open: false })}
+            onDownload={(m) => { setDefaultModel(`nerida:${m}`); setAuto(true); }}
+          />
+        )}
         {b && status && !ready && !intro && <Setup key={b} status={status} model={b} auto={auto} onDone={() => void refresh()} />}
         {b && ready && status && (() => {
           const m = status.models.find((x) => x.id === b)!;
@@ -735,7 +736,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
                   <ul className="mt-1.5 ml-[7px] border-l border-white/[0.08] pl-3">
                     {steps.map((s, i) => (
                       <li key={i} className={`flex items-center gap-1.5 py-0.5 text-[12px] ${s.done ? "text-neutral-500" : "text-neutral-300"}`}>
-                        {s.done ? <Check className="size-3 text-teal-400" /> : <span className="size-1.5 animate-pulse rounded-full bg-teal-300" />}
+                        {s.done ? <Check className="size-3 text-teal-400" /> : <Loader2 className="size-3 animate-spin text-teal-300" aria-label="Working" />}
                         {s.label}
                       </li>
                     ))}
@@ -746,7 +747,19 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             {draft && <Markdown text={draft} stream />}
           </div>
         )}
-        {err && <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-[12.5px] text-red-300">{err}</p>}
+        {/* One error state, in the conversation, with the action that fixes it. */}
+        {err && (
+          <div role="alert" className={`oc-msg-in mx-auto flex max-w-sm flex-col items-center gap-2 rounded-xl border border-red-400/15 bg-red-500/[0.06] px-4 py-4 text-center ${msgs.length ? "mt-4" : "mt-[12vh]"}`}>
+            <AlertCircle className="size-5 text-red-300" />
+            <p className="text-[12.5px] leading-relaxed text-red-200">{err}</p>
+            {isTauri() && (
+              <button type="button" disabled={busy} onClick={() => (setErr(""), msgs.length ? retry() : void refresh())}
+                className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium text-neutral-200 hover:bg-white/[0.06] disabled:opacity-40">
+                <RotateCcw className="size-3.5" /> Try again
+              </button>
+            )}
+          </div>
+        )}
       </div>
       </div>
 

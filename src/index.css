@@ -121,6 +121,9 @@
 @keyframes oc-msg-in-user { from { opacity: 0; transform: translate(12px, 6px) scale(.97); } }
 .oc-word { animation: oc-word .45s ease-out both; }
 @keyframes oc-word { from { opacity: 0; filter: blur(3px); } }
+/* Streaming cursor at the end of a reply that is still being written */
+.oc-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: rgb(94 234 212 / 0.8); animation: oc-caret 1s steps(2, start) infinite; }
+@keyframes oc-caret { to { visibility: hidden; } }
 .oc-chip-in { animation: oc-chip-in .25s cubic-bezier(.3,1.4,.5,1) both; }
 @keyframes oc-chip-in { from { opacity: 0; transform: scale(.8); } }
 .oc-menu-pop { transform-origin: bottom left; animation: oc-menu-pop .18s cubic-bezier(.2,.9,.3,1.2) both; }
@@ -140,7 +143,7 @@
 }
 @keyframes oc-burst { to { inset: -12px; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .oc-beta::after, .oc-msg-in, .oc-word, .oc-chip-in, .oc-menu-pop, .oc-stagger > *, .oc-send::after { animation: none !important; }
+  .oc-beta::after, .oc-msg-in, .oc-word, .oc-caret, .oc-chip-in, .oc-menu-pop, .oc-stagger > *, .oc-send::after { animation: none !important; }
   .oc-tilt:hover { transform: none; }
 }
 

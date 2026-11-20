@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ImageAnnotator } from "./ImageAnnotator";
 import { copyImageToClipboard } from "../lib/clipboard";
 import { Check, CheckSquare, ChevronLeft, ChevronRight, Layers, Network, X } from "lucide-react";
@@ -28,6 +28,7 @@ import { openNeridaCards } from "./NeridaCards";
 import { openNeridaEdit } from "../lib/neridaEdit";
 import { NOTE_BLOCKS, PROPOSE, paintTable, setPending, tableToText, textToTable, usePending, type NoteBlock, type Proposal, type TableData } from "../lib/neridaChatEdit";
 import { TextSelection } from "prosemirror-state";
+import { flip, offset, shift } from "@floating-ui/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import type { Block, PartialBlock } from "@blocknote/core";
 import { en } from "@blocknote/core/locales";
@@ -240,6 +241,18 @@ export function PageEditor({
   // Notion's "Get started with" bar shows while the body is empty.
   const [empty, setEmpty] = useState(() => isEmptyDoc(editor.document as Block[]));
   const scroller = useRef<HTMLDivElement>(null);
+  // The note body: the selection toolbar flips below the text instead of covering the properties above it.
+  const [canvas, setCanvas] = useState<HTMLDivElement | null>(null);
+  const toolbarFloat = useMemo(
+    () => ({
+      useFloatingOptions: {
+        // BlockNote's defaults, but the flip boundary is the note body: on the first lines
+        // the toolbar goes below the selection instead of over Date/Status/Tags.
+        middleware: [offset(10), shift(), flip({ boundary: canvas ?? "clippingAncestors", crossAxis: false })],
+      },
+    }),
+    [canvas],
+  );
   // Restore last scroll spot; retry briefly while content lays out.
   useEffect(() => {
     const y = Number(localStorage.getItem(`oc-scroll:${page.id}`)) || 0;
@@ -582,6 +595,7 @@ export function PageEditor({
 
         {/* BlockNote canvas (dark); right-click opens Oceanic's block menu */}
         <div
+          ref={setCanvas}
           onContextMenu={(e) => {
             const items = editorContextMenu(editor, e, page.id);
             if (items) openContextMenu(e, items);
@@ -614,7 +628,10 @@ export function PageEditor({
             triggerCharacter="@"
             getItems={async (query) => getPageLinkItems(editor, query, page.id)}
           />
-          <FormattingToolbarController formattingToolbar={SelectionToolbar} />
+          <FormattingToolbarController
+            formattingToolbar={SelectionToolbar}
+            floatingUIOptions={toolbarFloat}
+          />
         </BlockNoteView>
         </div>
       </div>

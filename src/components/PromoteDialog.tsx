@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { api, REL_TYPES, type Concept, type RelType } from "../data/api";
 import { REL_LABELS } from "../data/atlas";
 import { Modal, ModalButton } from "./Modal";
+import { useEnter } from "../lib/overlay";
 import { Toast } from "./Toast";
 import { Select } from "./SettingsModal";
 
@@ -101,6 +102,7 @@ export function PromoteDialog({
   };
   const [done, setDone] = useState<number | null>(null);
   const onDone = (n: number) => setDone(n);
+  useEnter(() => picked.size && !busy && send(), done === null);
 
   if (done !== null)
     return (

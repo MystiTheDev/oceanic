@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Modal, ModalButton } from "./Modal";
+import { useEnter } from "../lib/overlay";
 
 export type MetaChoice = { meta: boolean; newTags: string[] } | null;
 
@@ -11,6 +12,7 @@ export function ImportMetaDialog({ titles, existingTags, newTags, onDone }: { ti
   const [meta, setMeta] = useState(true);
   const [picked, setPicked] = useState<Set<string>>(new Set(newTags));
   const flip = (t: string) => setPicked((s) => (s.has(t) ? (s.delete(t), new Set(s)) : new Set(s.add(t))));
+  useEnter(() => onDone({ meta, newTags: meta ? [...picked] : [] }));
   return (
     <Modal onClose={() => onDone(null)} className="w-[440px] p-5">
       <h2 className="text-[16px] font-semibold text-neutral-100">Import {titles.length === 1 ? `“${titles[0] || "Untitled"}”` : `${titles.length} notes`}</h2>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BookOpenCheck, Download, Layers, MessageSquareText, ShieldCheck } from "lucide-react";
 import { MODEL_NAMES, type ModelId } from "../lib/nerida";
-import { Modal } from "./Modal";
+import { useEscape } from "../lib/overlay";
 import { NeridaMark } from "./NeridaOrb";
 
 
@@ -36,11 +36,13 @@ function Preview() {
   );
 }
 
+/** Intro card shown inside the Nerida panel (or Nerida Home) it introduces. */
 export function NeridaIntro({ onDownload, onLater }: { onDownload: (m: ModelId) => void; onLater: () => void }) {
   const model: ModelId = "plus";
+  useEscape(onLater);
   return (
-    <Modal onClose={onLater} className="w-[480px]">
-      <div className="p-6">
+    <div role="dialog" aria-label="Meet Nerida" className="oc-pop-in mx-auto mt-6 w-full max-w-[480px] rounded-2xl border border-white/[0.08] bg-white/[0.03] shadow-xl shadow-black/30">
+      <div className="p-5">
         <div className="mx-auto mb-3 grid place-items-center"><NeridaMark size={64} busy /></div>
         <h2 className="text-center text-[19px] font-semibold text-neutral-50">Meet Nerida, your free AI study partner</h2>
         <p className="mx-auto mt-1.5 max-w-[380px] text-center text-[13px] text-neutral-400">
@@ -63,10 +65,10 @@ export function NeridaIntro({ onDownload, onLater }: { onDownload: (m: ModelId) 
           <button type="button" onClick={onLater} className="flex-1 cursor-pointer rounded-lg px-3 py-2 text-[13px] text-neutral-400 hover:bg-white/[0.05]">Maybe later</button>
           <button type="button" onClick={() => onDownload(model)}
             className="flex flex-[2] cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-teal-400/90 px-3 py-2 text-[13px] font-medium text-neutral-950 hover:bg-teal-300">
-            <Download className="size-4" /> Download {MODEL_NAMES[model]} (~1.3 GB)
+            <Download className="size-4 shrink-0" /> Download {MODEL_NAMES[model]} (~1.3 GB)
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useEscape } from "../lib/overlay";
 import { ImagePlus, Move, Trash2, RefreshCw, Upload } from "lucide-react";
 import { bannerBg, GALLERY, GRADIENTS, setBanner, useBanner, type Banner } from "../lib/banners";
 import { uploadFile } from "../editor/audio";
@@ -77,6 +78,7 @@ const Btn = ({ onClick, children }: { onClick: () => void; children: React.React
 function BannerPicker({ onPick, onClose }: { onPick: (b: Banner) => void; onClose: () => void }) {
   const [tab, setTab] = useState<"gallery" | "colors" | "upload">("gallery");
   const [busy, setBusy] = useState(false);
+  useEscape(onClose);
   const file = useRef<HTMLInputElement>(null);
   return (
     <>

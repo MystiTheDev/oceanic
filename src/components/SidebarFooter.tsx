@@ -63,11 +63,12 @@ export function SidebarFooter(props: SidebarFooterProps) {
         </button>
         <button
           type="button"
-          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          onClick={props.onToggleTheme}
+          title="Settings"
+          aria-label="Settings"
+          onClick={() => props.onOpenSettings()}
           className="oc-rail-hide grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-neutral-500 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-200"
         >
-          {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
+          <Settings className="size-4" />
         </button>
       </div>
 
@@ -86,6 +87,12 @@ export function SidebarFooter(props: SidebarFooterProps) {
             </div>
           </div>
           <div className="my-1 h-px bg-white/[0.06]" />
+          <MenuRow
+            icon={theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            onClick={() => (setOpen(null), props.onToggleTheme())}
+          >
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </MenuRow>
           {(
             [
               ["Settings", <Settings className="size-4" />, undefined],

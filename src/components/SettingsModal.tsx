@@ -69,8 +69,11 @@ type Page = { id: PageId; label: string; icon: ReactNode; groups?: Group[]; cust
 
 const NAV: { heading: string; pages: PageId[] }[] = [
   { heading: "Account", pages: ["account", "preferences"] },
-  { heading: "Oceanic", pages: ["general", "spelling", "nerida", "storage", "deleting", "shortcuts", "about"] },
+  { heading: "App", pages: ["general", "spelling", "shortcuts"] },
+  { heading: "AI", pages: ["nerida"] },
+  { heading: "Data", pages: ["storage", "deleting"] },
   { heading: "Apps", pages: ["docs", "sketch", "mindmap", "study"] },
+  { heading: "Help", pages: ["about"] },
 ];
 
 const kbd = (...keys: string[]) => (

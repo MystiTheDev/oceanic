@@ -94,7 +94,7 @@ export function HomeView(props: HomeViewProps) {
                 <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />
               ))}
             </ScrollRow>
-          ) : <Empty>Pages you open will show up here.</Empty>}
+          ) : <Empty icon={<Clock className="size-4" />} action={{ label: "New page", onClick: onNewPage }}>Pages you open will show up here.</Empty>}
         </section>
 
       </div>
@@ -182,8 +182,23 @@ export function SectionTitle({ icon, children }: { icon: ReactNode; children: Re
   );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <p className="oc-glass border-dashed px-4 py-6 text-center text-[13px] text-neutral-500">{children}</p>;
+export function Empty({ children, icon, action }: { children: ReactNode; icon?: ReactNode; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div className="oc-glass flex flex-col items-center gap-2 border-dashed px-4 py-6 text-center text-[13px] text-neutral-500">
+      {icon && <span className="grid size-8 place-items-center rounded-full bg-white/[0.05] text-neutral-400">{icon}</span>}
+      <p>{children}</p>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium text-neutral-300 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-100"
+        >
+          <Plus className="size-3.5" />
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
 }
 
 

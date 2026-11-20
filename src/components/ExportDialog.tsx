@@ -1,6 +1,7 @@
 import { buildOceanFile } from "../lib/oceanFile";
-import { useEffect, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useState, type ReactNode } from "react";
+import { Modal, ModalButton } from "./Modal";
+import { useEnter } from "../lib/overlay";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { PartialBlock } from "@blocknote/core";
 import { FileCode2, FileDown, FileText, Loader2, Waves } from "lucide-react";
@@ -64,11 +65,8 @@ export function ExportDialog({ page, pages, loadBlocks, onDone, onClose }: Expor
   const subpageCount = subtreeIds(pages, page.id).size - 1;
   const zipped = includeSubpages && subpageCount > 0;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
+  // Escape closes (not mid-export); Enter exports.
+  useEnter(() => void run(), !busy);
 
   const showInFolder = (path: string) => reveal && isTauri() && void invoke("docs_reveal", { path }).catch(() => {});
 
@@ -108,14 +106,9 @@ export function ExportDialog({ page, pages, loadBlocks, onDone, onClose }: Expor
   };
 
   const current = FORMATS.find((f) => f.id === format)!;
-  return createPortal(
-    <div className="oc-fade-in fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={() => !busy && onClose()}>
-      <div
-        role="dialog"
-        aria-label="Export"
-        onMouseDown={(e) => e.stopPropagation()}
-        className="oc-pop-in w-full max-w-[620px] overflow-hidden rounded-2xl border border-white/[0.08] bg-neutral-900 shadow-2xl shadow-black/60"
-      >
+  return (
+    <Modal onClose={busy ? undefined : onClose} label="Export" className="w-[min(620px,calc(100vw-2rem))]">
+      <div>
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-4">
           <span className="grid size-10 place-items-center rounded-xl bg-white/[0.05] text-[22px]">{page.icon}</span>
@@ -217,18 +210,17 @@ export function ExportDialog({ page, pages, loadBlocks, onDone, onClose }: Expor
           {error && <p className="oc-fade-in mt-3 rounded-md bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300">{error}</p>}
 
           <div className="mt-5 flex justify-end gap-2">
-            <button type="button" onClick={onClose} disabled={busy} className="h-9 cursor-pointer rounded-lg px-3.5 text-[13px] text-neutral-300 transition-colors hover:bg-white/[0.06] disabled:opacity-50">
-              Cancel
-            </button>
-            <button type="button" onClick={run} disabled={busy} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-sky-600 px-4 text-[13px] font-medium text-[#fff] transition-colors hover:bg-sky-500 disabled:opacity-70">
-              {busy && <Loader2 className="size-3.5 animate-spin" />}
-              {busy ? "Exporting…" : format === "pdf" ? "Print to PDF" : `Export as ${current.label}`}
-            </button>
+            <ModalButton onClick={onClose} disabled={busy}>Cancel</ModalButton>
+            <ModalButton variant="primary" onClick={() => void run()} disabled={busy}>
+              <span className="flex items-center gap-1.5">
+                {busy && <Loader2 className="size-3.5 animate-spin" />}
+                {busy ? "Exporting…" : format === "pdf" ? "Print to PDF" : `Export as ${current.label}`}
+              </span>
+            </ModalButton>
           </div>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 

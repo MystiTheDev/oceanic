@@ -4,6 +4,7 @@ import type { PageProperties as Props, PageStatus } from "../data/api";
 import { parseIsoDate, STATUSES, tagColor } from "../lib/colors";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { TagPicker } from "./TagPicker";
+import { useEscape } from "../lib/overlay";
 
 const fmt = (iso: string) =>
   parseIsoDate(iso).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
@@ -23,6 +24,7 @@ export function PageProperties({
 }) {
   const dateRef = useRef<HTMLInputElement>(null);
   const [tagDraft, setTagDraft] = useState<string | null>(null);
+  useEscape(() => setTagDraft(null), tagDraft !== null);
   const set = (patch: Partial<Props>) => onChange({ ...value, ...patch });
 
   const statusMenu = (e: React.MouseEvent) =>
@@ -47,7 +49,7 @@ export function PageProperties({
         <button
           type="button"
           onClick={() => dateRef.current?.showPicker()}
-          className={value.dueDate ? "text-neutral-200" : "text-neutral-600"}
+          className={value.dueDate ? "text-neutral-200" : "text-neutral-600 transition-colors duration-100 group-hover/val:text-neutral-400"}
         >
           {value.dueDate ? fmt(value.dueDate) : "Empty"}
         </button>
@@ -64,7 +66,7 @@ export function PageProperties({
 
       <Row icon={<CircleDot className="size-4" />} label="Status">
         <button type="button" onClick={statusMenu}>
-          {value.status ? <StatusBadge status={value.status} /> : <span className="text-neutral-600">Empty</span>}
+          {value.status ? <StatusBadge status={value.status} /> : <span className="text-neutral-600 transition-colors duration-100 group-hover/val:text-neutral-400">Empty</span>}
         </button>
       </Row>
 
@@ -74,7 +76,7 @@ export function PageProperties({
             <TagChip key={t} tag={t} onRemove={() => set({ tags: value.tags.filter((x) => x !== t) })} />
           ))}
           <span className="relative">
-            <button type="button" onClick={() => setTagDraft(tagDraft === null ? "" : null)} className="text-neutral-600 hover:text-neutral-400">
+            <button type="button" onClick={() => setTagDraft(tagDraft === null ? "" : null)} className="text-neutral-600 transition-colors duration-100 hover:text-neutral-400 group-hover/val:text-neutral-400">
               {value.tags.length ? "+" : "Empty"}
             </button>
             {tagDraft !== null && (
@@ -103,7 +105,7 @@ function Row({ icon, label, children }: { icon: ReactNode; label: string; childr
         {icon}
         {label}
       </div>
-      <div className="flex min-h-[30px] flex-1 cursor-pointer items-center gap-1 rounded-md px-2 transition-colors duration-100 hover:bg-white/[0.04]">
+      <div className="group/val flex min-h-[30px] flex-1 cursor-pointer items-center gap-1 rounded-md px-2 transition-colors duration-100 hover:bg-white/[0.04]">
         {children}
       </div>
     </div>

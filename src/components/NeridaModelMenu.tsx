@@ -84,7 +84,7 @@ export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSett
   );
   const Action = ({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) => (
     <button type="button" onClick={onClick} className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] text-neutral-300 outline-none hover:bg-white/[0.06] focus-visible:bg-white/[0.08]">
-      <span className="grid size-5 place-items-center text-neutral-500">{icon}</span>{label}
+      <span className="grid w-8 shrink-0 place-items-center text-neutral-500">{icon}</span>{label}
     </button>
   );
 
@@ -92,7 +92,7 @@ export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSett
     <>
       <button ref={btn} type="button" disabled={disabled} onClick={() => setOpen((o) => !o)} title="Choose model" aria-haspopup="menu" aria-expanded={open}
         onKeyDown={(e) => e.key === "ArrowUp" || e.key === "ArrowDown" ? (e.preventDefault(), setOpen(true)) : undefined}
-        className={inSettings ? "flex h-8 min-w-[150px] cursor-pointer items-center justify-between gap-2 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 text-[13px] text-neutral-100 hover:bg-white/[0.07]" : `flex h-7 max-w-[170px] cursor-pointer items-center gap-1 rounded-lg px-2 text-[12.5px] transition-colors hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:opacity-50 ${open ? "bg-white/[0.06] text-neutral-200" : "text-neutral-400"}`}>
+        className={inSettings ? "flex h-8 min-w-[150px] cursor-pointer items-center justify-between gap-2 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 text-[13px] text-neutral-100 hover:bg-white/[0.07]" : `flex h-7 max-w-[170px] cursor-pointer items-center gap-1 rounded-lg px-2 text-[12px] transition-colors hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:opacity-50 ${open ? "bg-white/[0.06] text-neutral-200" : "text-neutral-400"}`}>
         <span className="truncate">{modelLabel(model) || "Choose model"}</span>
         <ChevronDown className={`size-3.5 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
