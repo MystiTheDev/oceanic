@@ -122,7 +122,7 @@ export function PropSheet({
         <h2>Status</h2>
         {(Object.keys(STATUSES) as PageStatus[]).map((s) => (
           <button key={s} className={`ocm-item ${value.status === s ? "on" : ""}`} onClick={() => set({ status: s })}>
-            <span className="ocm-dot" style={{ background: STATUSES[s].color.text }} /> {STATUSES[s].label}
+            <span className="ocm-status-dot" style={{ background: STATUSES[s].color.text }} /> {STATUSES[s].label}
             {value.status === s && <Check size={18} className="ocm-check" />}
           </button>
         ))}

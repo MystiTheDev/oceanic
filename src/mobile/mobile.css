@@ -535,7 +535,7 @@
 .ocm-prop-add { color: var(--ocm-muted); border-style: dashed; background: transparent; }
 .ocm-prop-tags { flex-wrap: wrap; gap: 4px; }
 .ocm-row-props { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.ocm-dot { width: 10px; height: 10px; margin: 0 5px; border-radius: 999px; }
+.ocm-status-dot { width: 10px; height: 10px; margin: 0 5px; border-radius: 999px; }
 .ocm-check { margin-left: auto; color: var(--ocm-accent); }
 .ocm-item:disabled { opacity: 0.4; }
 .ocm-hidden-input { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
@@ -545,3 +545,8 @@
 .ocm-tag-pick { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 10px; border: 1px solid transparent; color: var(--ocm-accent); transition: background 0.15s; }
 .ocm-tag-pick.on { border-color: var(--ocm-line); background: rgba(var(--oc-ink), 0.07); }
 @media (prefers-reduced-motion: reduce) { .ocm-tag-pick { transition: none; } }
+
+/* Export sheet: scrollable subpage checklist, Share pinned under it. */
+.ocm-export-list { max-height: 45vh; overflow-y: auto; }
+.ocm-export-list .ocm-item span { flex: none; }
+.ocm-share-go { justify-content: center; margin-top: 6px; font-weight: 600; color: var(--ocm-accent); background: rgba(var(--oc-ink), 0.05); }
