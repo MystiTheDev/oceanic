@@ -771,7 +771,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         {trimHistory(msgs, model).cut > 0 && <p className="text-center text-[11.5px] text-neutral-500">Earlier messages summarized to keep Nerida fast</p>}
         {msgs.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div></div>
+            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex flex-col items-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div><div className="mt-1 mr-1 flex justify-end text-neutral-500"><Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act></div></div>
           ) : (
             <div key={i} className="group oc-msg-in mt-5 flex gap-2.5">
               <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
