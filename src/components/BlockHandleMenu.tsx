@@ -9,7 +9,8 @@ import {
   useComponentsContext,
   useExtensionState,
 } from "@blocknote/react";
-import { Copy, Lightbulb, Palette, Trash2 } from "lucide-react";
+import { Copy, Lightbulb, Palette, Sparkles, Trash2 } from "lucide-react";
+import { aiOnBlock } from "../editor/neridaActions";
 import { HEADINGS_TO_ATLAS } from "./PromoteDialog";
 
 /** Menu label with a leading icon. */
@@ -61,10 +62,24 @@ function AtlasItem() {
   );
 }
 
-/** Notion's block (⋮⋮) menu: Duplicate, Delete, then Color — each with an icon. */
+/** Text blocks: Nerida's AI menu on the whole block (empty block: write something new here). */
+function AskNeridaItem() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor();
+  const block = useExtensionState(SideMenuExtension, { editor, selector: (s) => s?.block });
+  if (!block || !["paragraph", "heading", "bulletListItem", "numberedListItem", "checkListItem", "quote", "toggleListItem"].includes(block.type)) return null;
+  return (
+    <Components.Generic.Menu.Item className="bn-menu-item" onClick={() => setTimeout(() => aiOnBlock(editor as never, block.id))}>
+      <Label icon={<Sparkles className="size-4" />}>Ask Nerida</Label>
+    </Components.Generic.Menu.Item>
+  );
+}
+
+/** Notion's block (⋮⋮) menu: Ask Nerida, Duplicate, Delete, then Color — each with an icon. */
 export function BlockHandleMenu() {
   return (
     <DragHandleMenu>
+      <AskNeridaItem />
       <DuplicateBlockItem />
       <AtlasItem />
       <RemoveBlockItem>

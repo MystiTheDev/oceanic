@@ -26,7 +26,8 @@ import {
 import { Plugin } from "prosemirror-state";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { FileText, Layers, ListTree, Music, Network, Sigma, SquareFunction } from "lucide-react";
+import { FileText, Layers, ListTree, Music, Network, Sigma, Sparkles, SquareFunction } from "lucide-react";
+import { aiAtCaret } from "./neridaActions";
 import { openNeridaOutline } from "../components/NeridaOutlineUI";
 import { isMarked, toggleMarked } from "../lib/srs";
 import { usePageDirectory, pageDirectory } from "./pageDirectory";
@@ -288,9 +289,17 @@ export function getSlashItems(editor: OceanicEditor, query: string) {
       },
     },
     {
+      title: "Ask Nerida (AI)",
+      subtext: "Tell Nerida what to write here; preview, then insert",
+      aliases: ["ai", "nerida", "ask", "write", "generate", "continue"],
+      group: "Nerida",
+      icon: <Sparkles size={18} />,
+      onItemClick: () => aiAtCaret(editor as never),
+    },
+    {
       title: "Outline with Nerida",
       subtext: "Essay outline from your topic and ideas",
-      aliases: ["outline", "nerida", "essay", "plan", "structure", "ai"],
+      aliases: ["outline", "nerida", "essay", "plan", "structure"],
       group: "Nerida",
       icon: <ListTree size={18} />,
       onItemClick: () => {

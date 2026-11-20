@@ -25,9 +25,8 @@ import {
 } from "@blocknote/react";
 import { NeridaMark } from "./NeridaOrb";
 import { openNeridaCards } from "./NeridaCards";
-import { openNeridaEdit } from "../lib/neridaEdit";
+import { aiOnSelection } from "../editor/neridaActions";
 import { NOTE_BLOCKS, PROPOSE, paintTable, setPending, tableToText, textToTable, usePending, type NoteBlock, type Proposal, type TableData } from "../lib/neridaChatEdit";
-import { TextSelection } from "prosemirror-state";
 import { flip, offset, shift } from "@floating-ui/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import type { Block, PartialBlock } from "@blocknote/core";
@@ -108,23 +107,8 @@ function EditWithNerida() {
     <button type="button" title="Edit with Nerida" className="oc-toolbar-btn flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12.5px] text-neutral-300 hover:bg-white/[0.08]"
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => {
-        const view = editor.prosemirrorView;
-        const text = editor.getSelectedText().trim();
-        if (!view || !text) return;
-        const { from, to } = view.state.selection;
         const r = e.currentTarget.getBoundingClientRect();
-        // Re-select the original range first: the popup steals focus.
-        const select = () => (editor.focus(), view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, Math.min(to, view.state.doc.content.size)))));
-        openNeridaEdit({
-          text, x: r.left, y: r.bottom + 6,
-          replace: (t) => (select(), editor.pasteMarkdown(t)),
-          insertBelow: (t) => {
-            select();
-            const blocks = editor.tryParseMarkdownToBlocks(t);
-            const sel = editor.getSelection()?.blocks;
-            if (blocks.length) editor.insertBlocks(blocks as never, sel?.[sel.length - 1] ?? editor.getTextCursorPosition().block, "after");
-          },
-        });
+        aiOnSelection(editor as never, { x: r.left, y: r.bottom + 6 });
       }}>
       <NeridaMark size={15} /> Edit
     </button>

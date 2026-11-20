@@ -30,7 +30,7 @@ export { NeridaMark } from "./NeridaOrb";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { BetaPill, NeridaBetaCard, NeridaMark } from "./NeridaOrb";
-import { ask } from "./ConfirmDialog";
+import { confirmCloud } from "./NeridaDiff";
 import { neridaSafeMarkdown } from "../lib/neridaSafe";
 
 /* ------------------------------------------------------------- markdown */
@@ -404,11 +404,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   sendRef.current = (t) => void send(t);
   const send = async (text: string, history: Msg[] = chat?.messages ?? []) => {
     if (!text.trim() || busy) return;
-    if (isCloud(model) && !nerida.get().cloudOk) {
-      if (!(await ask({ title: `Use ${modelLabel(model)}?`, body: `${modelLabel(model)} is a cloud model: your message and the included notes are sent to that provider.`, confirm: "Continue", tone: "warn" }))) return;
-      nerida.set({ cloudOk: true });
-      void api.setSetting("neridaCloudOk", "1").catch(() => {});
-    }
+    if (!(await confirmCloud(model))) return;
     setErr("");
     setInput("");
     const base: Chat = chat ?? { id: uid(), title: text.slice(0, 60), messages: [], updatedAt: Date.now(), ...(pinned.length && { pinned }) };

@@ -1,12 +1,15 @@
 import { engine, nerida } from "./nerida";
 import { isKnown, suggestionsFor } from "./spell/engine";
 import { neridaSafeMarkdown } from "./neridaSafe";
+import { scrubInjection } from "./neridaGuard";
 
 /* Nerida edits selected text (Notes, Docs): the popup previews the result, then the
  * editor that opened it replaces the selection or inserts below it. */
 
 export const NERIDA_EDIT = "oc-nerida-edit";
-export type EditAction = "improve" | "grammar" | "custom";
+export type EditAction = "improve" | "grammar" | "shorten" | "expand" | "simplify" | "tone" | "translate" | "custom";
+export const TONES = ["Professional", "Casual", "Friendly", "Confident", "Academic"] as const;
+export const LANGUAGES = ["English", "Spanish", "French", "German", "Chinese", "Japanese", "Korean", "Arabic", "Hindi", "Portuguese", "Italian"] as const;
 export type NeridaEditDetail = {
   text: string;
   x: number;
@@ -15,6 +18,8 @@ export type NeridaEditDetail = {
   insertBelow?: (text: string) => void;
   /** Continue writing: `text` is what comes before the caret; Nerida starts at once and `replace` inserts. */
   continue?: boolean;
+  /** `/ai`: free-form instruction at the caret; `text` is the writing before it (context only), `replace` inserts. */
+  prompt?: boolean;
 };
 
 /** Nerida's text is defused (no images, links or HTML) before it reaches the editor. */
@@ -25,10 +30,22 @@ export const openNeridaEdit = (d: NeridaEditDetail) =>
     }),
   );
 
-const TASK: Record<Exclude<EditAction, "custom">, string> = {
+const TASK: Record<Exclude<EditAction, "custom" | "tone" | "translate">, string> = {
   improve: "Rewrite this text so it is clearer and better worded. Keep the meaning, the language and roughly the length.",
   grammar: "Fix only spelling, grammar and punctuation in this text. Change nothing else.",
+  shorten: "Make this text shorter: about half the length. Keep the key points, the meaning and the language.",
+  expand: "Make this text longer: add detail, examples or explanation (about twice the length). Keep the meaning, voice and language.",
+  simplify: "Rewrite this text in simpler, everyday words and shorter sentences, so a younger student understands it. Keep the meaning and the language.",
 };
+/** The instruction for an action; `arg` is the custom instruction, tone or language. */
+export const editTask = (action: EditAction, arg = "") =>
+  action === "custom" ? `Do this to the text: ${arg.trim()}`
+  : action === "tone" ? `Rewrite this text in a ${arg.trim().toLowerCase() || "professional"} tone. Keep the meaning, the language and roughly the length.`
+  : action === "translate" ? `Translate this text into ${arg.trim() || "English"}. Keep the meaning, formatting and tone. Output only the translation.`
+  : TASK[action];
+/** Which editWarning check fits an action (translations share no words, so they are checked like free edits). */
+export const warnMode = (action: EditAction): "grammar" | "improve" | "free" =>
+  action === "grammar" ? "grammar" : action === "custom" || action === "translate" || action === "expand" ? "free" : "improve";
 
 /** The text is fenced with a per-request id and the task comes last, so words in the text can't pose as instructions. */
 const fence = (text: string) => {
@@ -41,10 +58,10 @@ const prompt = (task: string, text: string) => `${fence(text)}\n\n${task}\nOutpu
 export const isShort = (text: string) => text.trim().split(/\s+/).length <= 3;
 
 
-/** Streams the edited text; resolves with the cleaned result. */
-export async function runEdit(action: EditAction, text: string, custom: string, onText: (t: string) => void): Promise<string> {
+/** Streams the edited text; resolves with the cleaned result. `arg`: custom instruction, tone or language. */
+export async function runEdit(action: EditAction, text: string, arg: string, onText: (t: string) => void): Promise<string> {
   const model = nerida.get().model;
-  const task = action === "custom" ? `Do this to the text: ${custom.trim()}` : TASK[action];
+  const task = editTask(action, arg);
   let out = "";
   await engine.chat(
     model,
@@ -55,7 +72,7 @@ export async function runEdit(action: EditAction, text: string, custom: string, 
     (t) => {
       out += t;
       onText(clean(out));
-      if (out.length > text.length * 4 + 800) void engine.stop(); // runaway output
+      if (out.length > text.length * (action === "expand" ? 6 : 4) + 800) void engine.stop(); // runaway output
     },
   );
   // Off-topic or steered results are flagged in the popup (editWarning), not refused.
@@ -116,6 +133,30 @@ export async function runContinue(before: string, onText: (t: string) => void): 
       out += t;
       onText(clean(out));
       if (out.length > 1500) void engine.stop();
+    },
+  );
+  return clean(out);
+}
+
+/** `/ai`: new writing for a free-form instruction; the text before the caret is context only. */
+export async function runPrompt(instruction: string, before: string, onText: (t: string) => void): Promise<string> {
+  let out = "";
+  const ctx = scrubInjection(last(before, 3000)).trim();
+  await engine.chat(
+    nerida.get().model,
+    [
+      { role: "system", content: "You are Nerida, a writing assistant inside a note app. You write the text the user asks for, in Markdown, and reply with only that text." },
+      {
+        role: "user",
+        content:
+          (ctx ? `My note so far (for context):\n${fence(ctx)}\n\n` : "") +
+          `Write what I ask below, to go at the caret in my note. Match my note's language and voice. Output only the new text: no intro, no notes.\nMy request: ${instruction.trim()}`,
+      },
+    ],
+    (t) => {
+      out += t;
+      onText(clean(out));
+      if (out.length > 6000) void engine.stop();
     },
   );
   return clean(out);
