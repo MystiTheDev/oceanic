@@ -1,3 +1,15 @@
+# 🌊 Oceanic v2.0.8: A smarter, faster Nerida
+
+- 🎨 Shared UI groundwork and polish across every area of the app.
+- 📝 Nerida understands your notes better, with smarter note context.
+- ✍️ New AI actions right inside the editor.
+- 🤖 Nerida Agent mode can use tools to search and edit your notes.
+- 📚 Study AI: new ways to learn from your notes, including mind maps and science mode.
+- ⚡ Faster replies: shorter chat history with a recap, a warmed-up built-in engine and a quicker first word.
+- 🔧 More reliable tool calls with the built-in model.
+- 📋 Copy button under your messages in Nerida chat.
+- 🔍 Search other notes while a note is open.
+- 🐛 Fixed bugs, plus lots of smaller polish.
 # 🌊 Oceanic v2.0.6: Trace and filter in Atlas
 
 - 🧭 Trace a path between two ideas: right-click a card, choose Trace to…, then click another card. Atlas lights up the shortest route and opens any collapsed groups along the way.
