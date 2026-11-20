@@ -495,3 +495,25 @@
 [data-oc-modal]:has(> .oc-sheet) { place-items: end stretch; }
 .oc-sheet { width: 100% !important; max-height: 90vh; overflow-y: auto; border-radius: 22px 22px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; animation: ocs-up 0.22s cubic-bezier(0.2, 0.8, 0.3, 1); }
 .oc-sheet .justify-end { flex-wrap: wrap; }
+
+/* ---------- Calendar tab (and Home's "This week" strip) */
+.ocm-cal-head { display: flex; justify-content: space-between; align-items: flex-end; }
+.ocm-cal-head .ocm-tabs { margin-top: 6px; font-size: 14px; font-weight: 600; }
+.ocm-cal-week, .ocm-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.ocm-cal-week span { text-align: center; font-size: 12px; font-weight: 600; color: var(--ocm-muted); padding-bottom: 6px; }
+.ocm-cal-clip { overflow: hidden; touch-action: pan-y; }
+.ocm-cal-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 44px; border-radius: 14px; font-size: 15px; font-weight: 600; color: var(--oc-text-strong); }
+.ocm-cal-day.out { opacity: 0.35; }
+.ocm-cal-day.today { color: var(--ocm-accent); }
+.ocm-cal-day.sel { background: color-mix(in srgb, var(--ocm-accent) 30%, transparent); }
+.ocm-cal-day i { width: 5px; height: 5px; border-radius: 50%; }
+.ocm-cal-dot { background: var(--ocm-accent); }
+.ocm-cal-dot.late { background: #ef4444; }
+.ocm-cal-dot.done { background: var(--ocm-muted); opacity: 0.5; }
+.ocm-cal-day small { font-size: 11px; font-weight: 500; color: var(--ocm-muted); }
+.ocm-cal-label { padding: 16px 2px 4px; }
+.ocm-cal-new { margin-top: 10px; }
+.ocm-cal-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 0 20px; }
+.ocm-cal-strip .ocm-cal-day { height: 62px; }
+.ocm-done { text-decoration: line-through; opacity: 0.6; }
+.ocm-row-date.ocm-overdue { color: #ef4444; }

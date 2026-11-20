@@ -30,6 +30,17 @@ The phases are built in this order. Each phase gets its own commit on the `andro
 - A month grid with dots on the days that have due pages. Swipe to change the month.
 - Tapping a day lists that day's pages below the grid.
 
+Agreed spec:
+- Lives in the pill as the third tab (the disabled Calendar slot). Home gets a new "This week" section: 7 day bubbles with dots; tapping a day opens the Calendar tab on it. It can be hidden and reordered in Customize Home.
+- A "Month | Week" segmented control with the sliding underline. Month is the default, and the last choice is remembered. Week is one row of the same day cells.
+- Dots mean due dates only. An overdue day (past, with unfinished pages) gets a red dot; a day whose due pages are all done gets a dim dot.
+- The week start follows the existing "Start week on" setting (Sunday or Monday), shared with the desktop.
+- A Today button jumps to today.
+- Swipe left or right changes the month (or the week). The grid slides with the swipe direction; with reduced motion it only fades.
+- The selected day's pages are listed below the grid as rows, and long-press opens the note sheet. An empty day shows a fun "nothing due" message.
+- Every selected day has a "+ New task due <day>" button, which creates a task due that day and opens it.
+- No date picker for page properties here; that's phase 5.
+
 ## 5. Page properties (Date, Status, Tags)
 - A row of chips under the title. Tapping a chip opens a bottom sheet: a native date picker, a status list, or a tag picker that can also create tags.
 

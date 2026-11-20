@@ -1555,10 +1555,10 @@ export default function App() {
             setMobilePageOpen(true);
             void createPage(null);
           }}
-          onCreateTask={async () => {
+          onCreateTask={async (date?: string) => {
             setView("document");
             setMobilePageOpen(true);
-            const today = new Date().toLocaleDateString("en-CA");
+            const today = date ?? new Date().toLocaleDateString("en-CA");
             // One empty checklist item (Enter adds more), with the caret already in it.
             const blockId = crypto.randomUUID();
             const id = await createPage(null, today, [{ id: blockId, type: "checkListItem" }]);

@@ -1,6 +1,6 @@
 /**
  * Phone layout (Android): replaces the desktop title bar, tabs and sidebar.
- * Home and Pages tabs in a centred glass pill (with the + button at its end),
+ * Home, Pages and Calendar tabs in a centred glass pill (with the + button at its end),
  * an open page full screen with back + page menu, and a profile sheet behind
  * the avatar. Android's back gesture closes sheets and pages.
  * Animations use Motion and follow Android's "Remove animations" setting.
@@ -16,12 +16,14 @@ import { Highlight } from "../components/SearchModal";
 import type { PageMeta } from "../data/workspace";
 import { Avatar } from "../components/SettingsModal";
 import "./mobile.css";
+import { MobileCalendar, dotClass, dueByDay, iso } from "./MobileCalendar";
+import { startOfWeek } from "../lib/prefs";
 import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 
 /** True inside the Android (or iOS) app. */
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 
-type TabId = "home" | "pages";
+type TabId = "home" | "pages" | "calendar";
 const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
 type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page" | "note";
@@ -40,7 +42,7 @@ type Props = {
   onOpen: (id: string) => void;
   onBack: () => void;
   onCreate: () => void;
-  onCreateTask: () => void;
+  onCreateTask: (date?: string) => void;
   visitedAt: Record<string, number>;
   onSettings: () => void;
   onTags: () => void;
@@ -159,7 +161,9 @@ function Waves() {
 const TABS = [
   ["home", Home, "Home"],
   ["pages", FileText, "Pages"],
+  ["calendar", CalendarDays, "Calendar"],
 ] as const;
+const TAB_ORDER = TABS.map(([id]) => id as TabId);
 
 export function MobileShell(p: Props) {
   const prefs = useMobilePrefs();
@@ -233,9 +237,12 @@ export function MobileShell(p: Props) {
   const go = (t: TabId) => {
     if (t === tab) return;
     buzz();
-    setDir(t === "pages" ? 1 : -1);
+    setDir(TAB_ORDER.indexOf(t) > TAB_ORDER.indexOf(tab) ? 1 : -1);
     setTab(t);
   };
+  const [calDay, setCalDay] = useState(() => iso(new Date()));
+  const dueMap = useMemo(() => dueByDay(pages), [pages]);
+  const weekStart = startOfWeek(new Date());
 
   const soon = pages
     .filter((x) => x.dueDate && x.status !== "done" && Date.parse(x.dueDate + "T00:00") - today() < 7 * DAY)
@@ -287,6 +294,24 @@ export function MobileShell(p: Props) {
           <Plus size={18} /> New task <CheckSquare className="ocm-tile-art" size={64} />
         </motion.button>
       </motion.div>
+    ),
+    week: (
+      <motion.section className="ocm-sec" {...rise(1)}>
+        <div className="ocm-card-head">This week {more}</div>
+        <div className="ocm-cal-strip">
+          {Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i);
+            const id = iso(d);
+            return (
+              <motion.button key={id} className={`ocm-cal-day ocm-glass${id === iso(new Date()) ? " today" : ""}`} onClick={() => (buzz(), setCalDay(id), go("calendar"))} {...press}>
+                <small>{d.toLocaleDateString([], { weekday: "narrow" })}</small>
+                {d.getDate()}
+                <i className={dotClass(dueMap[id], id)} />
+              </motion.button>
+            );
+          })}
+        </div>
+      </motion.section>
     ),
     recent: (
               <motion.section className="ocm-sec" {...rise(0)}>
@@ -608,6 +633,10 @@ export function MobileShell(p: Props) {
                   ))}
               </AnimatePresence>
             </motion.div>
+          ) : tab === "calendar" ? (
+            <motion.div key="calendar" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
+              <MobileCalendar pages={pages} day={calDay} setDay={setCalDay} onOpen={p.onOpen} hold={hold} onCreateTask={p.onCreateTask} />
+            </motion.div>
           ) : (
             <motion.div key="pages" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
               <header className="ocm-title">
@@ -689,10 +718,6 @@ export function MobileShell(p: Props) {
               {tab === id && <motion.span layoutId="ocm-dot" className="ocm-dot" transition={spring} />}
             </motion.button>
           ))}
-          {/* Calendar arrives in a later phase. */}
-          <button disabled aria-label="Calendar (coming soon)">
-            <CalendarDays size={22} />
-          </button>
         </div>
         <motion.button className="ocm-plus ocm-liquid" aria-label="New page" onClick={() => (buzz(), p.onCreate())} whileTap={{ scale: 0.82, rotate: 90 }} transition={spring}>
           <Plus size={24} />
