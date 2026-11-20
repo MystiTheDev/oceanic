@@ -18,6 +18,9 @@ import { Avatar } from "../components/SettingsModal";
 import "./mobile.css";
 import { MobileCalendar, dotClass, dueByDay, iso } from "./MobileCalendar";
 import { startOfWeek } from "../lib/prefs";
+import { PropSheet, RowProps, fmtDue, setPropOpener, type PropKind } from "./MobileProps";
+import type { PageProperties as PageProps } from "../data/api";
+import { STATUSES } from "../lib/colors";
 import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 
 /** True inside the Android (or iOS) app. */
@@ -26,7 +29,7 @@ export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 type TabId = "home" | "pages" | "calendar";
 const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
-type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page" | "note";
+type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page" | "note" | PropKind;
 
 type Props = {
   userName: string;
@@ -55,9 +58,13 @@ type Props = {
   onRename: (id: string, title: string) => void;
   onRestore: (id: string) => void;
   onDeleteForever: (id: string) => void;
+  tagLibrary: string[];
+  onCreateTag: (tag: string, color: string) => void;
+  onProps: (id: string, props: PageProps) => void;
 };
 
 const DAY = 86_400_000;
+const propsOf = (x: PageMeta): PageProps => ({ dueDate: x.dueDate ?? null, status: x.status ?? null, tags: x.tags ?? [] });
 const today = () => new Date(new Date().toDateString()).getTime();
 
 /** Playful spring used across the phone UI (slight overshoot). */
@@ -194,6 +201,8 @@ export function MobileShell(p: Props) {
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState("");
   const note = pages.find((x) => x.id === noteId);
+  // Property chips under the title open the same sheets as the long-press rows.
+  useEffect(() => setPropOpener((id, kind) => (setNoteId(id), setSheet(kind))), []);
   const hold = (id: string) => ({
     onContextMenu: (e: React.MouseEvent) => (e.preventDefault(), buzz(), setNoteId(id), setRenaming(false), setSheet("note")),
   });
@@ -535,6 +544,15 @@ export function MobileShell(p: Props) {
                 <button className="ocm-item" onClick={(e) => (e.stopPropagation(), buzz(), setTitle(note.title), setRenaming(true))}>
                   <PenLine size={20} /> Rename
                 </button>
+                <button className="ocm-item" onClick={() => (buzz(), setSheet("date"))}>
+                  <CalendarDays size={20} /> Due date <em>{note.dueDate ? fmtDue(note.dueDate) : ""}</em>
+                </button>
+                <button className="ocm-item" onClick={() => (buzz(), setSheet("status"))}>
+                  <CheckSquare size={20} /> Status <em>{note.status ? STATUSES[note.status].label : ""}</em>
+                </button>
+                <button className="ocm-item" onClick={() => (buzz(), setSheet("tags"))}>
+                  <Tag size={20} /> Tags <em>{note.tags?.join(", ")}</em>
+                </button>
                 <button className="ocm-item" onClick={() => run(() => share(note))}>
                   <Share2 size={20} /> Share as text
                 </button>
@@ -545,6 +563,17 @@ export function MobileShell(p: Props) {
                   <Trash2 size={20} /> Move to Trash
                 </button>
               </>
+            )}
+            {(sheet === "date" || sheet === "status" || sheet === "tags" || sheet === "addprop") && note && (
+              <PropSheet
+                kind={sheet}
+                value={propsOf(note)}
+                onChange={(v) => p.onProps(note.id, v)}
+                library={p.tagLibrary}
+                onCreateTag={p.onCreateTag}
+                onKind={setSheet}
+                onDone={closeSheet}
+              />
             )}
             {sheet === "page" && openPage && (
               <>
@@ -690,6 +719,7 @@ export function MobileShell(p: Props) {
                       ) : (
                         previews[x.id] && <span className="ocm-row-preview">{previews[x.id]}</span>
                       )}
+                      <RowProps value={propsOf(x)} />
                     </span>
                     <span className="ocm-row-date">{edited(x.updatedAt)}</span>
                   </motion.button>

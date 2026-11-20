@@ -97,6 +97,7 @@ import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
+import { MobilePropChips } from "./mobile/MobileProps";
 import { onOpenedFile, shareFile } from "./mobile/share";
 import { buildOceanFile } from "./lib/oceanFile";
 import { MobileSettings } from "./mobile/MobileSettings";
@@ -1394,7 +1395,7 @@ export default function App() {
     if (!tagLibrary.includes(ASSIGNMENT)) createTag(ASSIGNMENT, "blue");
     if (!tagLibrary.includes(EXAM)) createTag(EXAM, "red");
   }, [loaded]);
-  const propertiesFor = (p: PageMeta) => (
+  const propertiesFor = (p: PageMeta) => isMobile ? <MobilePropChips id={p.id} value={propsOf(p)} /> : (
     <PageProperties value={propsOf(p)} onChange={(v) => changeProperties(p.id, v)} library={tagLibrary} onCreateTag={createTag} />
   );
 
@@ -1525,6 +1526,9 @@ export default function App() {
           onRename={(id, title) => (patchPage(id, { title }), api.renamePage(id, title).catch(report("Rename")))}
           onRestore={restorePage}
           onDeleteForever={deleteForever}
+          tagLibrary={tagLibrary}
+          onCreateTag={createTag}
+          onProps={changeProperties}
           openPage={mobilePageOpen && activeTabId !== HOME_TAB ? activePage : null}
           editor={
             activePage &&

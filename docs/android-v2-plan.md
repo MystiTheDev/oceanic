@@ -43,6 +43,14 @@ Agreed spec:
 
 ## 5. Page properties (Date, Status, Tags)
 - A row of chips under the title. Tapping a chip opens a bottom sheet: a native date picker, a status list, or a tag picker that can also create tags.
+- **Agreed spec:**
+  - Chips row under the title shows only filled properties, plus a small "+ Property" chip when any is empty. "+ Property" opens a sheet listing the empty ones.
+  - Date sheet: Today, Tomorrow, Next week, "Pick a date…" (Android's native picker) and Clear. Date only, no due time.
+  - Status sheet: Not started (gray), In progress (blue), Done (green), same as desktop, plus Clear.
+  - Tag sheet: multi-select toggle chips in their tag colours, a search box, and "Create 'x'" for a new name. It stays open while toggling.
+  - Page list rows show a small status badge and up to 2 tag chips.
+  - Long-press note sheet gets Due date, Status and Tags rows with the current value. Each opens the same sheet the chips use.
+  - Data and tag library are the desktop's (`changeProperties`, `createTag`). No desktop context menu on the phone.
 
 ## 6. .ocean import and export
 - **Export:** write to the cache, then open the Android share sheet.
