@@ -22,8 +22,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM,withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
-  type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
+  buildContext, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM, AGENT_SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
+  type AgentLog, type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
 export { NeridaMark } from "./NeridaOrb";
@@ -31,6 +31,8 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { BetaPill, NeridaBetaCard, NeridaMark } from "./NeridaOrb";
 import { confirmCloud } from "./NeridaDiff";
+import { AgentCards, AgentLogList, AgentToggle } from "./NeridaAgentUI";
+import { runAgent, stopAgent } from "../lib/neridaAgent";
 import { neridaSafeMarkdown } from "../lib/neridaSafe";
 
 /* ------------------------------------------------------------- markdown */
@@ -239,6 +241,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const [busy, setBusy] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
   const [stepsOpen, setStepsOpen] = useState(true);
+  /** Agent mode: this reply's activity log, live. */
+  const [actions, setActions] = useState<AgentLog[]>([]);
   const [draft, setDraft] = useState("");
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState<number | null>(null);
@@ -430,10 +434,14 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     };
     let garbled = false;
     const book = new SourceBook();
+    // Agent mode: Nerida edits through its tools, so the one-shot note-edit path is skipped.
+    const agentOn = nerida.get().agent && !pdf;
+    let log: AgentLog[] = [];
+    setActions([]);
     try {
       // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
-      const blocks = pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
-      if (!blocks.length && isEditRequest(text) && !pdf && (!pageId || home)) {
+      const blocks = !agentOn && pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
+      if (!agentOn && !blocks.length && isEditRequest(text) && !pdf && (!pageId || home)) {
         reply = "Open the note in the editor and ask me there: I can only change the note that's open next to this chat.";
         throw null;
       }
@@ -518,6 +526,22 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         await engine.start(b);
         void refresh();
       }
+      if (agentOn) {
+        mark(b ? "Working on it" : `Asking ${modelLabel(model)}`);
+        const open = pageId && !home ? ` The note open next to this chat has id ${pageId}.` : "";
+        reply = await runAgent({
+          model,
+          messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`].filter(Boolean).join("\n\n") }],
+          onText: (t) => ((reply = t), setDraft(t)),
+          onLog: (l) => ((log = [...log, l]), setActions(log)),
+          onStep: mark,
+          onThink,
+        });
+        if (!reply && log.length) reply = "Done.";
+        setSteps((s) => s.map((x) => ({ ...x, done: true })));
+        setStepsOpen(false);
+        throw null; // reply is saved below
+      }
       mark(b ? "Writing answer" : `Asking ${modelLabel(model)}`);
       await engine.chat(model, [{ role: "system", content: SYSTEM }, ...history, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context, book, tools) }], (t) => {
         reply += t;
@@ -531,7 +555,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     if (reply && garbled) reply += GARBLED_NOTE;
     if (reply) reply += book.footer(reply);
     const sources = book.refs();
-    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }) }], updatedAt: Date.now() });
+    if (!reply && log.length) reply = "Stopped.";
+    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }), ...(log.length && { actions: log }) }], updatedAt: Date.now() });
+    setActions([]);
     setDraft("");
     setBusy(false);
   };
@@ -622,12 +648,13 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           <div className="flex items-center gap-1">
           <button type="button" disabled={!ready || busy} title="Attach PDF, Word or text files" onClick={() => filePicker.current?.click()} className="grid size-7 cursor-pointer place-items-center rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:text-neutral-600"><Paperclip className="size-4" /></button>
           {b === "plus" && <button type="button" disabled={busy} title={online ? "Web search on" : "Search the web"} aria-pressed={online} onClick={() => setOnline((v) => !v)} className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] ${online ? "text-sky-400" : "text-neutral-400 hover:text-neutral-200"}`}><Globe className="size-4" /></button>}
+          {!pdf && <AgentToggle disabled={busy} />}
           <div className="flex-1" />
           <ModelMenu disabled={busy} />
           <EffortButton disabled={busy} compact={!home} />
           {/* One button: the arrow morphs into a stop square while Nerida answers. */}
           <button type="button" title={busy ? "Stop" : "Send"} data-busy={busy || undefined} disabled={!busy && (!(input.trim() || cmd) || !ready)}
-            onClick={() => (busy ? void engine.stop() : cmd ? runCmd(cmd) : void send(input))}
+            onClick={() => (busy ? (stopAgent(), void engine.stop()) : cmd ? runCmd(cmd) : void send(input))}
             className="oc-send oc-send-morph relative grid size-7 cursor-pointer place-items-center rounded-lg bg-teal-400/90 text-neutral-950 transition-[transform,background-color] hover:bg-teal-300 active:scale-90 disabled:cursor-default disabled:bg-white/[0.08] disabled:text-neutral-500 data-[busy]:bg-white/[0.1] data-[busy]:text-neutral-200">
             <ArrowUp className="oc-send-arrow absolute size-4" />
             <Square className="oc-send-stop absolute size-3" fill="currentColor" />
@@ -745,6 +772,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               <div className="min-w-0 flex-1 leading-relaxed">
               <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20">
                 {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
+                {m.actions?.length ? <AgentLogList actions={m.actions} onChange={(a) => chat && nerida.upsert({ ...chat, messages: chat.messages.map((x, j) => (j === i ? { ...x, actions: a } : x)) })} /> : null}
                 <Markdown text={m.content} sources={m.sources} />
               </div>
               <div className={`mt-1 ml-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
@@ -791,6 +819,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
                 )}
               </div>
             )}
+            {actions.length > 0 && <AgentLogList actions={actions} />}
+            <AgentCards />
             {draft && <Markdown text={draft} stream />}
           </div>
         )}

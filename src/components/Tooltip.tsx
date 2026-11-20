@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 
-/** Word-style tooltip card for any [data-tip] anywhere in the app (after a short hover). */
+/** Word-style tooltip card for any [data-tip] anywhere in the app (after a short hover).
+ *  Optional [data-tip-sub] adds a smaller, wrapped second line. */
 export function Tooltip() {
-  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [tip, setTip] = useState<{ text: string; sub?: string; x: number; y: number; above?: boolean } | null>(null);
   useEffect(() => {
     let timer = 0;
     const over = (e: MouseEvent) => {
@@ -11,9 +12,11 @@ export function Tooltip() {
       if (!el) return setTip(null);
       timer = window.setTimeout(() => {
         const r = el.getBoundingClientRect();
-        // Flip above when the target sits near the bottom edge (status bars).
-        const below = r.bottom + 40 < window.innerHeight;
-        setTip({ text: el.dataset.tip!, x: Math.min(window.innerWidth - 80, Math.max(80, r.left + r.width / 2)), y: below ? r.bottom + 8 : r.top - 34 });
+        const sub = el.dataset.tipSub;
+        // Flip above when the card wouldn't fit below (status bars, the chat box); a second line needs more room.
+        const below = r.bottom + (sub ? 100 : 40) < window.innerHeight;
+        const w = sub ? 140 : 80; // half the card width, kept on screen
+        setTip({ text: el.dataset.tip!, sub, x: Math.min(window.innerWidth - w, Math.max(w, r.left + r.width / 2)), y: below ? r.bottom + 8 : r.top - 8, above: !below });
       }, 450);
     };
     const hide = () => (window.clearTimeout(timer), setTip(null));
@@ -28,9 +31,11 @@ export function Tooltip() {
   if (!tip) return null;
   const [name, key] = tip.text.split(/ \((.+)\)$/);
   return (
-    <div className="oc-docs-tip pointer-events-none fixed z-[70] -translate-x-1/2 rounded-md border border-white/[0.1] bg-[var(--oc-raised)] px-2.5 py-1.5 text-[12px] shadow-lg" style={{ left: tip.x, top: tip.y }}>
+    // Above the target: anchored by its bottom edge, so a taller card never covers the control.
+    <div className={`oc-docs-tip pointer-events-none fixed z-[70] -translate-x-1/2 ${tip.above ? "-translate-y-full" : ""} rounded-md border border-white/[0.1] bg-[var(--oc-raised)] px-2.5 py-1.5 text-[12px] shadow-lg`} style={{ left: tip.x, top: tip.y }}>
       <span className="font-medium text-neutral-100">{name}</span>
       {key && <span className="ml-2 text-neutral-400">{key}</span>}
+      {tip.sub && <p className="mt-0.5 w-[260px] text-[11.5px] leading-snug text-neutral-400">{tip.sub}</p>}
     </div>
   );
 }

@@ -467,6 +467,8 @@ pub async fn ai_list_models(base_url: String, key_id: Option<String>) -> Result<
 /// Streams an OpenAI-style chat completion from `base_url` (e.g. `…/v1`),
 /// sending each text piece through `on_token`. Works for the built-in engine,
 /// Ollama and any OpenAI-compatible API; `key_id` names a keychain entry.
+/// `tools` in `extra` (OpenAI format) are passed through; the tool calls the
+/// model makes come back assembled (streamed `delta.tool_calls` joined by index).
 #[tauri::command]
 pub async fn ai_chat(
     state: State<'_, Ai>,
@@ -477,7 +479,7 @@ pub async fn ai_chat(
     // Extra request fields, e.g. turning off Qwen3.5's thinking for the built-in engine.
     extra: Option<serde_json::Value>,
     on_token: Channel<String>,
-) -> Result<(), String> {
+) -> Result<Vec<serde_json::Value>, String> {
     state.stop_chat.store(false, Ordering::Relaxed);
     let mut req = reqwest::Client::new()
         .post(format!("{}/chat/completions", base_url.trim_end_matches('/')))
@@ -499,9 +501,10 @@ pub async fn ai_chat(
     let mut buf = String::new();
     // Thinking (reasoning_content) is sent wrapped in <think>…</think> before the answer.
     let mut thinking = false;
+    let mut calls: Vec<serde_json::Value> = Vec::new();
     while let Some(chunk) = stream.next().await {
         if state.stop_chat.load(Ordering::Relaxed) {
-            break;
+            return Ok(Vec::new()); // stopped: no half-made tool calls
         }
         buf.push_str(&String::from_utf8_lossy(&chunk.map_err(|e| e.to_string())?));
         while let Some(i) = buf.find('\n') {
@@ -509,7 +512,7 @@ pub async fn ai_chat(
             let Some(data) = line.trim().strip_prefix("data:") else { continue };
             let data = data.trim();
             if data == "[DONE]" {
-                return Ok(());
+                return Ok(calls);
             }
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
                 // The engine reports mid-answer failures (e.g. out of GPU memory) as an error event.
@@ -530,10 +533,28 @@ pub async fn ai_chat(
                     let _ = on_token.send(if thinking { format!("</think>{t}") } else { t.to_string() });
                     thinking = false;
                 }
+                if let Some(tc) = delta["tool_calls"].as_array() {
+                    for (n, d) in tc.iter().enumerate() {
+                        let i = d["index"].as_u64().map(|i| i as usize).unwrap_or(n);
+                        while calls.len() <= i {
+                            calls.push(serde_json::json!({ "id": "", "type": "function", "function": { "name": "", "arguments": "" } }));
+                        }
+                        let c = &mut calls[i];
+                        if let Some(id) = d["id"].as_str() {
+                            c["id"] = id.into();
+                        }
+                        for k in ["name", "arguments"] {
+                            if let Some(t) = d["function"][k].as_str() {
+                                let joined = format!("{}{}", c["function"][k].as_str().unwrap_or(""), t);
+                                c["function"][k] = joined.into();
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-    Ok(())
+    Ok(calls)
 }
 
 #[tauri::command]

@@ -48,7 +48,12 @@ export const setDefaultModel = (model: ModelRef) => {
   void api.setSetting("neridaModel", model).catch(() => {});
 };
 
-export type Msg = { role: "user" | "assistant"; content: string; /** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[] };
+/** One OpenAI-style message; assistant tool calls and tool results ride along in the agent loop. */
+export type ChatMessage = { role: string; content: string | unknown[] | null; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string };
+export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
+/** One line of Nerida's agent activity log, kept on the reply. */
+export type AgentLog = { id: string; kind: "read" | "create" | "edit" | "delete" | "study" | "error"; text: string; pageId?: string; state?: "applied" | "rejected" | "undone"; /** make_test: notes to open the test setup with. */ test?: string[] };
+export type Msg = { role: "user" | "assistant"; content: string; /** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[]; /** Agent mode: what Nerida did. */ actions?: AgentLog[] };
 export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number; /** Notes pinned to this chat's context. */ pinned?: string[] };
 export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean };
 
@@ -63,8 +68,8 @@ export const EFFORTS: { id: Effort; label: string; maxTokens: number }[] = [
 const effortOf = () => EFFORTS.find((e) => e.id === state.effort) ?? EFFORTS[1];
 
 export type ReplyStyle = "short" | "tutor";
-type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null; /** A download waits for the built-in engine's reply to finish. */ dlWaiting: boolean; /** Download finished: "ask" shows the restart dialog, "later" the reminder. */ restart: "ask" | "later" | null };
-let state: State = { notify: true, noVision: false, thinking: false, style: "short", gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return localStorage.getItem("oc-home-mode") === "nerida" ? "nerida" : "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null, dlWaiting: false, restart: null };
+type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null; /** A download waits for the built-in engine's reply to finish. */ dlWaiting: boolean; /** Download finished: "ask" shows the restart dialog, "later" the reminder. */ restart: "ask" | "later" | null; /** Agent mode: Nerida may call tools to change notes. */ agent: boolean; /** Agent mode: apply creating actions without asking. */ autoApply: boolean };
+let state: State = { notify: true, noVision: false, thinking: false, style: "short", gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return localStorage.getItem("oc-home-mode") === "nerida" ? "nerida" : "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null, dlWaiting: false, restart: null, agent: false, autoApply: false };
 /** Built-in chat is locked while an engine/model/add-on download runs (cloud and Ollama stay usable). */
 export const UPGRADE_MSG = "Nerida AI is getting an upgrade, please be patient.";
 export const isLocked = (s: State) => !!s.dl && !s.dlWaiting;
@@ -98,6 +103,14 @@ export const nerida = {
   setNoVision(noVision: boolean) {
     nerida.set({ noVision });
     void api.setSetting("neridaNoVision", noVision ? "1" : "0").catch(() => {});
+  },
+  setAgent(agent: boolean) {
+    nerida.set({ agent });
+    void api.setSetting("neridaAgent", agent ? "1" : "0").catch(() => {});
+  },
+  setAutoApply(autoApply: boolean) {
+    nerida.set({ autoApply });
+    void api.setSetting("neridaAutoApply", autoApply ? "1" : "0").catch(() => {});
   },
   setStyle(style: ReplyStyle) {
     nerida.set({ style });
@@ -149,6 +162,8 @@ void api.getSettings().then((s) => {
       notify: s.neridaNotify !== "0",
       noVision: s.neridaNoVision === "1",
       style: s.neridaStyle === "tutor" ? "tutor" : "short",
+      agent: s.neridaAgent === "1",
+      autoApply: s.neridaAutoApply === "1",
     });
   } catch {
     /* corrupt history: start fresh */
@@ -168,7 +183,8 @@ export const engine = {
   /** Graphics cards the engine can use. */
   gpus: () => invoke<{ id: string; name: string; mem_mib: number }[]>("ai_gpus"),
   /** Streams the answer to `onToken`; Deep's thinking goes only to `onThink` (never into notes or quizzes). */
-  async chat(ref: ModelRef, messages: { role: string; content: string | unknown[] }[], onToken: (t: string) => void, onThink?: (thought: string) => void) {
+  /** With `tools` (OpenAI format), returns the tool calls the model made (empty when it just answered). */
+  async chat(ref: ModelRef, messages: ChatMessage[], onToken: (t: string) => void, onThink?: (thought: string) => void, tools?: unknown[]): Promise<ToolCall[]> {
     const b = builtin(ref);
     let baseUrl: string, keyId: string | null = null, model: string;
     if (b && state.dl) throw new Error(UPGRADE_MSG);
@@ -198,6 +214,7 @@ export const engine = {
     const extra = b
       ? { chat_template_kwargs: { enable_thinking: state.thinking }, temperature: 0.2, top_p: 0.9, top_k: 20, min_p: 0.05, repeat_penalty: 1.1, max_tokens: state.thinking ? Math.max(e.maxTokens, 4096) : e.maxTokens }
       : { max_tokens: e.maxTokens };
+    if (tools?.length) Object.assign(extra, { tools, max_tokens: Math.max(extra.max_tokens, 1024) });
     // Main chat prompt only (not quizzes or edits): reply style, and Fast's 1-3 sentence cap.
     if (messages[0]?.content === SYSTEM) {
       const add = (state.style === "tutor" ? " " + TUTOR : "") + (e.id === "low" ? " Answer in 1-3 sentences." : "");
@@ -205,14 +222,16 @@ export const engine = {
     }
     active++;
     if (b) (localActive++, (localIdleAt = 0));
+    let calls: ToolCall[] = [];
     try {
-      await invoke<void>("ai_chat", { baseUrl, keyId, model, messages, extra, onToken: ch });
+      calls = (await invoke<ToolCall[] | null>("ai_chat", { baseUrl, keyId, model, messages, extra, onToken: ch })) ?? [];
       notifyWhenIdle(splitThink(raw).answer); // only on success: errors show in the app
     } finally {
       active--;
       if (b && !--localActive) localIdleAt = Date.now();
     }
-    if (splitThink(raw).thinking) throw new Error("Nerida thought for too long. Turn off Thinking in the effort menu.");
+    if (splitThink(raw).thinking && !calls.length) throw new Error("Nerida thought for too long. Turn off Thinking in the effort menu.");
+    return calls;
   },
   stop: () => invoke<void>("ai_stop"),
 };
@@ -425,6 +444,11 @@ const NO_EDIT = " You can't change notes from this answer: never say you edited,
 
 export const SYSTEM = `${IDENTITY} ${FEATURES} ${STYLE}${NO_EDIT}`;
 /** Note-edit calls: same rules, but Nerida knows the app applies its changes to the note. */
+/** Agent mode: Nerida may call the app's tools. */
+export const AGENT_SYSTEM = `${IDENTITY} ${STYLE} You can also act in the app with the tools you are given: search and read notes, create and edit notes, organise them, and make study material. ` +
+  "Use a tool only when the user asks you to do or change something, or you need a note you don't have. Notes are referred to by id (from search_notes or read_note) or exact title. " +
+  "Before edit_note, call read_note to get block numbers. The user approves most changes: a tool result tells you if a change was applied or rejected; never claim a change that wasn't applied. " +
+  "When several new notes belong together, use create_folder to put them under one parent note. When done, reply with a short summary of what you did.";
 export const EDIT_SYSTEM = `${IDENTITY} ${STYLE} You are editing the user's open note; the app applies your changes.`;
 /** "Detailed tutor" reply style, added after STYLE (overrides its "short"). */
 const TUTOR = "Reply style: detailed tutor. Explain step by step in plain words, give a short example, and end with a one-line recap. Still only use facts from the notes or that you are sure of.";

@@ -35,6 +35,8 @@ import { BlockNoteEditor } from "@blocknote/core";
 import { schema } from "./editor/schema";
 import { withMath, type MdBlock } from "./components/PageEditor";
 import { withCards, type SaveCardsDetail } from "./lib/neridaStudy";
+import { AGENT_SET_DOC, setAgentHost, type AgentHost } from "./lib/neridaAgent";
+import { TestSetup } from "./components/TestSetup";
 import { engine, nerida, useNerida } from "./lib/nerida";
 import { PageEditor } from "./components/PageEditor";
 import { Toast } from "./components/Toast";
@@ -1054,6 +1056,62 @@ export default function App() {
       .catch(report("Move page"));
   };
 
+  // Nerida agent mode: tools change notes through the same paths as the UI.
+  const [agentTest, setAgentTest] = useState<string[] | null>(null);
+  const agentRef = useRef({ changeDoc, changeTitle, movePage, changeProperties, propsOf, trashPage, restorePage, openPage, activeWorkspaceId });
+  agentRef.current = { changeDoc, changeTitle, movePage, changeProperties, propsOf, trashPage, restorePage, openPage, activeWorkspaceId };
+  useEffect(() => {
+    const live = () => allLivePagesRef.current;
+    const host: AgentHost = {
+      pages: () => pagesRef.current.filter((p) => live().some((l) => l.id === p.id)),
+      getDoc: async (id) => docsRef.current[id] ?? (await loadBlocks(id)),
+      // An open editor takes the new document as one undoable change; otherwise the stored copy is updated.
+      setDoc: (id, blocks) => {
+        const d = { pageId: id, blocks, handled: false };
+        window.dispatchEvent(new CustomEvent(AGENT_SET_DOC, { detail: d }));
+        if (!d.handled) agentRef.current.changeDoc(id, blocks);
+      },
+      createNote: async (title, parentId, body, dueDate = null) => {
+        try {
+          const ws = parentId ? (pagesRef.current.find((p) => p.id === parentId)?.workspaceId ?? agentRef.current.activeWorkspaceId) : agentRef.current.activeWorkspaceId;
+          const page = toMeta(await api.createPage(parentId, ws, dueDate));
+          const doc = body?.length ? body : getSeedBlocks(page.id);
+          const meta = { ...page, title, status: dueDate ? "not_started" as const : page.status };
+          setPages((prev) => [...prev, meta]);
+          // The next tool call may use it before React re-renders.
+          pagesRef.current = [...pagesRef.current, meta];
+          allLivePagesRef.current = [...allLivePagesRef.current, meta];
+          setDocs((prev) => ({ ...prev, [page.id]: doc }));
+          if (dueDate) await api.setPageProperties(page.id, { dueDate, status: "not_started", tags: [] });
+          await api.savePage(page.id, title, JSON.stringify(doc), extractLinks(doc));
+          return page.id;
+        } catch (e) {
+          report("Create page")(e);
+        }
+      },
+      rename: (id, title) => agentRef.current.changeTitle(id, title),
+      // movePage writes the whole list from its last render: wait for React to catch up first.
+      move: async (id, parentId) => {
+        await new Promise((r) => setTimeout(r, 30));
+        const n = pagesRef.current.filter((p) => p.parentId === parentId && !p.trashedAt && p.id !== id).length;
+        agentRef.current.movePage(id, parentId, n);
+      },
+      setTags: (id, tags) => {
+        const p = pagesRef.current.find((x) => x.id === id);
+        if (p) agentRef.current.changeProperties(id, { ...agentRef.current.propsOf(p), tags });
+      },
+      trash: (id) => agentRef.current.trashPage(id),
+      restore: (id) => agentRef.current.restorePage(id),
+      open: (id) => agentRef.current.openPage(id),
+      openTest: (ids) => setAgentTest(ids),
+      markdown: (md) => withMath(BlockNoteEditor.create({ schema }).tryParseMarkdownToBlocks(neridaSafeMarkdown(md)) as unknown as MdBlock[]) as unknown as PartialBlock[],
+    };
+    setAgentHost(host);
+    const onTest = (e: Event) => setAgentTest((e as CustomEvent<string[]>).detail);
+    window.addEventListener("oc-nerida-test", onTest);
+    return () => (setAgentHost(null), window.removeEventListener("oc-nerida-test", onTest));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ------------------------------------------------------- Keyboard shortcuts */
   // Handlers change every render; the listener reads the latest through a ref.
   const openMindmap = (id: string) => openPage(mindmapEntry(id));
@@ -1981,6 +2039,7 @@ export default function App() {
           onClose={() => setAppSearchOpen(false)}
         />
       )}
+      {agentTest && <TestSetup pages={allLivePages} initialNotes={agentTest} onClose={() => setAgentTest(null)} />}
       {settingsOpen && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}

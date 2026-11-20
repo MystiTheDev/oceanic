@@ -62,7 +62,8 @@ function Results({ questions, result, onRetry, onClose }: { questions: Question[
 }
 
 /** Setup (classes or notes, count, types, timer) → locked test. */
-export function TestSetup({ pages, onClose }: { pages: PageMeta[]; onClose: () => void }) {
+/** `initialNotes` (Nerida agent): opens on "Nerida writes questions" with these notes picked. */
+export function TestSetup({ pages, onClose, initialNotes }: { pages: PageMeta[]; onClose: () => void; initialNotes?: string[] }) {
   const { cards } = useSrs();
   const { subjects } = useStudy();
   const all = Object.values(cards);
@@ -77,8 +78,8 @@ export function TestSetup({ pages, onClose }: { pages: PageMeta[]; onClose: () =
   const [test, setTest] = useState<{ title: string; questions: Question[]; timer: TestTimer } | null>(null);
   const [result, setResult] = useState<TestResult | null>(null);
   const { model } = useNerida();
-  const [source, setSource] = useState<"cards" | "nerida">(all.length ? "cards" : "nerida");
-  const [aiNotes, setAiNotes] = useState<string[]>([]);
+  const [source, setSource] = useState<"cards" | "nerida">(initialNotes?.length || !all.length ? "nerida" : "cards");
+  const [aiNotes, setAiNotes] = useState<string[]>(initialNotes ?? []);
   const [related, setRelated] = useState(false);
   const [level, setLevel] = useState<Difficulty>("medium");
   const [gen, setGen] = useState<{ n: number; err?: string } | null>(null);

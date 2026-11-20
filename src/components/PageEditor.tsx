@@ -28,6 +28,7 @@ import { openNeridaCards } from "./NeridaCards";
 import { aiOnSelection } from "../editor/neridaActions";
 import { NOTE_BLOCKS, PROPOSE, paintTable, setPending, tableToText, textToTable, usePending, type NoteBlock, type Proposal, type TableData } from "../lib/neridaChatEdit";
 import { flip, offset, shift } from "@floating-ui/react";
+import { AGENT_SET_DOC } from "../lib/neridaAgent";
 import { BlockNoteView } from "@blocknote/mantine";
 import type { Block, PartialBlock } from "@blocknote/core";
 import { en } from "@blocknote/core/locales";
@@ -384,9 +385,17 @@ export function PageEditor({
       else if (toggle.children.length) editor.insertBlocks(items as never, toggle.children[toggle.children.length - 1], "after");
       else editor.updateBlock(toggle, { children: items } as never);
     };
+    // Nerida agent: the note's new document, as one change (Ctrl+Z undoes it).
+    const onAgent = (e: Event) => {
+      const d = (e as CustomEvent<{ pageId: string; blocks: PartialBlock[]; handled: boolean }>).detail;
+      if (d.pageId !== page.id || d.handled) return;
+      d.handled = true;
+      editor.replaceBlocks(editor.document, d.blocks as never);
+    };
     window.addEventListener("oc-nerida-selection-cards", onSel);
     window.addEventListener("oc-nerida-cards", onSave);
-    return () => (window.removeEventListener("oc-nerida-selection-cards", onSel), window.removeEventListener("oc-nerida-cards", onSave));
+    window.addEventListener(AGENT_SET_DOC, onAgent);
+    return () => (window.removeEventListener("oc-nerida-selection-cards", onSel), window.removeEventListener("oc-nerida-cards", onSave), window.removeEventListener(AGENT_SET_DOC, onAgent));
   }, [editor, page.id]);
 
   // "Send to Atlas" for this note's headings (page menu, or a heading's block menu).
