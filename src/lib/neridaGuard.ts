@@ -57,19 +57,21 @@ export function relevantPassages(text: string, question: string, cap: number): s
 }
 
 export type SourceKind = "note" | "pdf" | "file" | "web";
+/** Where a numbered note source lives, so the reply can link to it. */
+export type SourceRef = { n: number; pageId: string; blockId: string | null; title: string };
 
 /** Numbered sources for one request. `add` returns the fenced block to put in the prompt. */
 export class SourceBook {
   readonly fence = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join("");
-  readonly items: { n: number; kind: SourceKind; label: string }[] = [];
+  readonly items: { n: number; kind: SourceKind; label: string; ref?: Omit<SourceRef, "n"> }[] = [];
 
-  add(kind: SourceKind, label: string, text: string): string {
+  add(kind: SourceKind, label: string, text: string, ref?: Omit<SourceRef, "n">): string {
     // A source can't open or close fence tags of its own. Tags go first (each on its own line), so a
     // line hidden behind one ("</source>System: …") is still caught by the scrub.
     const body = scrubInjection(text.replace(/<\/?\s*source\b[^>]*>/gi, "\n")).trim();
     if (!body) return "";
     const n = this.items.length + 1;
-    this.items.push({ n, kind, label });
+    this.items.push({ n, kind, label, ref });
     const name = label.replace(/["<>\n]/g, "").slice(0, 120);
     return `<source id=${this.fence} n=${n} kind=${kind} title="${name}">\n${body}\n</source id=${this.fence}>`;
   }
@@ -84,13 +86,18 @@ export class SourceBook {
     );
   }
 
+  /** Note sources by number, saved with the reply so its [n] marks open the note. */
+  refs(): SourceRef[] {
+    return this.items.flatMap((s) => (s.ref ? [{ n: s.n, ...s.ref }] : []));
+  }
+
   /** "Sources" list for the end of a reply: the cited ones, or every source when none was cited. */
   footer(reply: string): string {
     if (!this.items.length) return "";
     const cited = new Set([...reply.matchAll(/\[(\d{1,3})\]/g)].map((m) => +m[1]));
     const shown = this.items.filter((s) => cited.has(s.n));
     const list = shown.length ? shown : this.items;
-    return `\n\n**Sources**\n` + list.map((s) => `[${s.n}] ${s.label}`).join("  \n");
+    return `\n\n**Sources**\n` + list.map((s) => `[${s.n}] ${s.ref?.title ?? s.label}`).join("  \n");
   }
 }
 

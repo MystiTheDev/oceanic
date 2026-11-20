@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { api } from "../data/api";
+import { searchNotes as searchIndex } from "./noteIndex";
 import { findDate } from "./neridaTask";
 import { relevantPassages, scrubInjection } from "./neridaGuard";
 
@@ -134,13 +134,8 @@ export async function searchWeb(q: string): Promise<WebHit[]> {
 }
 
 /** Top notes for a question across the whole workspace (used when no note is attached). */
-export async function searchNotes(q: string) {
-  const words = (q.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []).filter((w) => !["what", "when", "where", "which", "about", "does", "have", "this", "that", "with", "from", "explain", "notes", "note"].includes(w));
-  if (!words.length) return [];
-  // The search ANDs its words, so search each word and rank notes by how many they match.
-  const score = new Map<string, number>();
-  for (const w of words.slice(0, 6)) for (const h of await api.searchPages(w, false).catch(() => [])) score.set(h.pageId, (score.get(h.pageId) ?? 0) + 1);
-  return [...score].filter(([, n]) => n >= Math.min(2, words.length)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id]) => id);
+export async function searchNotes(q: string, limit = 3, skip?: Set<string>) {
+  return (await searchIndex(q, limit, skip)).map((h) => h.id);
 }
 
 /** Exact results for the question, ready to put in front of Nerida (empty when no tool fits). */

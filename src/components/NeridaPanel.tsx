@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { runTools, searchNotes, searchWeb } from "../lib/neridaTools";
-import { SourceBook } from "../lib/neridaGuard";
+import { runTools, searchWeb } from "../lib/neridaTools";
+import { SourceBook, type SourceRef } from "../lib/neridaGuard";
+import { noteChars, refresh as refreshIndex, searchNotes as searchIndex } from "../lib/noteIndex";
+import { ContextPicker } from "./NeridaContext";
 import { createMindmap } from "../mindmap/MindmapGallery";
 import { MAP_FLAG } from "../mindmap/NeridaMap";
 import { OPEN_MINDMAP } from "../editor/mindmapBlock";
@@ -20,7 +22,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM,withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
+  buildContext, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM,withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
   type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
@@ -38,19 +40,27 @@ function MathSpan({ tex, display = false }: { tex: string; display?: boolean }) 
   const html = katex.renderToString(tex, { displayMode: display, throwOnError: false, output: "html" });
   return display ? <div className="my-2 overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} /> : <span dangerouslySetInnerHTML={{ __html: html }} />;
 }
-function inlineRaw(t: string, stream = false): ReactNode[] {
-  return t.split(/(\$(?!\s)[^$\n]+?(?<!\s)\$|\*\*.+?\*\*|`.+?`|\*.+?\*)/g).map((s, i) =>
-    s.startsWith("$") && s.length > 2 ? <MathSpan key={i} tex={s.slice(1, -1)} />
+/** Opens a cited note, scrolled to the cited section. */
+export const openSource = (s: SourceRef) => window.dispatchEvent(new CustomEvent("oc-open-block", { detail: { pageId: s.pageId, blockId: s.blockId } }));
+function inlineRaw(t: string, stream = false, sources?: SourceRef[]): ReactNode[] {
+  return t.split(/(\[\d{1,3}\]|\$(?!\s)[^$\n]+?(?<!\s)\$|\*\*.+?\*\*|`.+?`|\*.+?\*)/g).map((s, i) => {
+    const src = s.startsWith("[") ? sources?.find((x) => `[${x.n}]` === s) : undefined;
+    return src ? (
+      <button key={i} type="button" title={`Open “${src.title}”`} onClick={() => openSource(src)}
+        className="mx-px cursor-pointer rounded bg-teal-300/[0.12] px-1 align-[1px] text-[0.78em] font-medium text-teal-200 hover:bg-teal-300/25">{src.n}</button>
+    )
+    : s.startsWith("$") && s.length > 2 ? <MathSpan key={i} tex={s.slice(1, -1)} />
     : s.startsWith("**") && s.length > 4 ? <b key={i}>{s.slice(2, -2)}</b>
     : s.startsWith("`") && s.length > 2 ? <code key={i} className="rounded bg-white/[0.08] px-1 text-[0.9em]">{s.slice(1, -1)}</code>
     : s.startsWith("*") && s.length > 2 ? <i key={i}>{s.slice(1, -1)}</i>
     // Streaming: one span per word, so only newly arrived words mount (and fade in).
     : stream ? <Fragment key={i}>{s.split(/(\s+)/).map((w, j) => <span key={j} className="oc-word">{w}</span>)}</Fragment>
-    : <Fragment key={i}>{s}</Fragment>,
-  );
+    : <Fragment key={i}>{s}</Fragment>;
+  });
 }
-export function Markdown({ text, stream = false }: { text: string; stream?: boolean }) {
-  const inline = (t: string) => inlineRaw(t, stream);
+/** `sources`: note sources the reply's [n] marks open (footer lines included). */
+export function Markdown({ text, stream = false, sources }: { text: string; stream?: boolean; sources?: SourceRef[] }) {
+  const inline = (t: string) => inlineRaw(t, stream, sources);
   const out: ReactNode[] = [];
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -244,15 +254,64 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     setInput((v) => v.replace(/@[^\s@]*$/, ""));
     if (cmd) pendingCmd.current = cmd.k; // the waiting /command runs once the note lands
   };
-  // Deleted notes drop out of context.
-  const allNotes = [...notes, ...mentions].filter((n) => pages.has(n.id));
+  /** Pinned notes are always sent; saved with the chat. */
+  const [pinned, setPinned] = useState<string[]>([]);
+  /** Notes the workspace search found for what's being typed. */
+  const [found, setFound] = useState<ContextNote[]>([]);
+  // Context order (= priority when over MAX_NOTES): open note, pinned, @-mentions, found, related. Deleted notes drop out.
+  const allNotes: ContextNote[] = [];
+  {
+    const seen = new Set<string>();
+    const meta = (id: string): ContextNote | undefined => { const p = pages.get(id); return p && { id, title: p.title || "Untitled", icon: p.icon, why: "mention" }; };
+    const push = (n?: ContextNote) => {
+      if (!n || seen.has(n.id) || !pages.has(n.id) || pages.get(n.id)!.trashedAt) return;
+      seen.add(n.id);
+      allNotes.push({ ...n, pinned: pinned.includes(n.id) });
+    };
+    notes.filter((n) => n.why === "current").forEach(push);
+    pinned.forEach((id) => push(notes.find((n) => n.id === id) ?? mentions.find((n) => n.id === id) ?? found.find((n) => n.id === id) ?? meta(id)));
+    mentions.forEach(push);
+    found.forEach(push);
+    notes.forEach(push);
+  }
+  const active = allNotes.filter((n) => n.pinned || !excluded.has(n.id));
+  /** What the next message sends. */
+  const sendList = active.slice(0, MAX_NOTES);
+  const setPins = (ids: string[]) => {
+    setPinned(ids);
+    if (chat) nerida.setPinned(chat.id, ids);
+  };
+  const togglePin = (id: string) => setPins(pinned.includes(id) ? pinned.filter((x) => x !== id) : [...pinned, id]);
+  const removeNote = (n: ContextNote) => {
+    if (n.pinned) setPins(pinned.filter((x) => x !== n.id));
+    if (n.why === "mention") setMentions((m) => m.filter((x) => x.id !== n.id));
+    setExcluded((s) => new Set(s).add(n.id));
+  };
+  // Live workspace search while typing (debounced); kept after sending until the next question.
+  useEffect(() => {
+    const q = input.trim();
+    if (!q) return;
+    if (pdf || q.length < 4 || q.startsWith("/")) return setFound([]);
+    const t = setTimeout(() => {
+      const skip = new Set(notes.filter((n) => n.why === "current").map((n) => n.id));
+      void searchIndex(q, 3, skip).then((h) => setFound(h.map((x) => ({ id: x.id, title: x.title, icon: pages.get(x.id)?.icon ?? "", why: "found" as const })))).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [input, pdf]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Note sizes for the picker's token estimate.
+  const [, setSized] = useState(0);
+  const sendKey = sendList.map((n) => n.id).join();
+  useEffect(() => {
+    if (sendKey) void refreshIndex(sendKey.split(",")).then(() => setSized((x) => x + 1)).catch(() => {});
+  }, [sendKey]);
+  const estTokens = Math.round(Math.min(sendList.reduce((s, n) => s + noteChars(n.id), 0), noteBudget(model)) / 4);
   const [cmd, setCmd] = useState<Cmd | null>(null);
   const [pick, setPick] = useState(0);
   const slashQuery = cmd ? undefined : /^\/(\w*)$/.exec(input)?.[1];
   const slashHits = slashQuery === undefined ? [] : CMDS.filter((c) => c.k.startsWith(slashQuery.toLowerCase()));
   /** Runs `c` (now, or once a note is attached). `withNote` = a note just picked for it. */
   const runCmd = (c: Cmd, withNote?: string) => {
-    const note = withNote ?? allNotes.find((n) => !excluded.has(n.id))?.id;
+    const note = withNote ?? sendList[0]?.id;
     setInput("");
     if (c.note && !note) return setCmd(c); // chip waits for @note
     setCmd(null);
@@ -303,7 +362,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     lastChat.current = activeId;
     setMentions([]);
     setFiles([]);
+    setFound([]);
     setExcluded(new Set());
+    setPinned(nerida.get().chats.find((c) => c.id === activeId)?.pinned ?? []);
   }, [activeId]);
 
   const refresh = () =>
@@ -350,7 +411,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     }
     setErr("");
     setInput("");
-    const base: Chat = chat ?? { id: uid(), title: text.slice(0, 60), messages: [], updatedAt: Date.now() };
+    const base: Chat = chat ?? { id: uid(), title: text.slice(0, 60), messages: [], updatedAt: Date.now(), ...(pinned.length && { pinned }) };
     const messages: Msg[] = [...history, { role: "user", content: text }];
     nerida.upsert({ ...base, messages, updatedAt: Date.now() });
     const draft = detectTask(text);
@@ -358,7 +419,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     setBusy(true);
     setDraft("");
     setStepsOpen(true);
-    const used = allNotes.filter((n) => !excluded.has(n.id));
+    let used = sendList;
     const mark = (label: string) => setSteps((s) => (s[s.length - 1]?.label === label ? s : [...s.map((x) => ({ ...x, done: true })), { label, done: false }]));
     setSteps([]);
     let reply = "";
@@ -405,11 +466,14 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       let context = "";
       const tools = await runTools(text);
       if (tools) mark("Working it out");
-      if (!used.length && !pdf && !files.length && !tools) {
-        const ids = await searchNotes(text);
-        if (ids.length) {
-          mark(`Searching your notes: found ${ids.length}`);
-          context = (await buildContext(ids.map((id) => ({ id, title: pages.get(id)?.title || "Untitled", icon: "", why: "mention" as const })), text, book)).text;
+      // Search every note for the exact question (the live search may lag the last keystrokes); removed notes stay out.
+      if (!pdf && !files.length && !isFeaturesQuestion(text)) {
+        const hits = await searchIndex(text, 3, new Set([...used.map((n) => n.id), ...excluded])).catch(() => []);
+        const extra = hits.map((h) => ({ id: h.id, title: h.title, icon: pages.get(h.id)?.icon ?? "", why: "found" as const }));
+        if (extra.length) {
+          mark(`Searching all notes: found ${extra.length}`);
+          used = [...used, ...extra].slice(0, MAX_NOTES);
+          setFound((f) => [...f, ...extra.filter((x) => !f.some((y) => y.id === x.id))]);
         }
       }
       if (used.length) {
@@ -470,7 +534,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     }
     if (reply && garbled) reply += GARBLED_NOTE;
     if (reply) reply += book.footer(reply);
-    if (reply) nerida.upsert({ ...base, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }) }], updatedAt: Date.now() });
+    const sources = book.refs();
+    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }) }], updatedAt: Date.now() });
     setDraft("");
     setBusy(false);
   };
@@ -501,22 +566,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             {reading > 0 && <span className="oc-nerida-shimmer px-1.5 py-0.5 text-[11.5px]">Reading file…</span>}
           </div>
         )}
-        {allNotes.some((n) => !excluded.has(n.id)) && (
-          <div className="mb-1 flex flex-wrap gap-1">
-            {allNotes.filter((n) => !excluded.has(n.id)).map((n) => {
-              const off = false;
-              return (
-                <span key={n.id} title={n.why} className={`oc-chip-in flex max-w-[160px] items-center gap-1 rounded-full border bg-white/[0.03] px-2 py-0.5 text-[11.5px] ${off ? "border-white/[0.05] text-neutral-600 line-through" : "border-white/[0.1] text-neutral-300"}`}>
-                  <span>{n.icon}</span><span className="truncate">{n.title}</span>
-                  <button type="button" title={off ? "Include" : "Exclude"} className="cursor-pointer text-neutral-500 hover:text-neutral-200"
-                    onClick={() => n.why === "mention" ? setMentions((m) => m.filter((x) => x.id !== n.id)) : setExcluded((s) => { const x = new Set(s); if (off) x.delete(n.id); else x.add(n.id); return x; })}>
-                    {off ? <Plus className="size-3" /> : <X className="size-3" />}
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
+        <ContextPicker notes={active} sendCount={sendList.length} tokens={estTokens} cloud={isCloud(model) ? modelLabel(model) : null}
+          onPin={togglePin} onRemove={removeNote} onAdd={addMention} />
         {(mentionHits.length > 0 || slashHits.length > 0) && (
           <div className="oc-menu-pop absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1 shadow-2xl shadow-black/50 backdrop-blur">
             {slashHits.map((c, i) => (
@@ -698,7 +749,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               <div className="min-w-0 flex-1 leading-relaxed">
               <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20">
                 {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
-                <Markdown text={m.content} />
+                <Markdown text={m.content} sources={m.sources} />
               </div>
               <div className={`mt-1 ml-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
                 <Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act>

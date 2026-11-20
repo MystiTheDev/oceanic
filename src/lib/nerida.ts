@@ -2,7 +2,8 @@ import { useSyncExternalStore } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { api } from "../data/api";
 import { pageDirectory } from "../editor/pageDirectory";
-import type { SourceBook } from "./neridaGuard";
+import type { SourceBook, SourceRef } from "./neridaGuard";
+import { rankWithin, type Chunk } from "./noteIndex";
 
 /* Nerida — Oceanic's AI. Built-in engine (llama.cpp) runs locally; chats are
  * shared between the in-note panel and the Home "Nerida" view. */
@@ -47,17 +48,17 @@ export const setDefaultModel = (model: ModelRef) => {
   void api.setSetting("neridaModel", model).catch(() => {});
 };
 
-export type Msg = { role: "user" | "assistant"; content: string; /** Deep only */ thought?: string; thoughtSecs?: number };
-export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number };
+export type Msg = { role: "user" | "assistant"; content: string; /** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[] };
+export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number; /** Notes pinned to this chat's context. */ pinned?: string[] };
 export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean };
 
 /* ------------------------------------------------------------------ store */
 export type Effort = "low" | "medium" | "high";
 /** UI names: Fast / Balanced / Deep: answer length. Thinking is a separate toggle. */
-export const EFFORTS: { id: Effort; label: string; maxTokens: number; budget: number }[] = [
-  { id: "low", label: "Fast", maxTokens: 400, budget: 6_000 },
-  { id: "medium", label: "Balanced", maxTokens: 1024, budget: 14_000 },
-  { id: "high", label: "Deep", maxTokens: 4096, budget: 14_000 },
+export const EFFORTS: { id: Effort; label: string; maxTokens: number }[] = [
+  { id: "low", label: "Fast", maxTokens: 400 },
+  { id: "medium", label: "Balanced", maxTokens: 1024 },
+  { id: "high", label: "Deep", maxTokens: 4096 },
 ];
 const effortOf = () => EFFORTS.find((e) => e.id === state.effort) ?? EFFORTS[1];
 
@@ -110,6 +111,11 @@ export const nerida = {
   },
   rename(id: string, title: string) {
     state = { ...state, chats: state.chats.map((c) => (c.id === id ? { ...c, title } : c)) };
+    emit();
+    persist();
+  },
+  setPinned(id: string, pinned: string[]) {
+    state = { ...state, chats: state.chats.map((c) => (c.id === id ? { ...c, pinned } : c)) };
     emit();
     persist();
   },
@@ -302,7 +308,7 @@ export function docText(json: string | null): string {
   return out.join("\n");
 }
 
-export type ContextNote = { id: string; title: string; icon: string; why: "current" | "child" | "link" | "backlink" | "mention" };
+export type ContextNote = { id: string; title: string; icon: string; why: "current" | "child" | "link" | "backlink" | "mention" | "found"; /** Always sent; kept with the chat. */ pinned?: boolean };
 
 /** Current note + direct children + outgoing links + backlinks. */
 export async function relatedNotes(pageId: string): Promise<ContextNote[]> {
@@ -321,41 +327,67 @@ export async function relatedNotes(pageId: string): Promise<ContextNote[]> {
 }
 
 
-/** Note text for the prompt; when too long, keeps the paragraphs that best match the question. */
-export async function buildContext(notes: ContextNote[], question: string, book?: SourceBook): Promise<{ text: string; parts: number }> {
-  const docs = await Promise.all(notes.map(async (n) => ({ n, text: docText((await api.getPage(n.id))?.content ?? null) })));
-  const all = docs.flatMap(({ n, text }) => text.split(/\n(?=Heading: )|\n{2,}/).filter(Boolean).map((p, i) => ({ n, p, i })));
-  const total = all.reduce((s, x) => s + x.p.length, 0);
-  let chosen = all;
-  const BUDGET = effortOf().budget; // characters of note text sent to the model (14k ≈ 3.5k tokens)
-  if (total > BUDGET) {
-    const terms = new Set(question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
-    const score = (p: string) => (p.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((w) => terms.has(w)).length / Math.sqrt(p.length + 50);
+/** Most notes sent with one message. */
+export const MAX_NOTES = 6;
+/** Characters of note text to send (~4 characters a token). The built-in engine has 8k tokens for the
+ *  prompt, history and answer: ~3k tokens of notes, ~2k when the answer may run long (Deep or Thinking).
+ *  Ollama and other providers usually have room for more. */
+export function noteBudget(ref: ModelRef = state.model): number {
+  if (!builtin(ref)) return 24_000;
+  return state.thinking || state.effort === "high" ? 8_000 : 12_000;
+}
+
+/** Note text for the prompt, one numbered source per run of sections. When it's too long, keeps the sections
+ *  that best match the question (BM25), open and pinned notes first; sections stay in note order with their heading. */
+export async function buildContext(notes: ContextNote[], question: string, book?: SourceBook, budget = noteBudget()): Promise<{ text: string; parts: number }> {
+  notes = notes.slice(0, MAX_NOTES);
+  if (!notes.length) return { text: "", parts: 0 };
+  const { chunks, score } = await rankWithin(notes.map((n) => n.id), question);
+  const total = chunks.reduce((s, c) => s + c.text.length, 0);
+  let chosen = new Set(chunks);
+  if (total > budget) {
+    const noteOf = (c: Chunk) => notes.find((x) => x.id === c.pageId)!;
+    const boost = (c: Chunk) => (noteOf(c).pinned || noteOf(c).why === "current" ? 1.3 : 1);
+    const order = notes.map((n) => n.id);
+    const ranked = [...chunks].sort((a, b) => score.get(b)! * boost(b) - score.get(a)! * boost(a) || order.indexOf(a.pageId) - order.indexOf(b.pageId) || a.pos - b.pos);
+    // Each note's best matching section first (pinned notes and the first note even without a match), then the rest by score.
+    const firsts = notes
+      .map((n) => ranked.find((c) => c.pageId === n.id))
+      .filter((c): c is Chunk => !!c && (score.get(c)! > 0 || !!noteOf(c).pinned || c.pageId === order[0]));
+    chosen = new Set();
     let used = 0;
-    const keep = new Set(
-      [...all]
-        .sort((a, b) => score(b.p) - score(a.p) || (a.n.why === "current" ? -1 : 1))
-        .filter((x) => (used += x.p.length) <= BUDGET),
-    );
-    chosen = all.filter((x) => keep.has(x));
+    for (const c of [...firsts, ...ranked]) {
+      if (chosen.has(c) || used + c.text.length > budget) continue;
+      chosen.add(c);
+      used += c.text.length;
+    }
   }
-  const byNote = new Map<string, string[]>();
-  for (const x of chosen) byNote.set(x.n.id, [...(byNote.get(x.n.id) ?? []), x.p]);
-  const text = notes
-    .filter((n) => byNote.has(n.id))
-    .map((n) =>
-      book
-        ? book.add("note", `Note "${n.title}" (${WHY[n.why]})`, byNote.get(n.id)!.join("\n"))
-        : `Note "${n.title}" (${WHY[n.why]}):\n${byNote.get(n.id)!.join("\n")}\n(end of note)`,
-    )
-    .filter(Boolean)
-    .join("\n\n");
-  return { text, parts: chosen.length };
+  const blocks: string[] = [];
+  for (const n of notes) {
+    // Each section is its own source, so a citation opens the right place; tiny neighbouring ones merge (fewer numbers).
+    const groups: Chunk[][] = [];
+    for (const c of chunks) {
+      if (c.pageId !== n.id || !chosen.has(c)) continue;
+      const last = groups[groups.length - 1];
+      if (last && last[last.length - 1].pos === c.pos - 1 && last.reduce((s, x) => s + x.text.length, 0) + c.text.length < 400) last.push(c);
+      else groups.push([c]);
+    }
+    for (const g of groups) {
+      const body = g.map((c) => c.text).join("\n");
+      const label = n.title + (g[0].heading ? ` › ${g[0].heading}` : "");
+      blocks.push(
+        book
+          ? book.add("note", `Note "${label}" (${WHY[n.why]})`, body, { pageId: n.id, blockId: g[0].blockId, title: label })
+          : `Note "${label}" (${WHY[n.why]}):\n${body}\n(end of note)`,
+      );
+    }
+  }
+  return { text: blocks.filter(Boolean).join("\n\n"), parts: chosen.size };
 }
 
 /** What Nerida can do; the model describes it in its own words when asked. */
 const FEATURES =
-  "Your features: answer from the user's notes (open note, sub-pages, linked and @-mentioned notes), summarize and explain, " +
+  "Your features: answer from the user's notes (open note, sub-pages, linked and @-mentioned notes, plus a search of all their notes; each answer links its sources),summarize and explain, " +
   "rewrite, fix grammar and brainstorm, make flashcards and quizzes, read attached PDF/Word/text files, insert replies into the note, " +
   "exact maths, unit and date sums, word meanings, and web search (globe button). Typing / shows quick actions. " +
   "When asked who you are or what you can do, answer naturally in your own words, fitted to the exact question; don't recite the whole list every time.";
@@ -403,6 +435,7 @@ const WHY: Record<ContextNote["why"], string> = {
   link: "linked from the open note",
   backlink: "links to the open note",
   mention: "added by the user",
+  found: "found by searching all notes",
 };
 
 /** Small models follow notes best when they sit right next to the question, so they go into the last user message (not shown in the chat). */
