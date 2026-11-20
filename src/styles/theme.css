@@ -2813,5 +2813,6 @@
   outline: 2px solid var(--oc-focus);
   outline-offset: 1px;
 }
-/* The note editor and canvases keep their own caret/selection cues. */
-:is(.bn-editor, .ProseMirror, [contenteditable="true"]):focus-visible { outline: none; }
+/* The note editor and canvases keep their own caret/selection cues. `!important` because the ring rule
+ * above is more specific (`[tabindex]:not(...)`) and the editor has tabindex="0". */
+:is(.bn-editor, .ProseMirror, [contenteditable="true"]):focus-visible { outline: none !important; }
