@@ -351,10 +351,16 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
             let _ = child.kill();
         }
         // Auto: NVIDIA engine if downloaded, else an NVIDIA card, else the first card (one card only:
-        // splitting a small model across two GPUs is slower).
+        // splitting a small model across two GPUs is slower). Older Intel built-in graphics (UHD/Iris, not Arc)
+        // run this model slower than the CPU, so Auto skips them.
         let pick = match gpu.as_str() {
             "auto" if cuda_exe(&app).is_some() => "cuda".to_string(),
-            "auto" => gpus.iter().find(|g| g.name.contains("NVIDIA")).or(gpus.first()).map_or("cpu".into(), |g| g.id.clone()),
+            "auto" => gpus
+                .iter()
+                .filter(|g| !g.name.contains("Intel") || g.name.contains("Arc"))
+                .find(|g| g.name.contains("NVIDIA"))
+                .or(gpus.iter().find(|g| !g.name.contains("Intel") || g.name.contains("Arc")))
+                .map_or("cpu".into(), |g| g.id.clone()),
             "cuda" if cuda_exe(&app).is_none() => "auto".into(),
             g => g.to_string(),
         };
@@ -377,7 +383,7 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
         }
         // Flash attention: fast on CUDA, but on Vulkan it falls back to the CPU (much slower prompt reading).
         match pick.as_str() {
-            "cpu" => cmd.args(["-ngl", "0"]),
+            "cpu" => cmd.args(["-ngl", "0", "-fa", "on"]), // flash attention is fast on the CPU
             "cuda" => cmd.args(["-ngl", "99", "-fa", "on"]),
             "auto" => cmd.args(["-ngl", "99", "-fa", "off"]),
             dev => cmd.args(["-ngl", "99", "-fa", "off", "--device", dev]),

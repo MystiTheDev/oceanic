@@ -668,7 +668,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         </div>
         {ready && <p className="mt-1.5 flex justify-between px-1 text-[11px] text-neutral-600">
           <span><kbd className="text-neutral-400">/</kbd> for actions · <kbd className="text-neutral-400">@</kbd> to add a note</span>
-          {home && <span>🔒 Runs on this PC. Your notes stay here.</span>}
+          {neridaState.warming && !busy ? <span className="oc-nerida-shimmer">Getting ready…</span> : home && <span>🔒 Runs on this PC. Your notes stay here.</span>}
         </p>}
       </div>
   );

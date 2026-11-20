@@ -62,13 +62,13 @@ export type Effort = "low" | "medium" | "high";
 /** UI names: Fast / Balanced / Deep: answer length. Thinking is a separate toggle. */
 export const EFFORTS: { id: Effort; label: string; maxTokens: number }[] = [
   { id: "low", label: "Fast", maxTokens: 400 },
-  { id: "medium", label: "Balanced", maxTokens: 1024 },
+  { id: "medium", label: "Balanced", maxTokens: 700 },
   { id: "high", label: "Deep", maxTokens: 4096 },
 ];
 const effortOf = () => EFFORTS.find((e) => e.id === state.effort) ?? EFFORTS[1];
 
 export type ReplyStyle = "short" | "tutor";
-type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null; /** A download waits for the built-in engine's reply to finish. */ dlWaiting: boolean; /** Download finished: "ask" shows the restart dialog, "later" the reminder. */ restart: "ask" | "later" | null; /** Agent mode: Nerida may call tools to change notes. */ agent: boolean; /** Agent mode: apply creating actions without asking. */ autoApply: boolean };
+type State = { /** Desktop notification when an answer finishes in the background. */ notify: boolean; /** User deleted the vision add-on: don't offer or fetch it again. */ noVision: boolean; /** Built-in engine thinks before answering (slower). */ thinking: boolean; style: ReplyStyle; /** Graphics card for the built-in engine: "auto" | "cpu" | "cuda" | "Vulkan<n>". */ gpu: string; /** Deep's latest thinking (any feature), for "Thinking…" / "Thought for Xs". */ think: { text: string; secs: number; live: boolean } | null; effort: Effort; settingsFocus: "openai" | "ollama" | null; homeMode: "home" | "nerida"; open: boolean; chats: Chat[]; activeId: string | null; model: ModelRef; providers: Provider[]; cloudOk: boolean; dl: { model: ModelId; label: string; got: number; total: number } | null; /** A download waits for the built-in engine's reply to finish. */ dlWaiting: boolean; /** Download finished: "ask" shows the restart dialog, "later" the reminder. */ restart: "ask" | "later" | null; /** Agent mode: Nerida may call tools to change notes. */ agent: boolean; /** Agent mode: apply creating actions without asking. */ autoApply: boolean; /** Built-in engine starting or caching the prompt. */ warming?: boolean };
 let state: State = { notify: true, noVision: false, thinking: false, style: "short", gpu: "auto", think: null, effort: "medium", settingsFocus: null, homeMode: (() => { try { return localStorage.getItem("oc-home-mode") === "nerida" ? "nerida" : "home"; } catch { return "home"; } })(), open: false, chats: [], activeId: null, model: "nerida:plus", providers: [], cloudOk: false, dl: null, dlWaiting: false, restart: null, agent: false, autoApply: false };
 /** Built-in chat is locked while an engine/model/add-on download runs (cloud and Ollama stay usable). */
 export const UPGRADE_MSG = "Nerida AI is getting an upgrade, please be patient.";
@@ -168,7 +168,35 @@ void api.getSettings().then((s) => {
   } catch {
     /* corrupt history: start fresh */
   }
+  // Warm at launch, then again when the model, GPU, reply style, effort or Thinking changes.
+  let key = "", timer: ReturnType<typeof setTimeout> | undefined;
+  const check = () => {
+    const k = [state.model, state.gpu, state.style, state.effort, state.thinking].join("|");
+    if (k !== key) (key = k, clearTimeout(timer), (timer = setTimeout(() => void warmup(), 1000)));
+  };
+  check();
+  nerida.subscribe(check);
 });
+
+/** The main chat's system prompt: reply style, and Fast's 1-3 sentence cap. */
+const chatSystem = () => SYSTEM + (state.style === "tutor" ? " " + TUTOR : "") + (effortOf().id === "low" ? " Answer in 1-3 sentences." : "");
+
+/** Start the built-in engine and have it read the chat's system prompt once (1 token out),
+ *  so llama.cpp caches it and the first real question only reads the new text. */
+async function warmup() {
+  const b = builtin(state.model);
+  if (!b || state.dl || active) return;
+  nerida.set({ warming: true });
+  try {
+    const baseUrl = await engine.start(b);
+    const messages = [{ role: "system", content: chatSystem() }, { role: "user", content: "Hi" }];
+    await invoke("ai_chat", { baseUrl, keyId: null, model: b, messages, extra: { chat_template_kwargs: { enable_thinking: state.thinking }, max_tokens: 1 }, onToken: new Channel<string>() });
+  } catch {
+    /* not downloaded or not desktop: the first question starts it */
+  } finally {
+    nerida.set({ warming: false });
+  }
+}
 
 /* ----------------------------------------------------------------- engine */
 export const engine = {
@@ -217,8 +245,7 @@ export const engine = {
     if (tools?.length) Object.assign(extra, { tools, max_tokens: Math.max(extra.max_tokens, 1024) });
     // Main chat prompt only (not quizzes or edits): reply style, and Fast's 1-3 sentence cap.
     if (messages[0]?.content === SYSTEM) {
-      const add = (state.style === "tutor" ? " " + TUTOR : "") + (e.id === "low" ? " Answer in 1-3 sentences." : "");
-      if (add) messages = [{ role: "system", content: SYSTEM + add }, ...messages.slice(1)];
+      messages = [{ role: "system", content: chatSystem() }, ...messages.slice(1)];
     }
     active++;
     if (b) (localActive++, (localIdleAt = 0));
@@ -361,11 +388,11 @@ export function trimHistory(h: Msg[], ref: ModelRef = state.model): { msgs: { ro
 }
 
 /** Characters of note text to send (~4 characters a token). The built-in engine has 8k tokens for the
- *  prompt, history and answer: ~2k tokens of notes (smaller prompt = faster first word), ~1.5k for Deep or Thinking.
+ *  prompt, history and answer: ~1.5k tokens of notes (smaller prompt = faster first word), ~1.2k for Deep or Thinking.
  *  Ollama and other providers usually have room for more. */
 export function noteBudget(ref: ModelRef = state.model): number {
   if (!builtin(ref)) return 24_000;
-  return state.thinking || state.effort === "high" ? 6_000 : 8_000;
+  return state.thinking || state.effort === "high" ? 5_000 : 6_000;
 }
 
 /** Note text for the prompt, one numbered source per run of sections. When it's too long, keeps the sections
