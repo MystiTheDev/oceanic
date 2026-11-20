@@ -292,12 +292,10 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     setExcluded((s) => new Set(s).add(n.id));
   };
   // Live workspace search while typing (debounced); kept after sending until the next question.
-  // With a note open, other notes are searched only when asked ("my notes", "all notes", "other notes").
-  const searchAll = (q: string) => !pageId || !!home || /\b(my|other|all|every)\s+notes?\b|\beverywhere\b|\bworkspace\b/i.test(q);
   useEffect(() => {
     const q = input.trim();
     if (!q) return;
-    if (pdf || q.length < 4 || q.startsWith("/") || !searchAll(q)) return setFound([]);
+    if (pdf || q.length < 4 || q.startsWith("/")) return setFound([]);
     const t = setTimeout(() => {
       const skip = new Set(notes.filter((n) => n.why === "current").map((n) => n.id));
       void searchIndex(q, 3, skip).then((h) => setFound(h.map((x) => ({ id: x.id, title: x.title, icon: pages.get(x.id)?.icon ?? "", why: "found" as const })))).catch(() => {});
@@ -473,7 +471,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       const tools = await runTools(text);
       if (tools) mark("Working it out");
       // Search every note for the exact question (the live search may lag the last keystrokes); removed notes stay out.
-      if (!pdf && !files.length && !isFeaturesQuestion(text) && searchAll(text)) {
+      if (!pdf && !files.length && !isFeaturesQuestion(text)) {
         const hits = await searchIndex(text, 3, new Set([...used.map((n) => n.id), ...excluded])).catch(() => []);
         const extra = hits.map((h) => ({ id: h.id, title: h.title, icon: pages.get(h.id)?.icon ?? "", why: "found" as const }));
         if (extra.length) {
