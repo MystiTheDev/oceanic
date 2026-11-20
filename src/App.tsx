@@ -98,7 +98,7 @@ import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
 import { MobilePropChips } from "./mobile/MobileProps";
-import { onOpenedFile, shareFile } from "./mobile/share";
+import { onOpenedFile, pickFile, shareFile } from "./mobile/share";
 import { buildOceanFile } from "./lib/oceanFile";
 import { MobileSettings } from "./mobile/MobileSettings";
 import { MobileUpdater } from "./mobile/MobileUpdater";
@@ -1517,8 +1517,8 @@ export default function App() {
           onWorkspace={selectWorkspace}
           onPin={togglePin}
           onDuplicate={duplicatePage}
-          onExport={(id) =>
-            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true)
+          onExport={(id, only) =>
+            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true, new Set(only))
               .then((b) => shareFile(`${livePages.find((x) => x.id === id)?.title || "Untitled"}.ocean`, b))
               .catch(report("Export"))
           }
@@ -2132,6 +2132,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           pageCount={livePages.length}
           trashCount={trashedPages.length}
+          onImport={() => void pickFile().then((f) => f && (setSettingsOpen(false), importNotes([f], true))).catch(report("Import"))}
         />
       )}
       {settingsOpen && !isMobile && (

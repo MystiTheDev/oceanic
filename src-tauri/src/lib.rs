@@ -655,6 +655,20 @@ async fn apk_install(app: AppHandle, url: String, on_progress: tauri::ipc::Chann
     Err("Android only".into())
 }
 
+#[cfg(target_os = "android")]
+struct Share(tauri::plugin::PluginHandle<tauri::Wry>);
+
+/// SharePlugin.kt bridge (share / pending / pick). Inline plugins have no ACL
+/// entry, so the page reaches them through this app command.
+#[tauri::command]
+#[allow(unused_variables)]
+async fn share_call(app: AppHandle, cmd: String, args: serde_json::Value) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "android")]
+    return app.state::<Share>().0.run_mobile_plugin(&cmd, args).map_err(|e| e.to_string());
+    #[cfg(not(target_os = "android"))]
+    Err("Android only".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -685,8 +699,8 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
         tauri::plugin::Builder::<tauri::Wry>::new("share")
-            .setup(|_, api| {
-                api.register_android_plugin("io.github.mystithedev.oceanic", "SharePlugin")?;
+            .setup(|app, api| {
+                app.manage(Share(api.register_android_plugin("io.github.mystithedev.oceanic", "SharePlugin")?));
                 Ok(())
             })
             .build(),
@@ -768,6 +782,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             apk_install,
+            share_call,
             #[cfg(desktop)]
             ai::ai_status,
             #[cfg(desktop)]

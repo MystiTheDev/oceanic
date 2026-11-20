@@ -57,6 +57,15 @@ Agreed spec:
 - **Import:** a file picker, plus an intent filter so .ocean files open in Oceanic from other apps.
 - This replaces the "Coming soon" buttons in Settings.
 
+**Agreed spec (phase 6):**
+- **Export scope:** long-press a page → "Share as .ocean" opens a sheet listing its subpages (indented) with a checkbox each and a "Select all" toggle. All are ticked by default. Unticking a page also leaves out its own subpages. "Share" builds the file and opens the Android share sheet. No "export everything" button.
+- **Attachments:** images, files, PDFs (with annotations), banner, icon, date/status/tags and tag colors are always embedded.
+- **Import:** Settings → Data gets an "Import .ocean" button that opens the Android Files picker. Opening a .ocean from Files or another app still works (intent filter).
+- **Where:** imported pages go to the top level of the current workspace and the first one opens.
+- **Duplicates:** same as PC: if a page with the same title and content exists, ask Open / Copy / Replace (old one to Trash) / Skip.
+- **Messages:** success shows the "Imported N pages" notice; unreadable files show the import-failures dialog; export errors use the normal error report.
+- **Cache:** each new share first deletes the earlier exported files in `cache/share`.
+
 ## Open risks
 - The GitHub API allows 60 requests per hour without a token. That is fine at one check a day.
 - Opening a page bumps its `updatedAt`, which skews the "Recent pages" order. Fix this in phase 2.
@@ -135,3 +144,10 @@ This affects the desktop app too, so it's planned with its own questions and ses
 ## Later phase: Quick actions row (from the Evernote Home study)
 - A row of square buttons on Home: Camera, Scan, Files, Audio, each adding to a new page.
 - Needs native Android plugins (camera/scan, file picker, mic recording), so it gets its own phase.
+
+## Later phase: Page polish (after all phases are done and the app is stable)
+Wait for the user's go-ahead. Plan with questions first.
+- Backlinks: "Linked from" at the bottom of a page.
+- Page outline: a jump-to-heading sheet.
+- Page icon and banner: an emoji icon and a cover image.
+- Trash: a screen to restore or empty deleted pages.
