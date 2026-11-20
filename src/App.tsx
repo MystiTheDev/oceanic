@@ -96,6 +96,11 @@ import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
+import { MobileShell, isMobile } from "./mobile/MobileShell";
+import { onOpenedFile, shareFile } from "./mobile/share";
+import { buildOceanFile } from "./lib/oceanFile";
+import { MobileSettings } from "./mobile/MobileSettings";
+import { MobileUpdater } from "./mobile/MobileUpdater";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
 const HOME_TAB = "home-tab";
@@ -647,11 +652,12 @@ export default function App() {
 
   const report = (what: string) => (e: unknown) => console.error(`${what} failed`, e);
 
-  const createPage = async (parentId: string | null, dueDate: string | null = null) => {
+  const createPage = async (parentId: string | null, dueDate: string | null = null, blocks?: PartialBlock[]) => {
     try {
       const page = toMeta(await api.createPage(parentId, activeWorkspaceId, dueDate));
       setPages((prev) => [...prev, page]);
-      setDocs((prev) => ({ ...prev, [page.id]: getSeedBlocks(page.id) }));
+      setDocs((prev) => ({ ...prev, [page.id]: blocks ?? getSeedBlocks(page.id) }));
+      if (blocks) scheduleSave(page.id);
       // On the calendar a new page opens in the side peek; a new subpage in the centered peek (Notion).
       setPeekCenter(!!parentId && view !== "calendar");
       if (view === "calendar" || parentId) setPeekId(page.id);
@@ -1296,11 +1302,10 @@ export default function App() {
       }
     });
     // .ocean / .omap opened from Explorer (at launch or while running).
-    const openFile = async (path: string) => {
-      const bytes = await readFileBytes(path);
-      const name = path.split(/[\\/]/).pop()!;
+    const openFile = async (path: string) => openBytes(path.split(/[\\/]/).pop()!, await readFileBytes(path));
+    const openBytes = async (name: string, bytes: Uint8Array) => {
       setView("document");
-      if (/\.omap$/i.test(path)) {
+      if (/\.omap$/i.test(name)) {
         const r = await importOmap(bytes);
         keys.current.openPage(mindmapEntry(r.id));
         if (r.existing) setNotice({ text: `“${r.title}” is already in Oceanic, so the existing map was opened`, key: Date.now() });
@@ -1312,6 +1317,7 @@ export default function App() {
       key: Date.now(),
     })).catch(() => {});
     void invoke<string | null>("launch_file").then((p) => { if (p) void openFile(p); }).catch(() => {});
+    if (isMobile) onOpenedFile(async (f) => openBytes(f.name, new Uint8Array(await f.arrayBuffer())));
     const offFile = listen<string>("open-file", ({ payload }) => void openFile(payload));
     const offPage = listen<string>("tray-open-page", ({ payload }) => {
       setView("document");
@@ -1379,6 +1385,9 @@ export default function App() {
     .filter((p) => p.trashedAt)
     .sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0));
   const activePage = allLivePages.find((p) => p.id === activePageId) ?? null;
+  // Phone: always start on Home; a page shows only once opened in this session
+  // (restored desktop tabs would otherwise reopen the last page).
+  const [mobilePageOpen, setMobilePageOpen] = useState(false);
   // Student tags exist from the start (Home widgets + Calendar chips use them).
   useEffect(() => {
     if (!loaded) return;
@@ -1492,6 +1501,75 @@ export default function App() {
 
   return (
     <div ref={appRoot} className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100">
+      {isMobile ? (
+        <MobileShell
+          userName={settings.userName}
+          avatar={settings.avatar}
+          theme={resolvedTheme === "light" ? "light" : "dark"}
+          pages={livePages}
+          trashed={trashedPages}
+          workspaces={workspaces}
+          workspaceId={activeWorkspaceId}
+          onSettings={() => setSettingsOpen(true)}
+          onTags={() => setTagsOpen(true)}
+          onToggleTheme={() => changeSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" })}
+          onWorkspace={selectWorkspace}
+          onPin={togglePin}
+          onDuplicate={duplicatePage}
+          onExport={(id) =>
+            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true)
+              .then((b) => shareFile(`${livePages.find((x) => x.id === id)?.title || "Untitled"}.ocean`, b))
+              .catch(report("Export"))
+          }
+          onTrash={trashPage}
+          onRename={(id, title) => (patchPage(id, { title }), api.renamePage(id, title).catch(report("Rename")))}
+          onRestore={restorePage}
+          onDeleteForever={deleteForever}
+          openPage={mobilePageOpen && activeTabId !== HOME_TAB ? activePage : null}
+          editor={
+            activePage &&
+            docs[activePage.id] && (
+              <PageEditor
+                key={`m:${activePage.id}`}
+                page={activePage}
+                doc={docs[activePage.id]}
+                onTitleChange={changeTitle}
+                onDocChange={changeDoc}
+                onIconChange={changeIcon}
+                linksVersion={linksVersion}
+                properties={propertiesFor(activePage)}
+              />
+            )
+          }
+          onOpen={(id) => {
+            setView("document");
+            setMobilePageOpen(true);
+            openPage(id);
+          }}
+          onBack={() => {
+            setMobilePageOpen(false);
+            if (activeTab && !PINNED.has(activeTab.id)) closeTabNow(activeTab.id);
+          }}
+          onCreate={() => {
+            setView("document");
+            setMobilePageOpen(true);
+            void createPage(null);
+          }}
+          onCreateTask={async () => {
+            setView("document");
+            setMobilePageOpen(true);
+            const today = new Date().toLocaleDateString("en-CA");
+            // One empty checklist item (Enter adds more), with the caret already in it.
+            const blockId = crypto.randomUUID();
+            const id = await createPage(null, today, [{ id: blockId, type: "checkListItem" }]);
+            if (!id) return;
+            changeProperties(id, { dueDate: today, status: "not_started", tags: [] });
+            window.dispatchEvent(new CustomEvent("oc-open-block", { detail: { pageId: id, blockId } }));
+          }}
+          visitedAt={visitedAt}
+        />
+      ) : (
+      <>
       {!inDocEditor && (
       <TitleBar
         tabs={tabInfos}
@@ -1853,6 +1931,8 @@ export default function App() {
           )}
         </main>
       </div>
+      </>
+      )}
 
       <UpdateUI />
       <SpellUI />
@@ -1977,9 +2057,9 @@ export default function App() {
         />
       )}
       <Tooltip />
-      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} />}
+      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} sheet={isMobile} />}
       {dupAsk && (
-        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5">
+        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5" sheet={isMobile}>
           <h2 className="text-[15px] font-semibold text-neutral-100">“{dupAsk.title}” is already in Oceanic</h2>
           <p className="mt-1 text-[13px] text-neutral-400">An identical note exists. What should happen?</p>
           <div className="mt-4 flex justify-end gap-2">
@@ -2040,7 +2120,17 @@ export default function App() {
         />
       )}
       {agentTest && <TestSetup pages={allLivePages} initialNotes={agentTest} onClose={() => setAgentTest(null)} />}
-      {settingsOpen && (
+      {isMobile && <MobileUpdater />}
+      {settingsOpen && isMobile && (
+        <MobileSettings
+          settings={settings}
+          onChange={changeSettings}
+          onClose={() => setSettingsOpen(false)}
+          pageCount={livePages.length}
+          trashCount={trashedPages.length}
+        />
+      )}
+      {settingsOpen && !isMobile && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}
       {loaded && askName && (

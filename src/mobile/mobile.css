@@ -1,0 +1,497 @@
+/* Phone layout. Colours come from the app theme tokens (theme.css);
+   the accent is Tailwind's sky scale, which the app recolors. */
+
+.ocm {
+  --ocm-accent: var(--color-sky-500);
+  --ocm-line: rgba(var(--oc-ink), 0.08);
+  --ocm-muted: rgba(var(--oc-ink), 0.55);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--oc-canvas);
+  color: var(--oc-text);
+  /* Android WebView reports no safe-area insets, so keep clear of the status bar. */
+  padding-top: max(env(safe-area-inset-top, 0px), 28px);
+}
+
+.ocm-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px 120px;
+}
+
+.ocm button { -webkit-tap-highlight-color: transparent; }
+.ocm-root { position: relative; height: 100%; width: 100%; overflow: hidden; background: var(--oc-canvas); }
+.ocm-layer { position: absolute; inset: 0; }
+.ocm-page { z-index: 2; box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35); }
+
+/* Waves drift slowly, each layer at its own pace. */
+.ocm-w1 { animation: ocm-drift 14s ease-in-out infinite alternate; }
+.ocm-w2 { animation: ocm-drift 10s ease-in-out infinite alternate-reverse; }
+.ocm-w3 { animation: ocm-drift 7s ease-in-out infinite alternate; }
+/* Front wave is near-solid sea, so the sun sinks behind it. */
+.ocm-w3 { fill: var(--sea, var(--wave)); opacity: 0.92; }
+/* Paths extend 100 units past each side, so drifting never shows an edge. */
+@keyframes ocm-drift { from { transform: translateX(-60px); } to { transform: translateX(60px); } }
+@media (prefers-reduced-motion: reduce) { .ocm-waves path { animation: none; } }
+
+/* ---------- Home header */
+.ocm-hero {
+  position: relative;
+  margin: -8px -16px 16px;
+  padding: 24px 16px 56px;
+  overflow: hidden;
+  background: linear-gradient(175deg, var(--sky1), var(--sky2) 55%, var(--oc-canvas));
+}
+/* Sun / moon: position and colour set per time of day below. */
+.ocm-sun {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  right: 22%;
+  top: var(--sun-y, 50%);
+  background: var(--sun);
+  box-shadow: 0 0 40px 14px var(--sun-glow);
+  pointer-events: none;
+}
+.ocm-night .ocm-sun { box-shadow: inset -14px -6px 0 0 rgba(0, 0, 0, 0.25), 0 0 30px 6px var(--sun-glow); }
+/* Registered so the sky, sun and sea animate smoothly when the time of day changes. */
+@property --sky1 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sky2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sun { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sun-glow { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --wave { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sea { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --sun-y { syntax: "<percentage>"; inherits: true; initial-value: 50%; }
+.ocm-hero { transition: --sky1 3s, --sky2 3s, --sun 3s, --sun-glow 3s, --wave 3s, --sea 3s, --sun-y 3s ease-in-out; }
+.ocm-sun { transition: box-shadow 3s; }
+.ocm-star { opacity: 0; transition: opacity 3s; }
+.ocm-night .ocm-star { opacity: 1; }
+.ocm-star { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; animation: ocm-twinkle 2.6s ease-in-out infinite alternate; }
+@keyframes ocm-twinkle { from { transform: scale(0.5); filter: brightness(0.4); } to { transform: scale(1); filter: none; } }
+@media (prefers-reduced-motion: reduce) { .ocm-star { animation: none; } .ocm-hero, .ocm-sun, .ocm-star { transition: none; } }
+.ocm-hero h1 { color: #fff !important; }
+.ocm-hero p, .ocm-stats { color: rgba(255, 255, 255, 0.85) !important; }
+/* Time-of-day skies, kept soft so text stays readable in both themes. */
+/* Sky gradients run into the canvas so the banner melts into the page. */
+.ocm-dawn { --sea: #9f3a5a; --sky1: #f9a8d4; --sky2: #fdba74; --sun: #fff1c1; --sun-glow: rgba(253, 186, 116, 0.8); --sun-y: 58%; --wave: #fb7185; }
+.ocm-day { --sea: #0369a1; --sky1: #38bdf8; --sky2: #7dd3fc; --sun: #fffbe6; --sun-glow: rgba(255, 244, 180, 0.8); --sun-y: 10%; --wave: #0ea5e9; }
+.ocm-dusk { --sea: #7c2d12; --sky1: #6d28d9; --sky2: #f97316; --sun: #fdba74; --sun-glow: rgba(249, 115, 22, 0.75); --sun-y: 62%; --wave: #c2410c; }
+.ocm-night { --sea: #1e1b4b; --sky1: #0b1035; --sky2: #1e1b4b; --sun: #e2e8f0; --sun-glow: rgba(226, 232, 240, 0.35); --sun-y: 14%; --wave: #312e81; }
+.ocm-waves {
+  position: absolute;
+  inset: auto 0 0 0;
+  width: 100%;
+  height: 90px;
+  fill: var(--wave, var(--ocm-accent));
+  pointer-events: none;
+}
+.ocm-hero-row { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ocm-stats { font-weight: 600; color: var(--oc-text) !important; }
+.ocm-hero h1, .ocm-title h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--oc-text-strong);
+  line-height: 1.2;
+}
+.ocm-hero p, .ocm-title p {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ocm-muted);
+}
+.ocm-avatar {
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ocm-accent);
+}
+.ocm-title { padding: 16px 0 12px; }
+
+/* ---------- Widget cards */
+.ocm-card {
+  margin-bottom: 16px;
+  padding: 14px 0 12px;
+  border-radius: 18px;
+  background: var(--oc-raised);
+  border: 1px solid var(--ocm-line);
+}
+.ocm-sec { margin: 0 -16px 18px; }
+.ocm-sec > .ocm-card-head { padding-left: 20px; padding-right: 20px; }
+/* Frosted glass panels. */
+.ocm-glass {
+  background: linear-gradient(160deg, rgba(var(--oc-ink), 0.09), rgba(var(--oc-ink), 0.03)) !important;
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  border: 1px solid rgba(var(--oc-ink), 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 24px rgba(0, 0, 0, calc(0.25 * var(--oc-shadow-k)));
+}
+.ocm-card-head {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 16px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--oc-text-strong);
+  text-align: left;
+}
+.ocm-card-head span { color: var(--ocm-muted); }
+.ocm-empty { padding: 4px 16px 6px; font-size: 14px; color: var(--ocm-muted); }
+
+.ocm-cards {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px 20px 10px;
+  scroll-padding: 0 20px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.ocm-note {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 72%;
+  height: 196px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--oc-canvas);
+  border: 1px solid var(--ocm-line);
+  text-align: left;
+  scroll-snap-align: start;
+}
+.ocm-note-icon { position: relative; font-size: 28px; line-height: 1; margin-bottom: 8px; }
+.ocm-note { position: relative; }
+.ocm-pin {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--ocm-accent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ocm-accent) 50%, transparent);
+}
+.ocm-seeall { align-items: center; justify-content: center; gap: 4px; font-weight: 600; color: var(--ocm-accent); }
+.ocm-seeall span { font-size: 12px; font-weight: 400; color: var(--ocm-muted); }
+.ocm-note-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--oc-text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ocm-note-preview {
+  margin-top: 6px;
+  max-height: calc(3 * 1.4em);
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ocm-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ocm-note-date { margin-top: auto; font-size: 11.5px; color: var(--ocm-muted); }
+
+.ocm-due {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 14.5px;
+  text-align: left;
+  border-top: 1px solid var(--ocm-line);
+}
+.ocm-due > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-due > span:last-child { flex-shrink: 0; color: var(--ocm-muted); }
+.ocm-due .ocm-overdue { color: #ef4444; }
+
+.ocm-seeall { flex-basis: 40%; }
+.ocm-note-title { font-size: 16px !important; }
+
+/* ---------- Tags & collections */
+.ocm-chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 20px 12px; scrollbar-width: none; }
+.ocm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--oc-text-strong);
+  background: color-mix(in srgb, var(--ocm-accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ocm-accent) 40%, transparent);
+}
+.ocm-chip em { font-style: normal; font-weight: 400; color: var(--ocm-muted); }
+.ocm-chip-on { margin: 0 0 8px; background: color-mix(in srgb, var(--ocm-accent) 30%, transparent); }
+.ocm-folders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 20px; }
+.ocm-folder { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px; border-radius: 18px; text-align: left; min-width: 0; }
+.ocm-folder-icon { font-size: 24px; margin-bottom: 4px; }
+.ocm-folder-title { width: 100%; font-size: 14.5px; font-weight: 600; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-folder-n { font-size: 12px; color: var(--ocm-muted); }
+
+/* ---------- Pages list */
+.ocm-list { display: flex; flex-direction: column; }
+.ocm-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 2px;
+  text-align: left;
+  border-bottom: 1px solid var(--ocm-line);
+}
+.ocm-row-icon { font-size: 20px; line-height: 1.3; }
+.ocm-row-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ocm-row-title { font-size: 15.5px; font-weight: 600; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-row-preview {
+  margin-top: 3px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ocm-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ocm-row-date { flex-shrink: 0; font-size: 12px; color: var(--ocm-muted); padding-top: 3px; }
+
+/* ---------- Floating liquid-glass tab bar (icons only), + as its own glass circle */
+.ocm-nav {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(16px + max(env(safe-area-inset-bottom, 0px), 16px));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.ocm-liquid {
+  pointer-events: auto;
+  border-radius: 999px;
+  /* Light, medium frost; bright rim on top, soft one below. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  /* Plain blur first: kept wherever the SVG filter isn't supported. */
+  backdrop-filter: blur(10px) saturate(1.7);
+  -webkit-backdrop-filter: blur(10px) saturate(1.7);
+  backdrop-filter: url(#ocm-refract) blur(10px) saturate(1.7) brightness(1.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 18px rgba(255, 255, 255, 0.06),
+    0 10px 28px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
+}
+.ocm-pill { display: flex; align-items: center; gap: 4px; padding: 5px 8px; }
+.ocm-pill button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 48px;
+  border-radius: 999px;
+  color: var(--oc-text-strong);
+  opacity: 0.7;
+  transition: color 0.2s, opacity 0.2s;
+}
+.ocm-pill button.on { color: var(--ocm-accent); opacity: 1; }
+.ocm-pill button:disabled { opacity: 0.3; }
+.ocm-dot {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 9px;
+  background: var(--ocm-accent);
+  box-shadow: 0 0 6px var(--ocm-accent);
+}
+.ocm-plus {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  color: #fff;
+  /* Bright sky-blue glass: strong tint, bright rim, soft outer glow. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.04) 60%),
+    color-mix(in srgb, #4fb4ff 72%, transparent);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 6px rgba(0, 60, 140, 0.25),
+    0 0 18px rgba(79, 180, 255, 0.55),
+    0 10px 24px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
+  animation: ocm-plus-glow 4s ease-in-out infinite;
+}
+.ocm-plus svg { filter: drop-shadow(0 1px 2px rgba(0, 40, 100, 0.35)); }
+/* Water ripple ring: once in a while at idle, and on every press/hover. */
+.ocm-plus::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  border: 2px solid rgba(150, 215, 255, 0.85);
+  opacity: 0;
+  pointer-events: none;
+  animation: ocm-plus-ripple 4s ease-out infinite;
+}
+.ocm-plus:active,
+.ocm-plus:hover { animation: ocm-plus-glow-hot 0.9s ease-out; }
+.ocm-plus:active::after,
+.ocm-plus:hover::after { animation: ocm-plus-ripple-hot 0.7s ease-out; }
+@keyframes ocm-plus-glow {
+  0%, 70%, 100% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 18px rgba(79, 180, 255, 0.55), 0 10px 24px rgba(0, 0, 0, 0.25); }
+  85% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 30px rgba(79, 180, 255, 0.85), 0 10px 24px rgba(0, 0, 0, 0.25); }
+}
+@keyframes ocm-plus-glow-hot {
+  0% { box-shadow: inset 0 1.5px 0 #fff, inset 0 0 14px rgba(255, 255, 255, 0.5), 0 0 40px rgba(110, 200, 255, 1), 0 10px 24px rgba(0, 0, 0, 0.25); }
+  100% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 18px rgba(79, 180, 255, 0.55), 0 10px 24px rgba(0, 0, 0, 0.25); }
+}
+@keyframes ocm-plus-ripple {
+  0%, 72% { transform: scale(1); opacity: 0; }
+  74% { opacity: 0.8; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes ocm-plus-ripple-hot {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ocm-pill button { transition: none; }
+  .ocm-plus, .ocm-plus::after { animation: none !important; }
+}
+
+/* ---------- Pages search */
+.ocm-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  margin-bottom: 4px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--oc-raised);
+  border: 1px solid var(--ocm-line);
+  color: var(--ocm-muted);
+}
+.ocm-search input { flex: 1; min-width: 0; background: none; outline: none; font-size: 15px; color: var(--oc-text-strong); }
+
+/* ---------- Bottom sheets */
+.ocm-sheet-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ocm-sheet {
+  width: 100%;
+  max-height: 80%;
+  overflow-y: auto;
+  padding: 8px 12px calc(16px + max(env(safe-area-inset-bottom, 0px), 16px));
+  border-radius: 22px 22px 0 0;
+  background: var(--oc-surface);
+}
+.ocm-sheet h2 { padding: 8px 8px 10px; font-size: 17px; font-weight: 700; color: var(--oc-text-strong); }
+.ocm-grab { width: 40px; height: 4px; margin: 4px auto 12px; border-radius: 2px; background: rgba(var(--oc-ink), 0.2); }
+.ocm-profile { display: flex; align-items: center; gap: 14px; padding: 4px 8px 16px; border-bottom: 1px solid var(--ocm-line); margin-bottom: 6px; }
+.ocm-profile strong { display: block; font-size: 17px; color: var(--oc-text-strong); }
+.ocm-profile span { font-size: 13.5px; color: var(--ocm-muted); }
+.ocm-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 52px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 15.5px;
+  color: var(--oc-text-strong);
+  text-align: left;
+}
+.ocm-item:active, .ocm-item.on { background: rgba(var(--oc-ink), 0.07); }
+.ocm-item em { margin-left: auto; font-style: normal; font-size: 13px; color: var(--ocm-muted); }
+.ocm-danger { color: #ef4444; }
+.ocm-ws { width: 20px; text-align: center; }
+.ocm-trash { display: flex; align-items: center; gap: 4px; padding: 6px 4px 6px 10px; }
+.ocm-trash span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.ocm-trash button { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; color: var(--ocm-muted); }
+
+/* ---------- Open page */
+.ocm-page { padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px); }
+.ocm-pagebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  height: 52px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--ocm-line);
+}
+.ocm-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--oc-text-strong); }
+.ocm-pagebar-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-editor { flex: 1; min-height: 0; overflow: hidden; }
+
+/* ---------- Evernote-style Home additions */
+.ocm-find { width: 100%; margin-bottom: 14px; font-size: 15px; }
+.ocm-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.ocm-tile { position: relative; overflow: hidden; display: flex; align-items: flex-start; gap: 6px; height: 104px; padding: 14px; border-radius: 18px; color: #fff; font-size: 15px; font-weight: 700; }
+.ocm-tile-page { background: linear-gradient(140deg, #22c55e, #15803d); }
+.ocm-tile-task { background: linear-gradient(140deg, #a855f7, #6d28d9); }
+.ocm-tile-art { position: absolute; right: -6px; bottom: -10px; opacity: 0.35; animation: ocm-bob 3.2s ease-in-out infinite alternate; }
+.ocm-tile-task .ocm-tile-art { animation-delay: -1.6s; }
+@keyframes ocm-bob { from { transform: rotate(-12deg) translateY(0); } to { transform: rotate(-8deg) translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .ocm-tile-art { animation: none; transform: rotate(-12deg); } }
+.ocm-card-head { align-items: center; }
+.ocm-more { display: grid; place-items: center; width: 32px; height: 28px; margin-left: auto; border-radius: 8px; color: var(--ocm-muted); }
+.ocm-tabs { display: flex; gap: 16px; }
+.ocm-tabs button { padding-bottom: 4px; color: var(--ocm-muted); border-bottom: 2px solid transparent; }
+.ocm-tabs button { position: relative; }
+.ocm-tabs button.on { color: var(--oc-text-strong); }
+.ocm-tab-line { position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; border-radius: 1px; background: var(--ocm-accent); }
+.ocm-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 20px; }
+.ocm-shortcut { display: block; min-width: 0; height: 44px; line-height: 44px; padding: 0 12px; border-radius: 12px; font-size: 14px; font-weight: 600; text-align: left; color: var(--oc-text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ocm-off span { opacity: 0.4; }
+.ocm-trash button:disabled { opacity: 0.25; }
+
+/* Selected filter chip (Tags & status). */
+.ocm-chip-sel { background: color-mix(in srgb, var(--ocm-accent) 45%, transparent); border-color: var(--ocm-accent); }
+.ocm-recents { margin: -4px 0 12px; padding: 6px 4px; border-radius: 18px; background: rgba(var(--oc-ink), 0.04); }
+.ocm-recents-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--ocm-muted); }
+.ocm-recents-head button { color: var(--ocm-accent); font-weight: 600; }
+.ocm-recent { display: flex; align-items: center; }
+.ocm-recent button { display: grid; place-items: center; width: 40px; height: 44px; color: var(--ocm-muted); }
+.ocm-recent .ocm-recent-term { display: flex; flex: 1; min-width: 0; width: auto; gap: 12px; padding: 0 12px; font-size: 15px; color: var(--oc-text-strong); justify-content: flex-start; }
+.ocm-recent-term span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Long-press shouldn't select labels; only editable text is selectable. */
+.ocm-root, .ocm { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.ocm-root :is(input, textarea, [contenteditable="true"]), .ocm-root :is(input, textarea, [contenteditable="true"]) *,
+.ocm :is(input, textarea) { -webkit-user-select: text; user-select: text; }
+
+/* Note action sheet header and in-place rename. */
+.ocm-sheet-title { padding: 2px 14px 10px; font-size: 17px; font-weight: 700; color: var(--oc-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-rename-row { display: flex; gap: 8px; margin: 0 10px 10px; }
+.ocm-rename-row button { display: grid; place-items: center; width: 46px; border-radius: 14px; color: #fff; background: var(--color-sky-500); }
+.ocm-rename { flex: 1; min-width: 0; padding: 10px 14px; border-radius: 14px; font-size: 16px; font-weight: 600; color: var(--oc-text-strong); background: rgba(var(--oc-ink), 0.06); outline: 2px solid var(--color-sky-500); }
+/* Modal with `sheet`: a bottom sheet on phones (import questions). */
+[data-oc-modal]:has(> .oc-sheet) { place-items: end stretch; }
+.oc-sheet { width: 100% !important; max-height: 90vh; overflow-y: auto; border-radius: 22px 22px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; animation: ocs-up 0.22s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.oc-sheet .justify-end { flex-wrap: wrap; }

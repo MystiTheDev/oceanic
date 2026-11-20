@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.oceanic" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/oc_night</item>
+        <item name="android:statusBarColor">@color/oc_night</item>
+        <item name="android:windowSplashScreenBackground">@color/oc_night</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/oc_night</item>
+    </style>
+</resources>

@@ -32,7 +32,7 @@ const DAY = 86_400_000;
 const RECENT_KEY = "recentSearches";
 
 /** Splits "\u0001hit\u0002" markers (or plain substring hits) into highlighted spans. */
-function Highlight({ text, query }: { text: string; query?: string }) {
+export function Highlight({ text, query }: { text: string; query?: string }) {
   if (text.includes("\u0001")) {
     return (
       <>

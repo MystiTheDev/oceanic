@@ -265,6 +265,8 @@ export type OceanicEditor = typeof schema.BlockNoteEditor;
 /** Offline spelling: underline + suggestions, autocorrect, completion. */
 const spellAssist = createExtension({ key: "spellAssist", prosemirrorPlugins: [spellPlugin()] });
 export const editorExtensions = [inlineMathInput, spellAssist];
+/** Phones: the keyboard already spellchecks, so Oceanic's own checker stays off. */
+export const mobileEditorExtensions = [inlineMathInput];
 
 /* -------------------------------------------------------------- menus */
 /** Slash menu: BlockNote's defaults plus Equation and Inline equation. */

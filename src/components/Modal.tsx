@@ -8,13 +8,17 @@ export function Modal({
   onClose,
   className = "w-[400px]",
   label,
+  sheet,
 }: {
   children: ReactNode;
   onClose?: () => void;
   className?: string;
   /** Accessible name when the dialog has no visible heading. */
   label?: string;
+  /** Phones: a bottom sheet instead of a centered dialog. */
+  sheet?: boolean;
 }) {
+  if (sheet) className += " oc-sheet";
   const box = useRef<HTMLDivElement>(null);
   useEscape(onClose);
   useFocusTrap(box);

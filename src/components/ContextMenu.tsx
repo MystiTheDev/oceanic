@@ -85,6 +85,8 @@ export function ContextMenuHost({ fallback }: { fallback: (e: MouseEvent) => Men
     // root) have already run and called preventDefault if they handled it.
     const onContextMenu = (e: MouseEvent) => {
       if (e.defaultPrevented) return;
+      // Phones: long-press opens no desktop menu (note cards handle their own).
+      if (/Android|iPhone|iPad/i.test(navigator.userAgent)) return e.preventDefault();
       const items = fallbackRef.current(e);
       e.preventDefault();
       if (items.length) openContextMenu(e, items);

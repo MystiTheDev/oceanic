@@ -41,7 +41,9 @@ import { FontButton } from "./FontButton";
 import { fontStack } from "../lib/fonts";
 import { BlockHandleMenu } from "./BlockHandleMenu";
 import { getSeedBlocks, type PageMeta } from "../data/workspace";
-import { editorExtensions, getPageLinkItems, getSlashItems, schema } from "../editor/schema";
+import { editorExtensions, getPageLinkItems, getSlashItems, mobileEditorExtensions, schema } from "../editor/schema";
+import { isMobile } from "../mobile/MobileShell";
+import { MobileBlockSheet, MobileSelectionPopup, MobileToolbar } from "../mobile/MobileEditorKit";
 import { editorContextMenu } from "../editor/editorMenu";
 import { openContextMenu } from "./ContextMenu";
 
@@ -217,7 +219,7 @@ export function PageEditor({
     schema,
     initialContent: (doc ?? getSeedBlocks(page.id)) as never,
     dictionary,
-    extensions: editorExtensions,
+    extensions: isMobile ? mobileEditorExtensions : editorExtensions,
     uploadFile,
   });
 
@@ -357,10 +359,13 @@ export function PageEditor({
       });
     return strip(editor.document as Block[]);
   };
+  const lastDoc = useRef(JSON.stringify(editor.document));
   // Accept / reject settle after the editor's own change event: save again once they do.
-  const settled = useRef(false);
+  // Compares with the last list (not a "first run" flag) so StrictMode's double mount doesn't save.
+  const settled = useRef(changes);
   useEffect(() => {
-    if (!settled.current) return void (settled.current = true);
+    if (settled.current === changes) return;
+    settled.current = changes;
     onDocChange(page.id, savedDoc());
   }, [changes]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -598,6 +603,10 @@ export function PageEditor({
           editor={editor}
           theme="dark"
           onChange={() => {
+            // Only real edits save: opening a page (or BlockNote normalising it) must not bump updatedAt.
+            const json = JSON.stringify(editor.document);
+            if (json === lastDoc.current) return;
+            lastDoc.current = json;
             onDocChange(page.id, savedDoc());
             setEmpty(isEmptyDoc(editor.document as Block[]));
           }}
@@ -605,13 +614,24 @@ export function PageEditor({
           slashMenu={false}
           sideMenu={false}
         >
-          <SideMenuController
-            sideMenu={(props) => <SideMenu {...props} dragHandleMenu={BlockHandleMenu} />}
-          />
-          <SuggestionMenuController
-            triggerCharacter="/"
-            getItems={async (query) => getSlashItems(editor, query)}
-          />
+          {/* Phones: no drag handles; "/" opens a bottom sheet without the AI items. */}
+          {!isMobile && (
+            <SideMenuController
+              sideMenu={(props) => <SideMenu {...props} dragHandleMenu={BlockHandleMenu} />}
+            />
+          )}
+          {isMobile ? (
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) => getSlashItems(editor, query).filter((i) => i.group !== "Nerida")}
+              suggestionMenuComponent={MobileBlockSheet}
+            />
+          ) : (
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) => getSlashItems(editor, query)}
+            />
+          )}
           {/* Link to page: `[[` (wiki-style) and `@` (Notion's mention) */}
           <SuggestionMenuController
             triggerCharacter="[["
@@ -622,10 +642,12 @@ export function PageEditor({
             getItems={async (query) => getPageLinkItems(editor, query, page.id)}
           />
           <FormattingToolbarController
-            formattingToolbar={SelectionToolbar}
+            formattingToolbar={isMobile ? MobileSelectionPopup : SelectionToolbar}
             floatingUIOptions={toolbarFloat}
           />
+
         </BlockNoteView>
+        {isMobile && <MobileToolbar editor={editor as never} />}
         </div>
       </div>
       </div>

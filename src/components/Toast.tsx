@@ -21,7 +21,7 @@ export function Toast({ message, actionLabel, onAction, onDismiss, duration = 50
   }, [duration]);
 
   return createPortal(
-    <div className="oc-toast-in fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-white/[0.08] bg-neutral-800 py-2 pl-3.5 pr-2 text-[13px] text-neutral-200 shadow-xl shadow-black/50">
+    <div style={/Android|iPhone|iPad/i.test(navigator.userAgent) ? { bottom: 112 } : undefined} className="oc-toast-in fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-white/[0.08] bg-neutral-800 py-2 pl-3.5 pr-2 text-[13px] text-neutral-200 shadow-xl shadow-black/50">
       {message}
       {actionLabel && (
         <button

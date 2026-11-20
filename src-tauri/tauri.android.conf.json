@@ -1,0 +1,17 @@
+{
+  "identifier": "io.github.mystithedev.oceanic",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Oceanic",
+        "visible": true
+      }
+    ]
+  },
+  "bundle": {
+    "android": {
+      "minSdkVersion": 26
+    }
+  }
+}
