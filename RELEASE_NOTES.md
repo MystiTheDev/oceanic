@@ -1,3 +1,19 @@
+# 🌊 Oceanic v2.0.9: Desktop and Android in one release
+
+## 🖥️ Desktop
+
+- 🛡️ Fixed ordinary files (PDFs, pasted images) being wrongly blocked as malware when another antivirus, such as Norton, is active.
+- 📋 Pasting text copied from another app now pastes the text, not a picture of it.
+- 💬 Nerida's reply appears in its card while it's still writing, so nothing jumps when it finishes.
+
+## 📱 Android
+
+- 📅 New Calendar tab with month and week views, plus a week strip on Home.
+- 🏷️ Page properties as chips, with sheets and long-press actions.
+- 📤 Export to .ocean, a new Import button, and a share fix.
+- 🫧 Liquid-glass tab bar with a sliding highlight and a + menu to create notes.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.8: A smarter, faster Nerida
 
 - 🎨 Shared UI groundwork and polish across every area of the app.

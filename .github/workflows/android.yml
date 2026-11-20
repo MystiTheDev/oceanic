@@ -71,3 +71,12 @@ jobs:
             --title "Oceanic Android v${version}" \
             --notes "Android build (arm64). Download the APK on your phone and install it; updates install over the old version and keep your notes." \
             --latest=false
+          # Also attach the APK to the main vX.Y.Z release (desktop draft from release.yml),
+          # so one release holds both. The android-v* release above stays for the phone updater.
+          if [ "$GITHUB_REF_NAME" = "v${version}" ]; then
+            for i in $(seq 1 60); do
+              gh release upload "v${version}" "Oceanic_${version}_android_arm64.apk" --clobber && exit 0
+              sleep 30
+            done
+            echo "::warning::v${version} release not found; APK only in ${tag}"
+          fi
