@@ -6,7 +6,7 @@
  * Animations use Motion and follow Android's "Remove animations" setting.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, MotionConfig, animate, motion, useScroll, useTransform, type Transition } from "motion/react";
+import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, useScroll, useTransform, type Transition } from "motion/react";
 import {
   ArrowUpLeft, CalendarDays, Check, Clock, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
@@ -227,6 +227,14 @@ export function MobileShell(p: Props) {
   const { scrollY } = useScroll({ container: scroller });
   const heroY = useTransform(scrollY, [0, 200], [0, 80]);
   const heroFade = useTransform(scrollY, [0, 180], [1, 0.2]);
+  // Tab bar goes compact while scrolling down, back to full size on scroll up.
+  const [compact, setCompact] = useState(false);
+  useMotionValueEvent(scrollY, "change", (y) => {
+    const d = y - (scrollY.getPrevious() ?? 0);
+    if (Math.abs(d) > 4) setCompact(d > 0 && y > 40);
+  });
+  // Tapping + opens a small create menu.
+  const [plusMenu, setPlusMenu] = useState(false);
 
   // Android back gesture: an open page or sheet adds a history entry; going back closes it.
   const layer = sheet ?? (openPage ? `page:${openPage.id}` : null);
@@ -775,27 +783,42 @@ export function MobileShell(p: Props) {
         </AnimatePresence>
       </div>
 
-      <nav className="ocm-nav">
-        {/* Liquid-glass refraction: the backdrop is displaced by a smooth noise map. */}
-        <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
-          <filter id="ocm-refract" x="0" y="0" width="100%" height="100%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="n" />
-            <feGaussianBlur in="n" stdDeviation="2" result="m" />
-            <feDisplacementMap in="SourceGraphic" in2="m" scale="38" xChannelSelector="R" yChannelSelector="G" />
-          </filter>
-        </svg>
+      <div className="ocm-nav-fade" aria-hidden />
+      <AnimatePresence>
+        {plusMenu && <motion.div className="ocm-plus-scrim" onClick={() => setPlusMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
+      </AnimatePresence>
+      <nav className={`ocm-nav${compact ? " compact" : ""}`}>
         <div className="ocm-pill ocm-liquid">
           {TABS.map(([id, Icon, label]) => (
             <motion.button key={id} className={tab === id ? "on" : ""} aria-label={label} onClick={() => go(id)} whileTap={{ scale: 0.88 }} transition={spring}>
+              {/* The glass lens springs between tabs. */}
+              {tab === id && <motion.span layoutId="ocm-lens" className="ocm-lens" transition={spring} />}
               <Icon size={22} />
-              {/* The dot slides between tabs. */}
-              {tab === id && <motion.span layoutId="ocm-dot" className="ocm-dot" transition={spring} />}
             </motion.button>
           ))}
         </div>
-        <motion.button className="ocm-plus ocm-liquid" aria-label="New page" onClick={() => (buzz(), p.onCreate())} whileTap={{ scale: 0.82, rotate: 90 }} transition={spring}>
-          <Plus size={24} />
-        </motion.button>
+        <span className="ocm-plus-wrap">
+          <AnimatePresence>
+            {plusMenu && (
+              <motion.div className="ocm-plus-menu" initial={{ opacity: 0, scale: 0.85, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.85, y: 8 }} transition={spring}>
+                <button onClick={() => (setPlusMenu(false), buzz(), p.onCreate())}><i><FileText size={18} /></i><span>New page<small>Blank page</small></span></button>
+                <button onClick={() => (setPlusMenu(false), buzz(), p.onCreateTask())}><i><CheckSquare size={18} /></i><span>New task<small>Checklist with due date</small></span></button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <motion.button
+            className="ocm-plus ocm-liquid"
+            aria-label={plusMenu ? "Close menu" : "New"}
+            aria-expanded={plusMenu}
+            onClick={() => (buzz(), setPlusMenu((o) => !o))}
+            whileTap={{ scale: 0.88 }}
+            transition={spring}
+          >
+            <motion.span style={{ display: "grid" }} animate={{ rotate: plusMenu ? 45 : 0 }} transition={spring}>
+              <Plus size={24} />
+            </motion.span>
+          </motion.button>
+        </span>
       </nav>
     </motion.div>
   );
