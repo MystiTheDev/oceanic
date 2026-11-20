@@ -22,7 +22,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM, AGENT_SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
+  buildContext, trimHistory, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM, AGENT_SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
   type AgentLog, type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
@@ -400,6 +400,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   }, [chat?.messages.length, draft]);
 
   const b = builtin(model);
+  // Warm the built-in engine when the panel opens, so the first reply doesn't wait for startup.
+  const installed = !!b && !!status?.server && !!status.models.find((m) => m.id === b)?.installed;
+  useEffect(() => {
+    if (installed && b) engine.start(b).catch(() => {});
+  }, [installed, b]);
   const ready = b ? !!status?.server && !!status.models.find((m) => m.id === b)?.installed : !!status;
   // First use: the intro popup instead of a bare download card.
   const [auto, setAuto] = useState(false);
@@ -434,13 +439,13 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     };
     let garbled = false;
     const book = new SourceBook();
-    // Agent mode: Nerida edits through its tools, so the one-shot note-edit path is skipped.
-    const agentOn = nerida.get().agent && !pdf;
+    // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
+    // Fast path: even in Agent mode, edits to the open note use this one-call path (the agent loop takes several model calls).
+    const blocks = !pdf && pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
+    const agentOn = nerida.get().agent && !pdf && !blocks.length;
     let log: AgentLog[] = [];
     setActions([]);
     try {
-      // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
-      const blocks = !agentOn && pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
       if (!agentOn && !blocks.length && isEditRequest(text) && !pdf && (!pageId || home)) {
         reply = "Open the note in the editor and ask me there: I can only change the note that's open next to this chat.";
         throw null;
@@ -531,7 +536,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         const open = pageId && !home ? ` The note open next to this chat has id ${pageId}.` : "";
         reply = await runAgent({
           model,
-          messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`].filter(Boolean).join("\n\n") }],
+          messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...trimHistory(history).msgs, { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`].filter(Boolean).join("\n\n") }],
           onText: (t) => ((reply = t), setDraft(t)),
           onLog: (l) => ((log = [...log, l]), setActions(log)),
           onStep: mark,
@@ -543,7 +548,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         throw null; // reply is saved below
       }
       mark(b ? "Writing answer" : `Asking ${modelLabel(model)}`);
-      await engine.chat(model, [{ role: "system", content: SYSTEM }, ...history, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context, book, tools) }], (t) => {
+      await engine.chat(model, [{ role: "system", content: SYSTEM }, ...trimHistory(history).msgs, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context, book, tools) }], (t) => {
         reply += t;
         setDraft(reply);
       }, onThink);
@@ -763,6 +768,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             </div>
           </div>
         )}
+        {trimHistory(msgs, model).cut > 0 && <p className="text-center text-[11.5px] text-neutral-500">Earlier messages summarized to keep Nerida fast</p>}
         {msgs.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="oc-msg-in oc-msg-user mt-5 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div></div>

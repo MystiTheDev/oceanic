@@ -348,12 +348,24 @@ export async function relatedNotes(pageId: string): Promise<ContextNote[]> {
 
 /** Most notes sent with one message. */
 export const MAX_NOTES = 6;
+
+/** Recent turns that fit a char budget (built-in: 6k, ~1.5k tokens); older user turns become a short recap. */
+export function trimHistory(h: Msg[], ref: ModelRef = state.model): { msgs: { role: Msg["role"]; content: string }[]; cut: number } {
+  const max = builtin(ref) ? 6_000 : 24_000;
+  let used = 0, i = h.length;
+  while (i > 0 && used + h[i - 1].content.length <= max) used += h[--i].content.length;
+  const msgs = h.slice(i).map((m) => ({ role: m.role, content: m.content }));
+  if (!i) return { msgs, cut: 0 };
+  const recap = h.slice(0, i).filter((m) => m.role === "user").slice(-8).map((m) => "- " + m.content.slice(0, 80)).join("\n");
+  return { msgs: [{ role: "user", content: `(Earlier in this chat I asked:\n${recap})` }, { role: "assistant", content: "Noted." }, ...msgs], cut: i };
+}
+
 /** Characters of note text to send (~4 characters a token). The built-in engine has 8k tokens for the
- *  prompt, history and answer: ~3k tokens of notes, ~2k when the answer may run long (Deep or Thinking).
+ *  prompt, history and answer: ~2k tokens of notes (smaller prompt = faster first word), ~1.5k for Deep or Thinking.
  *  Ollama and other providers usually have room for more. */
 export function noteBudget(ref: ModelRef = state.model): number {
   if (!builtin(ref)) return 24_000;
-  return state.thinking || state.effort === "high" ? 8_000 : 12_000;
+  return state.thinking || state.effort === "high" ? 6_000 : 8_000;
 }
 
 /** Note text for the prompt, one numbered source per run of sections. When it's too long, keeps the sections
