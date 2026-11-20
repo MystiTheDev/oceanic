@@ -499,6 +499,8 @@ export function PageEditor({
           void insertPdfs(pdfs);
           return;
         }
+        // Text copied from many apps also carries a picture of itself: paste the text then.
+        if (e.clipboardData.getData("text/plain").trim()) return;
         const images = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
         if (!images.length) return;
         e.preventDefault();

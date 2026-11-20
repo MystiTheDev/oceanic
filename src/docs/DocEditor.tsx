@@ -162,6 +162,8 @@ export function DocEditor({ path, onOpenDoc, onSavedAs, onHome, onBack, onCloseD
       attributes: { class: "oc-doc-body", spellcheck: "false" },
       // Pictures copied from any app paste in as images.
       handlePaste: (view, event) => {
+        // Text copied from many apps also carries a picture of itself: paste the text then.
+        if (event.clipboardData?.getData("text/plain").trim()) return false;
         const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
         if (!files.length) return false;
         files.forEach((f) => {

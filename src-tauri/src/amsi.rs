@@ -88,18 +88,20 @@ fn defender(app: &AppHandle, name: &str, data: &[u8]) -> Verdict {
     if std::fs::write(&file, data).is_err() {
         return Verdict::Malware;
     }
-    let status = std::process::Command::new(exe)
+    let output = std::process::Command::new(exe)
         .args(["-Scan", "-ScanType", "3", "-DisableRemediation", "-File"])
         .arg(&file)
         .creation_flags(CREATE_NO_WINDOW)
-        .status();
+        .output();
     let gone = !file.exists();
     let _ = std::fs::remove_file(&file);
-    match status {
-        // MpCmdRun: 0 = no threats, 2 = threats found.
-        Ok(s) if s.code() == Some(2) => Verdict::Malware,
+    match output {
+        // MpCmdRun: 0 = no threats, 2 = threats found, but 2 is also its generic failure code
+        // (e.g. hr 0x80004005 when Defender isn't the active antivirus), so a detection must
+        // also list the threats.
+        Ok(o) if o.status.code() == Some(2) && String::from_utf8_lossy(&o.stdout).contains("LIST OF DETECTED THREATS") => Verdict::Malware,
         _ if gone => Verdict::Malware,
-        Ok(s) if s.code() == Some(0) => Verdict::Clean,
+        Ok(o) if o.status.code() == Some(0) => Verdict::Clean,
         _ => Verdict::Unavailable,
     }
 }

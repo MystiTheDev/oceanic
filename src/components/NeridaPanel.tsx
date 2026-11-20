@@ -827,7 +827,14 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             )}
             {actions.length > 0 && <AgentLogList actions={actions} />}
             <AgentCards />
-            {draft && <Markdown text={draft} stream />}
+            {draft && (
+              <div className="flex gap-2.5">
+                <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
+                <div className="min-w-0 flex-1 leading-relaxed">
+                  <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20"><Markdown text={draft} stream /></div>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {/* One error state, in the conversation, with the action that fixes it. */}
