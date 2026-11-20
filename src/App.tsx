@@ -97,7 +97,8 @@ import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
-import { onOpenedFile, shareFile } from "./mobile/share";
+import { MobilePropChips } from "./mobile/MobileProps";
+import { onOpenedFile, pickFile, shareFile } from "./mobile/share";
 import { buildOceanFile } from "./lib/oceanFile";
 import { MobileSettings } from "./mobile/MobileSettings";
 import { MobileUpdater } from "./mobile/MobileUpdater";
@@ -1394,7 +1395,7 @@ export default function App() {
     if (!tagLibrary.includes(ASSIGNMENT)) createTag(ASSIGNMENT, "blue");
     if (!tagLibrary.includes(EXAM)) createTag(EXAM, "red");
   }, [loaded]);
-  const propertiesFor = (p: PageMeta) => (
+  const propertiesFor = (p: PageMeta) => isMobile ? <MobilePropChips id={p.id} value={propsOf(p)} /> : (
     <PageProperties value={propsOf(p)} onChange={(v) => changeProperties(p.id, v)} library={tagLibrary} onCreateTag={createTag} />
   );
 
@@ -1516,8 +1517,8 @@ export default function App() {
           onWorkspace={selectWorkspace}
           onPin={togglePin}
           onDuplicate={duplicatePage}
-          onExport={(id) =>
-            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true)
+          onExport={(id, only) =>
+            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true, new Set(only))
               .then((b) => shareFile(`${livePages.find((x) => x.id === id)?.title || "Untitled"}.ocean`, b))
               .catch(report("Export"))
           }
@@ -1525,6 +1526,9 @@ export default function App() {
           onRename={(id, title) => (patchPage(id, { title }), api.renamePage(id, title).catch(report("Rename")))}
           onRestore={restorePage}
           onDeleteForever={deleteForever}
+          tagLibrary={tagLibrary}
+          onCreateTag={createTag}
+          onProps={changeProperties}
           openPage={mobilePageOpen && activeTabId !== HOME_TAB ? activePage : null}
           editor={
             activePage &&
@@ -1555,10 +1559,10 @@ export default function App() {
             setMobilePageOpen(true);
             void createPage(null);
           }}
-          onCreateTask={async () => {
+          onCreateTask={async (date?: string) => {
             setView("document");
             setMobilePageOpen(true);
-            const today = new Date().toLocaleDateString("en-CA");
+            const today = date ?? new Date().toLocaleDateString("en-CA");
             // One empty checklist item (Enter adds more), with the caret already in it.
             const blockId = crypto.randomUUID();
             const id = await createPage(null, today, [{ id: blockId, type: "checkListItem" }]);
@@ -2128,6 +2132,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           pageCount={livePages.length}
           trashCount={trashedPages.length}
+          onImport={() => void pickFile().then((f) => f && (setSettingsOpen(false), importNotes([f], true))).catch(report("Import"))}
         />
       )}
       {settingsOpen && !isMobile && (

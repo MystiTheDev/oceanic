@@ -21,6 +21,7 @@ type Props = {
   onChange: (patch: Partial<AppSettings>) => void;
   onClose: () => void;
   pageCount: number;
+  onImport: () => void;
   trashCount: number;
 };
 
@@ -75,7 +76,7 @@ const THEMES: [string, string][] = [["system", "Use phone setting"], ["light", "
 const SIZES: [string, string][] = [["small", "Small"], ["default", "Default"], ["large", "Large"]];
 const WEEK: [string, string][] = [["sunday", "Sunday"], ["monday", "Monday"]];
 
-export function MobileSettings({ settings, onChange, onClose, pageCount, trashCount }: Props) {
+export function MobileSettings({ settings, onChange, onClose, pageCount, trashCount, onImport }: Props) {
   const [stack, setStack] = useState<Screen[]>(["main"]);
   const [choice, setChoice] = useState<Choice | null>(null);
   const [version, setVersion] = useState("");
@@ -221,7 +222,10 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
           <Row title="In Trash" value={String(trashCount)} />
           <Row title="Stored" value="On this phone only" />
         </section>
-        <p className="ocs-note">Export: open a page, tap ⋯ → Export. Import: open a .ocean file from Files or a chat.</p>
+        <section className="ocs-group">
+          <Row title="Import .ocean" onClick={onImport} />
+        </section>
+        <p className="ocs-note">Export: long-press a page → Share as .ocean. You can also open a .ocean file from Files or a chat.</p>
         <p className="ocs-note">Uninstalling Oceanic deletes its notes. Export the ones you want to keep first.</p>
       </>
     );

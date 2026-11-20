@@ -268,7 +268,18 @@
 .ocm-row-date { flex-shrink: 0; font-size: 12px; color: var(--ocm-muted); padding-top: 3px; }
 
 /* ---------- Floating liquid-glass tab bar (icons only), + as its own glass circle */
+/* Content fades into the canvas under the bar. */
+.ocm-nav-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(80px + max(env(safe-area-inset-bottom, 0px), 16px));
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--oc-canvas) 80%, transparent) 60%, var(--oc-canvas));
+  pointer-events: none;
+}
 .ocm-nav {
+  --h: 52px;
   position: absolute;
   left: 0;
   right: 0;
@@ -276,105 +287,91 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   pointer-events: none;
+  transform-origin: 50% 100%;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.3, 1), gap 0.28s;
 }
+.ocm-nav.compact { transform: scale(0.84) translateY(6px); gap: 6px; }
 .ocm-liquid {
   pointer-events: auto;
   border-radius: 999px;
-  /* Light, medium frost; bright rim on top, soft one below. */
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
-  /* Plain blur first: kept wherever the SVG filter isn't supported. */
-  backdrop-filter: blur(10px) saturate(1.7);
-  -webkit-backdrop-filter: blur(10px) saturate(1.7);
-  backdrop-filter: url(#ocm-refract) blur(10px) saturate(1.7) brightness(1.08);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  /* Cool blue glass: faint sky tint, strong blur so content behind doesn't read through. */
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(190, 225, 255, 0.2), transparent 60%),
+    linear-gradient(180deg, rgba(124, 200, 255, 0.12), rgba(60, 130, 210, 0.06));
+  backdrop-filter: blur(24px) saturate(2) brightness(1.1);
+  -webkit-backdrop-filter: blur(24px) saturate(2) brightness(1.1);
+  /* Thin top shine only, no full border. */
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 18px rgba(255, 255, 255, 0.06),
-    0 10px 28px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
+    inset 0 1px 0 rgba(220, 240, 255, 0.55),
+    0 12px 30px rgba(0, 0, 0, calc(0.4 * var(--oc-shadow-k)));
 }
-.ocm-pill { display: flex; align-items: center; gap: 4px; padding: 5px 8px; }
+.ocm-pill { display: flex; align-items: center; gap: 2px; height: var(--h); padding: 0 4px; }
 .ocm-pill button {
   position: relative;
   display: grid;
   place-items: center;
-  width: 50px;
-  height: 48px;
+  width: 52px;
+  height: var(--h);
   border-radius: 999px;
   color: var(--oc-text-strong);
-  opacity: 0.7;
+  opacity: 0.6;
   transition: color 0.2s, opacity 0.2s;
 }
-.ocm-pill button.on { color: var(--ocm-accent); opacity: 1; }
+.ocm-pill button svg { position: relative; }
+.ocm-pill button.on { color: #7cc8ff; opacity: 1; }
 .ocm-pill button:disabled { opacity: 0.3; }
-.ocm-dot {
+/* The lens: a soft, inset glass bubble behind the active icon. */
+.ocm-lens {
   position: absolute;
-  bottom: 4px;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  margin-left: -2.5px;
-  border-radius: 9px;
-  background: var(--ocm-accent);
-  box-shadow: 0 0 6px var(--ocm-accent);
+  inset: 6px 4px;
+  border-radius: 999px;
+  background: radial-gradient(90% 80% at 50% 0%, rgba(200, 230, 255, 0.2), rgba(124, 200, 255, 0.06) 75%);
+  box-shadow: inset 0 1px 0 rgba(220, 240, 255, 0.45);
 }
+.ocm-plus-wrap { position: relative; display: grid; }
 .ocm-plus {
-  position: relative;
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
-  color: #fff;
-  /* Bright sky-blue glass: strong tint, bright rim, soft outer glow. */
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.04) 60%),
-    color-mix(in srgb, #4fb4ff 72%, transparent);
-  border-color: rgba(255, 255, 255, 0.5);
+  width: var(--h);
+  height: var(--h);
+  color: #7cc8ff;
+  transition: box-shadow 0.25s;
+}
+.ocm-plus:active {
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.8),
-    inset 0 -2px 6px rgba(0, 60, 140, 0.25),
-    0 0 18px rgba(79, 180, 255, 0.55),
-    0 10px 24px rgba(0, 0, 0, calc(0.3 * var(--oc-shadow-k)));
-  animation: ocm-plus-glow 4s ease-in-out infinite;
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 0 22px rgba(124, 200, 255, 0.55),
+    0 12px 30px rgba(0, 0, 0, calc(0.45 * var(--oc-shadow-k)));
 }
-.ocm-plus svg { filter: drop-shadow(0 1px 2px rgba(0, 40, 100, 0.35)); }
-/* Water ripple ring: once in a while at idle, and on every press/hover. */
-.ocm-plus::after {
-  content: "";
+.ocm-plus-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); }
+.ocm-plus-menu {
   position: absolute;
-  inset: -1px;
-  border-radius: 50%;
-  border: 2px solid rgba(150, 215, 255, 0.85);
-  opacity: 0;
-  pointer-events: none;
-  animation: ocm-plus-ripple 4s ease-out infinite;
+  right: 0;
+  bottom: calc(100% + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 230px;
+  padding: 6px;
+  border-radius: 20px;
+  /* Solid frosted: nothing behind reads through. */
+  background: color-mix(in srgb, var(--oc-canvas) 88%, #1a2a44);
+  backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 16px 40px rgba(0, 0, 0, 0.5);
+  transform-origin: calc(100% - 26px) 100%;
+  pointer-events: auto;
 }
-.ocm-plus:active,
-.ocm-plus:hover { animation: ocm-plus-glow-hot 0.9s ease-out; }
-.ocm-plus:active::after,
-.ocm-plus:hover::after { animation: ocm-plus-ripple-hot 0.7s ease-out; }
-@keyframes ocm-plus-glow {
-  0%, 70%, 100% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 18px rgba(79, 180, 255, 0.55), 0 10px 24px rgba(0, 0, 0, 0.25); }
-  85% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 30px rgba(79, 180, 255, 0.85), 0 10px 24px rgba(0, 0, 0, 0.25); }
-}
-@keyframes ocm-plus-glow-hot {
-  0% { box-shadow: inset 0 1.5px 0 #fff, inset 0 0 14px rgba(255, 255, 255, 0.5), 0 0 40px rgba(110, 200, 255, 1), 0 10px 24px rgba(0, 0, 0, 0.25); }
-  100% { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 -2px 6px rgba(0, 60, 140, 0.25), 0 0 18px rgba(79, 180, 255, 0.55), 0 10px 24px rgba(0, 0, 0, 0.25); }
-}
-@keyframes ocm-plus-ripple {
-  0%, 72% { transform: scale(1); opacity: 0; }
-  74% { opacity: 0.8; }
-  100% { transform: scale(1.7); opacity: 0; }
-}
-@keyframes ocm-plus-ripple-hot {
-  0% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(2); opacity: 0; }
-}
+.ocm-plus-menu button { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; text-align: left; }
+.ocm-plus-menu button:active { background: rgba(255, 255, 255, 0.07); }
+.ocm-plus-menu i { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 11px; color: #7cc8ff; background: rgba(124, 200, 255, 0.14); }
+.ocm-plus-menu span { display: flex; flex-direction: column; font-size: 15px; font-weight: 600; color: var(--oc-text-strong); }
+.ocm-plus-menu small { font-size: 12px; font-weight: 400; color: var(--ocm-muted); }
 @media (prefers-reduced-motion: reduce) {
-  .ocm-pill button { transition: none; }
-  .ocm-plus, .ocm-plus::after { animation: none !important; }
+  .ocm-pill button, .ocm-nav { transition: none; }
 }
 
 /* ---------- Pages search */
@@ -495,3 +492,58 @@
 [data-oc-modal]:has(> .oc-sheet) { place-items: end stretch; }
 .oc-sheet { width: 100% !important; max-height: 90vh; overflow-y: auto; border-radius: 22px 22px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; animation: ocs-up 0.22s cubic-bezier(0.2, 0.8, 0.3, 1); }
 .oc-sheet .justify-end { flex-wrap: wrap; }
+
+/* ---------- Calendar tab (and Home's "This week" strip) */
+.ocm-cal-head { display: flex; justify-content: space-between; align-items: flex-end; }
+.ocm-cal-head .ocm-tabs { margin-top: 6px; font-size: 14px; font-weight: 600; }
+.ocm-cal-week, .ocm-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.ocm-cal-week span { text-align: center; font-size: 12px; font-weight: 600; color: var(--ocm-muted); padding-bottom: 6px; }
+.ocm-cal-clip { overflow: hidden; touch-action: pan-y; }
+.ocm-cal-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 44px; border-radius: 14px; font-size: 15px; font-weight: 600; color: var(--oc-text-strong); }
+.ocm-cal-day.out { opacity: 0.35; }
+.ocm-cal-day.today { color: var(--ocm-accent); }
+.ocm-cal-day.sel { background: color-mix(in srgb, var(--ocm-accent) 30%, transparent); }
+.ocm-cal-day i { width: 5px; height: 5px; border-radius: 50%; }
+.ocm-cal-dot { background: var(--ocm-accent); }
+.ocm-cal-dot.late { background: #ef4444; }
+.ocm-cal-dot.done { background: var(--ocm-muted); opacity: 0.5; }
+.ocm-cal-day small { font-size: 11px; font-weight: 500; color: var(--ocm-muted); }
+.ocm-cal-label { padding: 16px 2px 4px; }
+.ocm-cal-new { margin-top: 10px; }
+.ocm-cal-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 0 20px; }
+.ocm-cal-strip .ocm-cal-day { height: 62px; }
+.ocm-done { text-decoration: line-through; opacity: 0.6; }
+.ocm-row-date.ocm-overdue { color: #ef4444; }
+
+/* ---------- Page properties (phase 5) */
+.ocm-props { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
+.ocm-props > button { display: inline-flex; align-items: center; }
+.ocm-prop {
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--oc-text-strong);
+  background: rgba(var(--oc-ink), 0.06);
+  border: 1px solid var(--ocm-line);
+  backdrop-filter: blur(12px);
+}
+.ocm-prop-add { color: var(--ocm-muted); border-style: dashed; background: transparent; }
+.ocm-prop-tags { flex-wrap: wrap; gap: 4px; }
+.ocm-row-props { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.ocm-status-dot { width: 10px; height: 10px; margin: 0 5px; border-radius: 999px; }
+.ocm-check { margin-left: auto; color: var(--ocm-accent); }
+.ocm-item:disabled { opacity: 0.4; }
+.ocm-hidden-input { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+.ocm-tag-search { display: flex; align-items: center; gap: 8px; height: 42px; margin: 4px 6px 10px; padding: 0 12px; border-radius: 12px; color: var(--ocm-muted); background: rgba(var(--oc-ink), 0.06); }
+.ocm-tag-search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; font-size: 15px; color: var(--oc-text-strong); }
+.ocm-tag-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 6px 8px; }
+.ocm-tag-pick { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 10px; border: 1px solid transparent; color: var(--ocm-accent); transition: background 0.15s; }
+.ocm-tag-pick.on { border-color: var(--ocm-line); background: rgba(var(--oc-ink), 0.07); }
+@media (prefers-reduced-motion: reduce) { .ocm-tag-pick { transition: none; } }
+
+/* Export sheet: scrollable subpage checklist, Share pinned under it. */
+.ocm-export-list { max-height: 45vh; overflow-y: auto; }
+.ocm-export-list .ocm-item span { flex: none; }
+.ocm-share-go { justify-content: center; margin-top: 6px; font-weight: 600; color: var(--ocm-accent); background: rgba(var(--oc-ink), 0.05); }

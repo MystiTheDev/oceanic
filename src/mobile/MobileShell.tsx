@@ -1,12 +1,12 @@
 /**
  * Phone layout (Android): replaces the desktop title bar, tabs and sidebar.
- * Home and Pages tabs in a centred glass pill (with the + button at its end),
+ * Home, Pages and Calendar tabs in a centred glass pill (with the + button at its end),
  * an open page full screen with back + page menu, and a profile sheet behind
  * the avatar. Android's back gesture closes sheets and pages.
  * Animations use Motion and follow Android's "Remove animations" setting.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, MotionConfig, animate, motion, useScroll, useTransform, type Transition } from "motion/react";
+import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, useScroll, useTransform, type Transition } from "motion/react";
 import {
   ArrowUpLeft, CalendarDays, Check, Clock, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
@@ -16,15 +16,20 @@ import { Highlight } from "../components/SearchModal";
 import type { PageMeta } from "../data/workspace";
 import { Avatar } from "../components/SettingsModal";
 import "./mobile.css";
+import { MobileCalendar, dotClass, dueByDay, iso } from "./MobileCalendar";
+import { startOfWeek } from "../lib/prefs";
+import { PropSheet, RowProps, fmtDue, setPropOpener, type PropKind } from "./MobileProps";
+import type { PageProperties as PageProps } from "../data/api";
+import { STATUSES } from "../lib/colors";
 import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 
 /** True inside the Android (or iOS) app. */
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 
-type TabId = "home" | "pages";
+type TabId = "home" | "pages" | "calendar";
 const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
-type Sheet = null | "home" | "profile" | "trash" | "workspaces" | "page" | "note";
+type Sheet = null | "export" | "home" | "profile" | "trash" | "workspaces" | "page" | "note" | PropKind;
 
 type Props = {
   userName: string;
@@ -40,7 +45,7 @@ type Props = {
   onOpen: (id: string) => void;
   onBack: () => void;
   onCreate: () => void;
-  onCreateTask: () => void;
+  onCreateTask: (date?: string) => void;
   visitedAt: Record<string, number>;
   onSettings: () => void;
   onTags: () => void;
@@ -48,14 +53,19 @@ type Props = {
   onWorkspace: (id: string) => void;
   onPin: (id: string) => void;
   onDuplicate: (id: string) => void;
-  onExport: (id: string) => void;
+  /** Shares the page plus the subpages in `only` as a .ocean file. */
+  onExport: (id: string, only: string[]) => void;
   onTrash: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onRestore: (id: string) => void;
   onDeleteForever: (id: string) => void;
+  tagLibrary: string[];
+  onCreateTag: (tag: string, color: string) => void;
+  onProps: (id: string, props: PageProps) => void;
 };
 
 const DAY = 86_400_000;
+const propsOf = (x: PageMeta): PageProps => ({ dueDate: x.dueDate ?? null, status: x.status ?? null, tags: x.tags ?? [] });
 const today = () => new Date(new Date().toDateString()).getTime();
 
 /** Playful spring used across the phone UI (slight overshoot). */
@@ -159,7 +169,9 @@ function Waves() {
 const TABS = [
   ["home", Home, "Home"],
   ["pages", FileText, "Pages"],
+  ["calendar", CalendarDays, "Calendar"],
 ] as const;
+const TAB_ORDER = TABS.map(([id]) => id as TabId);
 
 export function MobileShell(p: Props) {
   const prefs = useMobilePrefs();
@@ -190,6 +202,8 @@ export function MobileShell(p: Props) {
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState("");
   const note = pages.find((x) => x.id === noteId);
+  // Property chips under the title open the same sheets as the long-press rows.
+  useEffect(() => setPropOpener((id, kind) => (setNoteId(id), setSheet(kind))), []);
   const hold = (id: string) => ({
     onContextMenu: (e: React.MouseEvent) => (e.preventDefault(), buzz(), setNoteId(id), setRenaming(false), setSheet("note")),
   });
@@ -213,6 +227,14 @@ export function MobileShell(p: Props) {
   const { scrollY } = useScroll({ container: scroller });
   const heroY = useTransform(scrollY, [0, 200], [0, 80]);
   const heroFade = useTransform(scrollY, [0, 180], [1, 0.2]);
+  // Tab bar goes compact while scrolling down, back to full size on scroll up.
+  const [compact, setCompact] = useState(false);
+  useMotionValueEvent(scrollY, "change", (y) => {
+    const d = y - (scrollY.getPrevious() ?? 0);
+    if (Math.abs(d) > 4) setCompact(d > 0 && y > 40);
+  });
+  // Tapping + opens a small create menu.
+  const [plusMenu, setPlusMenu] = useState(false);
 
   // Android back gesture: an open page or sheet adds a history entry; going back closes it.
   const layer = sheet ?? (openPage ? `page:${openPage.id}` : null);
@@ -224,6 +246,29 @@ export function MobileShell(p: Props) {
     return () => window.removeEventListener("popstate", onPop);
   }, [layer]);
   const closeSheet = () => history.back();
+  // Export sheet: the page's subpages (depth-first, with depth), all ticked at first.
+  const [exportId, setExportId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const subtree = useMemo(() => {
+    const out: { page: PageMeta; depth: number }[] = [];
+    const walk = (id: string, depth: number) => pages.filter((x) => x.parentId === id).forEach((c) => (out.push({ page: c, depth }), walk(c.id, depth + 1)));
+    if (exportId) walk(exportId, 0);
+    return out;
+  }, [exportId, pages]);
+  const startExport = (id: string) => {
+    const kids = pages.filter((x) => x.parentId === id);
+    if (!kids.length) return run(() => p.onExport(id, []));
+    buzz();
+    setExportId(id);
+    const all = new Set<string>();
+    const walk = (pid: string) => pages.filter((x) => x.parentId === pid).forEach((c) => (all.add(c.id), walk(c.id)));
+    walk(id);
+    setPicked(all);
+    setSheet("export");
+  };
+  const toggle = (id: string) => setPicked((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // A subpage whose parent is unticked is left out with it.
+  const included = (x: PageMeta): boolean => x.parentId === exportId || (picked.has(x.parentId!) && included(pages.find((y) => y.id === x.parentId)!));
   const run = (fn: () => void) => {
     buzz();
     setSheet(null);
@@ -233,9 +278,12 @@ export function MobileShell(p: Props) {
   const go = (t: TabId) => {
     if (t === tab) return;
     buzz();
-    setDir(t === "pages" ? 1 : -1);
+    setDir(TAB_ORDER.indexOf(t) > TAB_ORDER.indexOf(tab) ? 1 : -1);
     setTab(t);
   };
+  const [calDay, setCalDay] = useState(() => iso(new Date()));
+  const dueMap = useMemo(() => dueByDay(pages), [pages]);
+  const weekStart = startOfWeek(new Date());
 
   const soon = pages
     .filter((x) => x.dueDate && x.status !== "done" && Date.parse(x.dueDate + "T00:00") - today() < 7 * DAY)
@@ -287,6 +335,24 @@ export function MobileShell(p: Props) {
           <Plus size={18} /> New task <CheckSquare className="ocm-tile-art" size={64} />
         </motion.button>
       </motion.div>
+    ),
+    week: (
+      <motion.section className="ocm-sec" {...rise(1)}>
+        <div className="ocm-card-head">This week {more}</div>
+        <div className="ocm-cal-strip">
+          {Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i);
+            const id = iso(d);
+            return (
+              <motion.button key={id} className={`ocm-cal-day ocm-glass${id === iso(new Date()) ? " today" : ""}`} onClick={() => (buzz(), setCalDay(id), go("calendar"))} {...press}>
+                <small>{d.toLocaleDateString([], { weekday: "narrow" })}</small>
+                {d.getDate()}
+                <i className={dotClass(dueMap[id], id)} />
+              </motion.button>
+            );
+          })}
+        </div>
+      </motion.section>
     ),
     recent: (
               <motion.section className="ocm-sec" {...rise(0)}>
@@ -510,14 +576,54 @@ export function MobileShell(p: Props) {
                 <button className="ocm-item" onClick={(e) => (e.stopPropagation(), buzz(), setTitle(note.title), setRenaming(true))}>
                   <PenLine size={20} /> Rename
                 </button>
+                <button className="ocm-item" onClick={() => (buzz(), setSheet("date"))}>
+                  <CalendarDays size={20} /> Due date <em>{note.dueDate ? fmtDue(note.dueDate) : ""}</em>
+                </button>
+                <button className="ocm-item" onClick={() => (buzz(), setSheet("status"))}>
+                  <CheckSquare size={20} /> Status <em>{note.status ? STATUSES[note.status].label : ""}</em>
+                </button>
+                <button className="ocm-item" onClick={() => (buzz(), setSheet("tags"))}>
+                  <Tag size={20} /> Tags <em>{note.tags?.join(", ")}</em>
+                </button>
                 <button className="ocm-item" onClick={() => run(() => share(note))}>
                   <Share2 size={20} /> Share as text
                 </button>
-                <button className="ocm-item" onClick={() => run(() => p.onExport(note.id))}>
+                <button className="ocm-item" onClick={() => startExport(note.id)}>
                   <Share2 size={20} /> Share as .ocean
                 </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(note.id))}>
                   <Trash2 size={20} /> Move to Trash
+                </button>
+              </>
+            )}
+            {(sheet === "date" || sheet === "status" || sheet === "tags" || sheet === "addprop") && note && (
+              <PropSheet
+                kind={sheet}
+                value={propsOf(note)}
+                onChange={(v) => p.onProps(note.id, v)}
+                library={p.tagLibrary}
+                onCreateTag={p.onCreateTag}
+                onKind={setSheet}
+                onDone={closeSheet}
+              />
+            )}
+            {sheet === "export" && exportId && (
+              <>
+                <h2 className="ocm-sheet-title">Share as .ocean</h2>
+                <button className="ocm-item" onClick={() => (buzz(), setPicked(picked.size === subtree.length ? new Set() : new Set(subtree.map((x) => x.page.id))))}>
+                  <Layers size={20} /> Select all
+                  {picked.size === subtree.length && <Check size={20} className="ocm-check" />}
+                </button>
+                <div className="ocm-export-list">
+                  {subtree.map(({ page, depth }) => (
+                    <button key={page.id} className="ocm-item" style={{ paddingLeft: 10 + depth * 20 }} disabled={!included(page)} onClick={() => (buzz(), toggle(page.id))}>
+                      <span>{page.icon || "📄"}</span> {page.title || "Untitled"}
+                      {picked.has(page.id) && included(page) && <Check size={20} className="ocm-check" />}
+                    </button>
+                  ))}
+                </div>
+                <button className="ocm-item ocm-share-go" onClick={() => run(() => p.onExport(exportId, [...picked]))}>
+                  <Share2 size={20} /> Share
                 </button>
               </>
             )}
@@ -529,7 +635,7 @@ export function MobileShell(p: Props) {
                 <button className="ocm-item" onClick={() => run(() => p.onDuplicate(openPage.id))}>
                   <Copy size={20} /> Duplicate
                 </button>
-                <button className="ocm-item" onClick={() => run(() => p.onExport(openPage.id))}>
+                <button className="ocm-item" onClick={() => startExport(openPage.id)}>
                   <Share2 size={20} /> Export
                 </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(openPage.id))}>
@@ -608,6 +714,10 @@ export function MobileShell(p: Props) {
                   ))}
               </AnimatePresence>
             </motion.div>
+          ) : tab === "calendar" ? (
+            <motion.div key="calendar" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
+              <MobileCalendar pages={pages} day={calDay} setDay={setCalDay} onOpen={p.onOpen} hold={hold} onCreateTask={p.onCreateTask} />
+            </motion.div>
           ) : (
             <motion.div key="pages" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
               <header className="ocm-title">
@@ -661,6 +771,7 @@ export function MobileShell(p: Props) {
                       ) : (
                         previews[x.id] && <span className="ocm-row-preview">{previews[x.id]}</span>
                       )}
+                      <RowProps value={propsOf(x)} />
                     </span>
                     <span className="ocm-row-date">{edited(x.updatedAt)}</span>
                   </motion.button>
@@ -672,31 +783,42 @@ export function MobileShell(p: Props) {
         </AnimatePresence>
       </div>
 
-      <nav className="ocm-nav">
-        {/* Liquid-glass refraction: the backdrop is displaced by a smooth noise map. */}
-        <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
-          <filter id="ocm-refract" x="0" y="0" width="100%" height="100%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="n" />
-            <feGaussianBlur in="n" stdDeviation="2" result="m" />
-            <feDisplacementMap in="SourceGraphic" in2="m" scale="38" xChannelSelector="R" yChannelSelector="G" />
-          </filter>
-        </svg>
+      <div className="ocm-nav-fade" aria-hidden />
+      <AnimatePresence>
+        {plusMenu && <motion.div className="ocm-plus-scrim" onClick={() => setPlusMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
+      </AnimatePresence>
+      <nav className={`ocm-nav${compact ? " compact" : ""}`}>
         <div className="ocm-pill ocm-liquid">
           {TABS.map(([id, Icon, label]) => (
             <motion.button key={id} className={tab === id ? "on" : ""} aria-label={label} onClick={() => go(id)} whileTap={{ scale: 0.88 }} transition={spring}>
+              {/* The glass lens springs between tabs. */}
+              {tab === id && <motion.span layoutId="ocm-lens" className="ocm-lens" transition={spring} />}
               <Icon size={22} />
-              {/* The dot slides between tabs. */}
-              {tab === id && <motion.span layoutId="ocm-dot" className="ocm-dot" transition={spring} />}
             </motion.button>
           ))}
-          {/* Calendar arrives in a later phase. */}
-          <button disabled aria-label="Calendar (coming soon)">
-            <CalendarDays size={22} />
-          </button>
         </div>
-        <motion.button className="ocm-plus ocm-liquid" aria-label="New page" onClick={() => (buzz(), p.onCreate())} whileTap={{ scale: 0.82, rotate: 90 }} transition={spring}>
-          <Plus size={24} />
-        </motion.button>
+        <span className="ocm-plus-wrap">
+          <AnimatePresence>
+            {plusMenu && (
+              <motion.div className="ocm-plus-menu" initial={{ opacity: 0, scale: 0.85, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.85, y: 8 }} transition={spring}>
+                <button onClick={() => (setPlusMenu(false), buzz(), p.onCreate())}><i><FileText size={18} /></i><span>New page<small>Blank page</small></span></button>
+                <button onClick={() => (setPlusMenu(false), buzz(), p.onCreateTask())}><i><CheckSquare size={18} /></i><span>New task<small>Checklist with due date</small></span></button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <motion.button
+            className="ocm-plus ocm-liquid"
+            aria-label={plusMenu ? "Close menu" : "New"}
+            aria-expanded={plusMenu}
+            onClick={() => (buzz(), setPlusMenu((o) => !o))}
+            whileTap={{ scale: 0.88 }}
+            transition={spring}
+          >
+            <motion.span style={{ display: "grid" }} animate={{ rotate: plusMenu ? 45 : 0 }} transition={spring}>
+              <Plus size={24} />
+            </motion.span>
+          </motion.button>
+        </span>
       </nav>
     </motion.div>
   );

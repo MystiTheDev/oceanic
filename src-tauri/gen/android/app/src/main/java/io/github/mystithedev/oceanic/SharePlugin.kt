@@ -6,7 +6,9 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.webkit.WebView
+import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -35,7 +37,7 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   override fun onNewIntent(intent: Intent) {
-    read(intent)?.let { trigger("file", it) }
+    read(intent)?.let { pending = it } // the page asks for it on resume
   }
 
   @Command
@@ -49,7 +51,7 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun share(invoke: Invoke) {
     val args = invoke.parseArgs(ShareArgs::class.java)
-    val dir = File(activity.cacheDir, "share").apply { mkdirs() }
+    val dir = File(activity.cacheDir, "share").apply { deleteRecursively(); mkdirs() } // drop earlier exports
     val safe = args.name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
     val file = File(dir, safe)
     file.writeBytes(Base64.decode(args.data, Base64.DEFAULT))
@@ -63,12 +65,33 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve()
   }
 
+  /** Settings → Import: the Files picker; resolves `{ file }` (null when cancelled). */
+  @Command
+  fun pick(invoke: Invoke) {
+    val open = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+      addCategory(Intent.CATEGORY_OPENABLE)
+      type = "*/*"
+    }
+    startActivityForResult(invoke, open, "picked")
+  }
+
+  @ActivityCallback
+  fun picked(invoke: Invoke, result: ActivityResult) {
+    val ret = JSObject()
+    ret.put("file", result.data?.data?.let { readUri(it) })
+    invoke.resolve(ret)
+  }
+
   private fun read(intent: Intent?): JSObject? {
     if (intent?.action != Intent.ACTION_VIEW) return null
     val uri: Uri = intent.data ?: return null
+    intent.action = null // a config change must not import it again
+    return readUri(uri)
+  }
+
+  private fun readUri(uri: Uri): JSObject? {
     return try {
       val bytes = activity.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-      intent.action = null // a config change must not import it again
       JSObject().apply {
         put("name", nameOf(uri))
         put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))

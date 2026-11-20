@@ -30,13 +30,41 @@ The phases are built in this order. Each phase gets its own commit on the `andro
 - A month grid with dots on the days that have due pages. Swipe to change the month.
 - Tapping a day lists that day's pages below the grid.
 
+Agreed spec:
+- Lives in the pill as the third tab (the disabled Calendar slot). Home gets a new "This week" section: 7 day bubbles with dots; tapping a day opens the Calendar tab on it. It can be hidden and reordered in Customize Home.
+- A "Month | Week" segmented control with the sliding underline. Month is the default, and the last choice is remembered. Week is one row of the same day cells.
+- Dots mean due dates only. An overdue day (past, with unfinished pages) gets a red dot; a day whose due pages are all done gets a dim dot.
+- The week start follows the existing "Start week on" setting (Sunday or Monday), shared with the desktop.
+- A Today button jumps to today.
+- Swipe left or right changes the month (or the week). The grid slides with the swipe direction; with reduced motion it only fades.
+- The selected day's pages are listed below the grid as rows, and long-press opens the note sheet. An empty day shows a fun "nothing due" message.
+- Every selected day has a "+ New task due <day>" button, which creates a task due that day and opens it.
+- No date picker for page properties here; that's phase 5.
+
 ## 5. Page properties (Date, Status, Tags)
 - A row of chips under the title. Tapping a chip opens a bottom sheet: a native date picker, a status list, or a tag picker that can also create tags.
+- **Agreed spec:**
+  - Chips row under the title shows only filled properties, plus a small "+ Property" chip when any is empty. "+ Property" opens a sheet listing the empty ones.
+  - Date sheet: Today, Tomorrow, Next week, "Pick a date…" (Android's native picker) and Clear. Date only, no due time.
+  - Status sheet: Not started (gray), In progress (blue), Done (green), same as desktop, plus Clear.
+  - Tag sheet: multi-select toggle chips in their tag colours, a search box, and "Create 'x'" for a new name. It stays open while toggling.
+  - Page list rows show a small status badge and up to 2 tag chips.
+  - Long-press note sheet gets Due date, Status and Tags rows with the current value. Each opens the same sheet the chips use.
+  - Data and tag library are the desktop's (`changeProperties`, `createTag`). No desktop context menu on the phone.
 
 ## 6. .ocean import and export
 - **Export:** write to the cache, then open the Android share sheet.
 - **Import:** a file picker, plus an intent filter so .ocean files open in Oceanic from other apps.
 - This replaces the "Coming soon" buttons in Settings.
+
+**Agreed spec (phase 6):**
+- **Export scope:** long-press a page → "Share as .ocean" opens a sheet listing its subpages (indented) with a checkbox each and a "Select all" toggle. All are ticked by default. Unticking a page also leaves out its own subpages. "Share" builds the file and opens the Android share sheet. No "export everything" button.
+- **Attachments:** images, files, PDFs (with annotations), banner, icon, date/status/tags and tag colors are always embedded.
+- **Import:** Settings → Data gets an "Import .ocean" button that opens the Android Files picker. Opening a .ocean from Files or another app still works (intent filter).
+- **Where:** imported pages go to the top level of the current workspace and the first one opens.
+- **Duplicates:** same as PC: if a page with the same title and content exists, ask Open / Copy / Replace (old one to Trash) / Skip.
+- **Messages:** success shows the "Imported N pages" notice; unreadable files show the import-failures dialog; export errors use the normal error report.
+- **Cache:** each new share first deletes the earlier exported files in `cache/share`.
 
 ## Open risks
 - The GitHub API allows 60 requests per hour without a token. That is fine at one check a day.
@@ -116,3 +144,10 @@ This affects the desktop app too, so it's planned with its own questions and ses
 ## Later phase: Quick actions row (from the Evernote Home study)
 - A row of square buttons on Home: Camera, Scan, Files, Audio, each adding to a new page.
 - Needs native Android plugins (camera/scan, file picker, mic recording), so it gets its own phase.
+
+## Later phase: Page polish (after all phases are done and the app is stable)
+Wait for the user's go-ahead. Plan with questions first.
+- Backlinks: "Linked from" at the bottom of a page.
+- Page outline: a jump-to-heading sheet.
+- Page icon and banner: an emoji icon and a cover image.
+- Trash: a screen to restore or empty deleted pages.

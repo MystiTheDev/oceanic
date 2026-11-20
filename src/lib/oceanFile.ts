@@ -65,7 +65,7 @@ const toBase64 = (bytes: Uint8Array) => {
   return btoa(s);
 };
 
-export async function buildOceanFile(rootId: string, pages: PageMeta[], loadBlocks: (id: string) => Promise<PartialBlock[]>, includeSubpages: boolean, includeMeta = true): Promise<Uint8Array> {
+export async function buildOceanFile(rootId: string, pages: PageMeta[], loadBlocks: (id: string) => Promise<PartialBlock[]>, includeSubpages: boolean, includeMeta = true, only?: Set<string>): Promise<Uint8Array> {
   const assets: Record<string, string> = {};
   let n = 0;
   const pack = async (p: PageMeta): Promise<OceanPage> => {
@@ -88,7 +88,7 @@ export async function buildOceanFile(rootId: string, pages: PageMeta[], loadBloc
     });
     await Promise.all(jobs);
     if (banner && all !== blocks) banner.src = ((all[all.length - 1] as { props: { url: string } }).props.url);
-    const kids = includeSubpages ? pages.filter((c) => c.parentId === p.id) : [];
+    const kids = includeSubpages ? pages.filter((c) => c.parentId === p.id && (!only || only.has(c.id))) : [];
     return {
       title: p.title,
       icon: p.icon,
