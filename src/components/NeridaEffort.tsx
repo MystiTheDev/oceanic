@@ -9,7 +9,7 @@ const NERIDA_GRADIENT = "linear-gradient(90deg, #38d6ff, #7c3aed)";
 
 /** `compact`: narrow side chat, thinking shows as a brain icon instead of text. */
 export function EffortButton({ disabled, compact }: { disabled?: boolean; compact?: boolean }) {
-  const { effort, model, thinking } = useNerida();
+  const { effort, model, thinking, agent, autoApply } = useNerida();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const brain = useRef<HTMLSpanElement>(null);
@@ -80,6 +80,15 @@ export function EffortButton({ disabled, compact }: { disabled?: boolean; compac
             </span>
           </button>
           {!builtin(model) && <p className="mt-2 text-[11px] text-neutral-500">Thinking needs Nerida AI.</p>}
+          {agent && (
+            <button type="button" role="switch" aria-checked={autoApply} onClick={() => nerida.setAutoApply(!autoApply)}
+              className={`mt-2 flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[12px] ${autoApply ? "border-teal-400/40 bg-teal-400/10 text-teal-200" : "border-white/[0.08] text-neutral-400 hover:bg-white/[0.06]"}`}>
+              <span>Agent auto-apply<span className="block text-[10.5px] text-neutral-500">Creates notes, folders, events and study sets without asking. Edits, moves and Trash still ask.</span></span>
+              <span className={`relative ml-auto h-4 w-7 shrink-0 rounded-full ${autoApply ? "bg-teal-400/80" : "bg-white/[0.12]"}`}>
+                <span className={`absolute top-0.5 left-0.5 size-3 rounded-full bg-white shadow transition-transform ${autoApply ? "translate-x-3" : ""}`} />
+              </span>
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -83,27 +83,15 @@ export function AgentCards() {
   );
 }
 
-/** Composer toggle: agent mode on/off, and (when on) auto-apply for creating things. */
+/** Composer toggle: agent mode on/off (icon only; auto-apply lives in the effort menu). */
 export function AgentToggle({ disabled }: { disabled?: boolean }) {
-  const { agent, autoApply } = useNerida();
+  const { agent } = useNerida();
   return (
-    <span className="flex items-center gap-0.5">
-      <button type="button" disabled={disabled} aria-pressed={agent} title={agent ? "Agent mode on: Nerida can create and edit notes (you approve changes)" : "Agent mode: let Nerida create and edit notes"}
-        onClick={() => nerida.setAgent(!agent)}
-        className={`flex h-7 cursor-pointer items-center gap-1 rounded-lg px-1.5 text-[12px] hover:bg-white/[0.06] disabled:cursor-default ${agent ? "text-teal-300" : "text-neutral-400 hover:text-neutral-200"}`}>
-        <Bot className="size-4" />{agent && "Agent"}
-      </button>
-      {agent && (
-        <button type="button" role="switch" aria-checked={autoApply} disabled={disabled} onClick={() => nerida.setAutoApply(!autoApply)}
-          data-tip={autoApply ? "Auto-apply new things: on" : "Auto-apply new things: off"}
-          data-tip-sub="When on, Nerida creates notes, folders, events, links, flashcards and mind maps without asking. Edits, moves, renames, tags and Trash always ask first."
-          className={`flex h-7 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-1.5 text-[11.5px] hover:bg-white/[0.06] disabled:cursor-default disabled:opacity-50 ${autoApply ? "text-teal-300" : "text-neutral-400 hover:text-neutral-200"}`}>
-          <span className={`relative h-3.5 w-6 rounded-full transition-colors ${autoApply ? "bg-teal-400/80" : "bg-white/[0.15]"}`}>
-            <span className={`absolute top-0.5 left-0.5 size-2.5 rounded-full bg-white shadow transition-transform ${autoApply ? "translate-x-2.5" : ""}`} />
-          </span>
-          Auto
-        </button>
-      )}
-    </span>
+    <button type="button" disabled={disabled} aria-pressed={agent}
+      data-tip={agent ? "Agent mode: on" : "Agent mode: off"} data-tip-sub="When on, Nerida can create and edit notes. You approve changes; auto-apply is in the effort menu."
+      onClick={() => nerida.setAgent(!agent)}
+      className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] disabled:cursor-default ${agent ? "bg-teal-400/10 text-teal-300" : "text-neutral-400 hover:text-neutral-200"}`}>
+      <Bot className="size-4" />
+    </button>
   );
 }
