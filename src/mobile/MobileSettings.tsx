@@ -4,12 +4,14 @@
  * gesture steps back one screen at a time.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronLeft, ChevronRight, Database, Info, Palette, PenLine, CalendarDays, Trash2, Vibrate } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Database, GripVertical, Info, Palette, PenLine, CalendarDays, Trash2, Vibrate } from "lucide-react";
+import { Reorder, useDragControls } from "motion/react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ACCENTS, Avatar, type AppSettings } from "../components/SettingsModal";
+import { AvatarCropper, AvatarViewer } from "../components/AvatarCropper";
 import { setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
-import { buzz, setMobilePref, useMobilePrefs } from "./mobilePrefs";
+import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 import { checkForUpdates } from "./MobileUpdater";
 import "./mobile-settings.css";
 
@@ -26,28 +28,26 @@ type Props = {
 };
 
 
-/** A picked photo, cut to a 128px square data URL (same format as the PC app). */
-function toAvatar(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = c.height = 128;
-      const side = Math.min(img.width, img.height);
-      c.getContext("2d")!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 128, 128);
-      URL.revokeObjectURL(img.src);
-      resolve(c.toDataURL("image/jpeg", 0.85));
-    };
-    img.onerror = reject;
-    img.src = URL.createObjectURL(file);
-  });
-}
-
 function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button role="switch" aria-checked={on} className={`ocs-switch ${on ? "on" : ""}`} onClick={() => (buzz(), onChange(!on))}>
       <span />
     </button>
+  );
+}
+
+/** One Home widget row: drag by the handle, switch to show or hide. */
+function HomeRow({ id, hidden }: { id: HomeSection; hidden: HomeSection[] }) {
+  const drag = useDragControls();
+  const on = !hidden.includes(id);
+  return (
+    <Reorder.Item value={id} dragListener={false} dragControls={drag} className="ocs-row ocs-reorder" whileDrag={{ scale: 1.02, boxShadow: "0 8px 24px rgba(0,0,0,0.35)" }} onDragEnd={() => buzz()}>
+      <span className="ocs-grip" onPointerDown={(e) => (buzz(), drag.start(e))} aria-label="Drag to reorder">
+        <GripVertical size={18} />
+      </span>
+      <span className="ocs-title">{HOME_SECTIONS[id]}</span>
+      <Switch on={on} onChange={(v) => setMobilePref({ homeHidden: v ? hidden.filter((h) => h !== id) : [...hidden, id] })} />
+    </Reorder.Item>
   );
 }
 
@@ -102,6 +102,7 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
   }, [depth]);
   useEffect(() => {
     const onPop = () => {
+      if (document.querySelector(".oc-avatar-view")) return; // that back step closes the photo viewer
       pushed.current--;
       const { choice, stack, onClose } = state.current;
       if (choice) setChoice(null);
@@ -119,6 +120,8 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
     data: "Data & backup", deleting: "Deleting", about: "About",
   };
 
+  const [crop, setCrop] = useState<File | null>(null);
+  const [viewing, setViewing] = useState(false);
   let body: ReactNode;
   if (screen === "main") {
     body = (
@@ -149,7 +152,9 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
     body = (
       <>
         <div className="ocs-photo">
-          <Avatar name={settings.userName} avatar={settings.avatar} size={96} />
+          <button aria-label="View photo" disabled={!settings.avatar.startsWith("data:")} onClick={() => (buzz(), setViewing(true))}>
+            <Avatar name={settings.userName} avatar={settings.avatar} size={96} />
+          </button>
           <label className="ocs-link">
             Choose photo
             <input
@@ -158,7 +163,8 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
               hidden
               onChange={async (e) => {
                 const f = e.target.files?.[0];
-                if (f) onChange({ avatar: await toAvatar(f) });
+                e.target.value = "";
+                if (f) setCrop(f);
               }}
             />
           </label>
@@ -199,6 +205,13 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
             <input type="color" value={settings.accent} onChange={(e) => onChange({ accent: e.target.value })} />
           </label>
         </section>
+        <h3 className="ocs-head">Home screen</h3>
+        <Reorder.Group as="section" axis="y" values={prefs.homeOrder} onReorder={(o) => setMobilePref({ homeOrder: o })} className="ocs-group">
+          {prefs.homeOrder.map((id) => (
+            <HomeRow key={id} id={id} hidden={prefs.homeHidden} />
+          ))}
+        </Reorder.Group>
+        <p className="ocs-note">Drag ≡ to reorder Home. Search and New page / New task stay on top.</p>
         <p className="ocs-note"><Vibrate size={13} /> Animations and vibration apply to this phone only.</p>
       </>
     );
@@ -298,6 +311,8 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
           </div>
         </div>
       )}
+      {crop && <AvatarCropper file={crop} phone onDone={(avatar) => (onChange({ avatar }), setCrop(null))} onCancel={() => setCrop(null)} />}
+      {viewing && <AvatarViewer src={settings.avatar} onClose={() => setViewing(false)} />}
     </div>
   );
 }

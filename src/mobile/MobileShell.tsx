@@ -8,20 +8,23 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, useScroll, useTransform, type Transition } from "motion/react";
 import {
-  ArrowUpLeft, CalendarDays, Check, Clock, CheckSquare, ChevronDown, ChevronLeft, ChevronUp, Eye, EyeOff, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
+  ArrowUpLeft, CalendarDays, Camera, SlidersHorizontal, ImagePlus, Paperclip, Check, Clock, CheckSquare, ChevronLeft, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
 } from "lucide-react";
 import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
 import { Highlight } from "../components/SearchModal";
 import type { PageMeta } from "../data/workspace";
 import { Avatar } from "../components/SettingsModal";
+import { AvatarViewer } from "../components/AvatarCropper";
 import "./mobile.css";
 import { MobileCalendar, dotClass, dueByDay, iso } from "./MobileCalendar";
 import { startOfWeek } from "../lib/prefs";
 import { PropSheet, RowProps, fmtDue, setPropOpener, type PropKind } from "./MobileProps";
 import type { PageProperties as PageProps } from "../data/api";
 import { STATUSES } from "../lib/colors";
-import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } from "./mobilePrefs";
+import { buzz, useMobilePrefs, type HomeSection } from "./mobilePrefs";
+import type { AttachKind } from "./attach";
+import { TagChip } from "../components/PageProperties";
 
 /** True inside the Android (or iOS) app. */
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -29,7 +32,7 @@ export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 type TabId = "home" | "pages" | "calendar";
 const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
-type Sheet = null | "export" | "home" | "profile" | "trash" | "workspaces" | "page" | "note" | PropKind;
+type Sheet = null | "export" | "filter" | "bulktag" | "bulkstatus" | "profile" | "trash" | "workspaces" | "page" | "note" | PropKind;
 
 type Props = {
   userName: string;
@@ -46,6 +49,8 @@ type Props = {
   onBack: () => void;
   onCreate: () => void;
   onCreateTask: (date?: string) => void;
+  /** New note holding a photo, images or files picked right now. */
+  onCreateWith: (kind: AttachKind) => void;
   visitedAt: Record<string, number>;
   onSettings: () => void;
   onTags: () => void;
@@ -166,6 +171,42 @@ function Waves() {
   );
 }
 
+/** Share of the sailing day (5:00 to 20:00) gone by, or null at night. */
+function boatAt() {
+  const d = new Date();
+  const h = d.getHours() + d.getMinutes() / 60;
+  return h >= 5 && h < 20 ? (h - 5) / 15 : null;
+}
+
+/** Small sailboat that crosses the banner from left (5:00) to right (20:00); hidden at night. */
+function Boat() {
+  const [at, setAt] = useState(boatAt);
+  useEffect(() => {
+    const check = () => setAt(boatAt());
+    const id = window.setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => (window.clearInterval(id), document.removeEventListener("visibilitychange", check));
+  }, []);
+  if (at === null) return null;
+  return (
+    <svg className="ocm-boat" viewBox="0 0 34 30" style={{ left: `calc(24px + ${at} * (100% - 48px))` }} aria-hidden>
+      <line className="mast" x1="17" y1="3" x2="17" y2="22" />
+      <path className="sail" d="M18 4 L29 20 H18 Z" />
+      <path className="sail2" d="M16 7 L16 20 H7 Z" />
+      <path className="hull" d="M3 22 H31 L26 28 H8 Z" />
+    </svg>
+  );
+}
+
+const SORTS = { edited: "Last edited", created: "Date created", title: "Title A–Z", due: "Due date" };
+const FILTERS: [string, string][] = [
+  ["not_started", "Not started"],
+  ["in_progress", "In progress"],
+  ["done", "Done"],
+  ["overdue", "Overdue"],
+  ["hasdate", "Has a due date"],
+];
+
 const TABS = [
   ["home", Home, "Home"],
   ["pages", FileText, "Pages"],
@@ -197,6 +238,13 @@ export function MobileShell(p: Props) {
     return () => window.clearTimeout(id);
   }, [query]);
   const [focused, setFocused] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  // Pages tab: sort, filters and multi-select.
+  const [sortKey, setSortKey] = useState<"edited" | "created" | "title" | "due">("edited");
+  const [shows, setShows] = useState<Set<string>>(new Set());
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  useEffect(() => (tab !== "pages" ? (setSelecting(false), setSelected(new Set())) : undefined), [tab]);
   // Long-press a note card or row: its action sheet.
   const [noteId, setNoteId] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -235,13 +283,17 @@ export function MobileShell(p: Props) {
   });
   // Tapping + opens a small create menu.
   const [plusMenu, setPlusMenu] = useState(false);
+  // Open page: the top bar turns frosted and shows the title once the title scrolls away.
+  const [pageScrolled, setPageScrolled] = useState(false);
+  useEffect(() => setPageScrolled(false), [openPage?.id]);
 
   // Android back gesture: an open page or sheet adds a history entry; going back closes it.
   const layer = sheet ?? (openPage ? `page:${openPage.id}` : null);
   useEffect(() => {
     if (!layer) return;
     history.pushState({ oc: layer }, "");
-    const onPop = () => (sheet ? setSheet(null) : p.onBack());
+    // The photo viewer handles its own back step.
+    const onPop = () => !document.querySelector(".oc-avatar-view") && (sheet ? setSheet(null) : p.onBack());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [layer]);
@@ -314,37 +366,135 @@ export function MobileShell(p: Props) {
   const q = query.trim().toLowerCase();
   // While searching, list full-text hits in rank order; snippets by page id.
   const hit = Object.fromEntries(hits.map((h) => [h.pageId, h.snippet]));
-  const listed = (q ? hits.flatMap((h) => pages.filter((x) => x.id === h.pageId)) : sorted).filter(
-    (x) =>
-      (!filter || ("tag" in filter ? x.tags?.includes(filter.tag) : x.parentId === filter.folder)),
+  const matches = (x: PageMeta) =>
+    !shows.size ||
+    [...shows].some((f) =>
+      f === "overdue" ? !!x.dueDate && x.status !== "done" && Date.parse(x.dueDate + "T00:00") < today() : f === "hasdate" ? !!x.dueDate : x.status === f,
+    );
+  const sortBy = (list: PageMeta[]) =>
+    sortKey === "edited" || q
+      ? list
+      : [...list].sort((a, b) =>
+          sortKey === "created"
+            ? (b.createdAt ?? "").localeCompare(a.createdAt ?? "")
+            : sortKey === "title"
+              ? (a.title || "Untitled").localeCompare(b.title || "Untitled")
+              : (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
+        );
+  const listed = sortBy(
+    (q ? hits.flatMap((h) => pages.filter((x) => x.id === h.pageId)) : sorted).filter(
+      (x) => (!filter || ("tag" in filter ? x.tags?.includes(filter.tag) : x.parentId === filter.folder)) && matches(x),
+    ),
   );
+  const picked2 = pages.filter((x) => selected.has(x.id));
+  const bulk = (fn: (x: PageMeta) => void) => (buzz(), picked2.forEach(fn), setSelecting(false), setSelected(new Set()), setSheet(null));
 
-  const more = (
-    <button className="ocm-more" aria-label="Customize Home" onClick={() => (buzz(), setSheet("home"))}>
-      <MoreHorizontal size={18} />
-    </button>
-  );
   const pinned = sorted.filter((x) => x.pinned);
+  // Today widget: overdue, today and the next 3 days, not done.
+  const todo = pages
+    .filter((x) => x.dueDate && x.status !== "done" && Date.parse(x.dueDate + "T00:00") - today() < 4 * DAY)
+    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
   const home: Record<HomeSection, ReactNode> = {
-    create: (
-      <motion.div className="ocm-tiles" {...rise(1)}>
-        <motion.button className="ocm-tile ocm-tile-page" onClick={() => (buzz(), p.onCreate())} {...press}>
-          <Plus size={18} /> New page <FileText className="ocm-tile-art" size={64} />
-        </motion.button>
-        <motion.button className="ocm-tile ocm-tile-task" onClick={() => (buzz(), p.onCreateTask())} {...press}>
-          <Plus size={18} /> New task <CheckSquare className="ocm-tile-art" size={64} />
-        </motion.button>
-      </motion.div>
+    recent: (
+      <motion.section className="ocm-sec" {...rise(0)}>
+        <div className="ocm-card-head">
+          <span className="ocm-tabs">
+            {(["recent", "suggested"] as const).map((t) => (
+              <button key={t} className={recentTab === t ? "on" : ""} onClick={() => (buzz(), setRecentTab(t))}>
+                {t === "recent" ? "Recent" : "Suggested"}
+                {recentTab === t && <motion.span layoutId="ocm-tab-line" className="ocm-tab-line" transition={spring} />}
+              </button>
+            ))}
+          </span>
+          <button className="ocm-head-link" onClick={() => (buzz(), openFilter(null))}>See all</button>
+        </div>
+        {shown.length ? (
+          <motion.div key={recentTab} className="ocm-cards">
+            {shown.map((x, i) => (
+              <motion.button key={x.id} className="ocm-note" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...slideIn(i, recentTab === "recent" ? -1 : 1)} {...press}>
+                {x.pinned && (
+                  <span className="ocm-pin" aria-label="Pinned">
+                    <Pin size={11} />
+                  </span>
+                )}
+                <span className="ocm-note-icon">{x.icon || "📄"}</span>
+                <span className="ocm-note-title">{x.title || "Untitled"}</span>
+                <span className="ocm-note-preview">{previews[x.id] ?? ""}</span>
+                <span className="ocm-note-date">{edited(x.updatedAt)}</span>
+              </motion.button>
+            ))}
+          </motion.div>
+        ) : (
+          <p className="ocm-empty">{recentTab === "recent" ? "No pages yet. Tap + to write one." : "Nothing to suggest yet."}</p>
+        )}
+      </motion.section>
+    ),
+    today: (
+      <motion.section className="ocm-sec ocm-duo" {...rise(1)}>
+        <div className="ocm-widget">
+          <div className="ocm-widget-head">
+            <CheckSquare size={15} /> Today {todo.length > 0 && <em>{todo.length}</em>}
+          </div>
+          {todo.length ? (
+            <>
+              {todo.slice(0, 4).map((x) => (
+                <div key={x.id} className="ocm-task">
+                  <button className="ocm-tick" aria-label={`Mark “${x.title || "Untitled"}” done`} onClick={() => (buzz(), p.onProps(x.id, { ...propsOf(x), status: "done" }))} />
+                  <button className="ocm-task-title" onClick={() => p.onOpen(x.id)} {...hold(x.id)}>
+                    <span className="ocm-task-name">{x.title || "Untitled"}</span>
+                    <small className={due(x.dueDate!) === "Overdue" ? "ocm-overdue" : ""}>{due(x.dueDate!)}</small>
+                  </button>
+                </div>
+              ))}
+              {todo.length > 4 && (
+                <button className="ocm-widget-more" onClick={() => go("calendar")}>
+                  +{todo.length - 4} more
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="ocm-widget-empty">
+              <span>All clear</span>
+              <button onClick={() => (buzz(), p.onCreateTask())}>
+                <Plus size={14} /> Add task
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="ocm-widget">
+          <div className="ocm-widget-head">
+            <Pin size={15} /> Pinned
+          </div>
+          {pinned.length ? (
+            <>
+              {pinned.slice(0, 4).map((x) => (
+                <button key={x.id} className="ocm-pinned" onClick={() => p.onOpen(x.id)} {...hold(x.id)}>
+                  <span>{x.icon || "📄"}</span> {x.title || "Untitled"}
+                </button>
+              ))}
+              {pinned.length > 4 && (
+                <button className="ocm-widget-more" onClick={() => openFilter(null)}>
+                  +{pinned.length - 4} more
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="ocm-widget-empty">
+              <span>Long-press a page to pin it.</span>
+            </div>
+          )}
+        </div>
+      </motion.section>
     ),
     week: (
-      <motion.section className="ocm-sec" {...rise(1)}>
-        <div className="ocm-card-head">This week {more}</div>
+      <motion.section className="ocm-sec" {...rise(2)}>
+        <div className="ocm-card-head">This week</div>
         <div className="ocm-cal-strip">
           {Array.from({ length: 7 }, (_, i) => {
             const d = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i);
             const id = iso(d);
             return (
-              <motion.button key={id} className={`ocm-cal-day ocm-glass${id === iso(new Date()) ? " today" : ""}`} onClick={() => (buzz(), setCalDay(id), go("calendar"))} {...press}>
+              <motion.button key={id} className={`ocm-cal-day${id === iso(new Date()) ? " today" : ""}`} onClick={() => (buzz(), setCalDay(id), go("calendar"))} {...press}>
                 <small>{d.toLocaleDateString([], { weekday: "narrow" })}</small>
                 {d.getDate()}
                 <i className={dotClass(dueMap[id], id)} />
@@ -354,109 +504,30 @@ export function MobileShell(p: Props) {
         </div>
       </motion.section>
     ),
-    recent: (
-              <motion.section className="ocm-sec" {...rise(0)}>
-                <div className="ocm-card-head">
-                  <span className="ocm-tabs">
-                    {(["recent", "suggested"] as const).map((t) => (
-                      <button key={t} className={recentTab === t ? "on" : ""} onClick={() => (buzz(), setRecentTab(t))}>
-                        {t === "recent" ? "Recent" : "Suggested"}
-                        {recentTab === t && <motion.span layoutId="ocm-tab-line" className="ocm-tab-line" transition={spring} />}
-                      </button>
-                    ))}
-                  </span>
-                  {more}
-                </div>
-                {shown.length ? (
-                  <motion.div key={recentTab} className="ocm-cards" >
-                    {shown.map((x, i) => (
-                      <motion.button key={x.id} className="ocm-note ocm-glass" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...slideIn(i, recentTab === "recent" ? -1 : 1)} {...press}>
-                        {x.pinned && (
-                          <span className="ocm-pin" aria-label="Pinned">
-                            <Pin size={13} />
-                          </span>
-                        )}
-                        <span className="ocm-note-icon">{x.icon || "📄"}</span>
-                        <span className="ocm-note-title">{x.title || "Untitled"}</span>
-                        <span className="ocm-note-preview">{previews[x.id] ?? ""}</span>
-                        <span className="ocm-note-date">{edited(x.updatedAt)}</span>
-                      </motion.button>
-                    ))}
-                    {recentTab === "recent" && (
-                      <motion.button className="ocm-note ocm-glass ocm-seeall" onClick={() => openFilter(null)} {...slideIn(shown.length, -1)} {...press}>
-                        See all
-                        <span>{sorted.length} pages</span>
-                      </motion.button>
-                    )}
-                  </motion.div>
-                ) : (
-                  <p className="ocm-empty">No pages yet. Tap + to write one.</p>
-                )}
-              </motion.section>
-
-
-    ),
-    shortcuts: pinned.length > 0 && (
-      <motion.section className="ocm-sec" {...rise(2)}>
-        <div className="ocm-card-head">Shortcuts {more}</div>
-        <div className="ocm-shortcuts">
-          {pinned.map((x, i) => (
-            <motion.button key={x.id} className="ocm-shortcut ocm-glass" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...rise(i + 3)} {...press}>
-              {x.icon || "📄"} {x.title || "Untitled"}
-            </motion.button>
-          ))}
-        </div>
+    tags: (tags.length > 0 || folders.length > 0) && (
+      <motion.section className="ocm-sec" {...rise(3)}>
+        <div className="ocm-card-head">Tags &amp; collections</div>
+        {tags.length > 0 && (
+          <div className="ocm-chips">
+            {tags.map(([t, n]) => (
+              <motion.button key={t} className="ocm-chip" onClick={() => (buzz(), openFilter({ tag: t }))} {...press}>
+                <TagChip tag={t} small /> <em>{n}</em>
+              </motion.button>
+            ))}
+          </div>
+        )}
+        {folders.length > 0 && (
+          <div className="ocm-folders">
+            {folders.map(({ page: x, count }) => (
+              <motion.button key={x.id} className="ocm-folder" onClick={() => (buzz(), openFilter({ folder: x.id, title: x.title || "Untitled" }))} {...press}>
+                <span className="ocm-folder-icon">{x.icon || "📁"}</span>
+                <span className="ocm-folder-title">{x.title || "Untitled"}</span>
+                <span className="ocm-folder-n">{count} {count === 1 ? "page" : "pages"}</span>
+              </motion.button>
+            ))}
+          </div>
+        )}
       </motion.section>
-    ),
-    tags: (
-              (tags.length > 0 || folders.length > 0) && (
-                <motion.section className="ocm-sec" {...rise(1)}>
-                  <div className="ocm-card-head">Tags &amp; collections {more}</div>
-                  {tags.length > 0 && (
-                    <div className="ocm-chips">
-                      {tags.map(([t, n], i) => (
-                        <motion.button key={t} className="ocm-chip" onClick={() => (buzz(), openFilter({ tag: t }))} {...rise(i + 2)} {...press}>
-                          <Tag size={13} /> {t} <em>{n}</em>
-                        </motion.button>
-                      ))}
-                    </div>
-                  )}
-                  {folders.length > 0 && (
-                    <div className="ocm-folders">
-                      {folders.map(({ page: x, count }, i) => (
-                        <motion.button
-                          key={x.id}
-                          className="ocm-folder ocm-glass"
-                          onClick={() => (buzz(), openFilter({ folder: x.id, title: x.title || "Untitled" }))}
-                          {...rise(i + 3)}
-                          {...press}
-                        >
-                          <span className="ocm-folder-icon">{x.icon || "📁"}</span>
-                          <span className="ocm-folder-title">{x.title || "Untitled"}</span>
-                          <span className="ocm-folder-n">{count} {count === 1 ? "page" : "pages"}</span>
-                        </motion.button>
-                      ))}
-                    </div>
-                  )}
-                </motion.section>
-              )
-    ),
-    due: (
-              <motion.section className="ocm-card ocm-glass" {...rise(2)}>
-                <div className="ocm-card-head">Due soon {more}</div>
-                {soon.length ? (
-                  soon.map((x, i) => (
-                    <motion.button key={x.id} className="ocm-due" onClick={() => p.onOpen(x.id)} {...hold(x.id)} {...rise(i + 3)} {...press}>
-                      <span>
-                        {x.icon} {x.title || "Untitled"}
-                      </span>
-                      <span className={due(x.dueDate!) === "Overdue" ? "ocm-overdue" : ""}>{due(x.dueDate!)}</span>
-                    </motion.button>
-                  ))
-                ) : (
-                  <p className="ocm-empty">Nothing due this week.</p>
-                )}
-              </motion.section>
     ),
   };
 
@@ -476,7 +547,9 @@ export function MobileShell(p: Props) {
             {sheet === "profile" && (
               <>
                 <div className="ocm-profile">
-                  <Avatar name={p.userName} avatar={p.avatar} size={52} />
+                  <button aria-label="View photo" disabled={!p.avatar.startsWith("data:")} onClick={() => (buzz(), setViewing(true))}>
+                    <Avatar name={p.userName} avatar={p.avatar} size={52} />
+                  </button>
                   <div>
                     <strong>{p.userName || "You"}</strong>
                     <span>{p.workspaces.find((w) => w.id === p.workspaceId)?.name ?? "Workspace"}</span>
@@ -499,28 +572,52 @@ export function MobileShell(p: Props) {
                 </button>
               </>
             )}
-            {sheet === "home" && (
+            {sheet === "filter" && (
               <>
-                <h2>Customize Home</h2>
-                {prefs.homeOrder.map((id, i) => {
-                  const off = prefs.homeHidden.includes(id);
-                  const move = (d: number) => {
-                    const o = [...prefs.homeOrder];
-                    [o[i], o[i + d]] = [o[i + d], o[i]];
-                    buzz();
-                    setMobilePref({ homeOrder: o });
-                  };
-                  return (
-                    <motion.div key={id} layout transition={spring} className={`ocm-trash ${off ? "ocm-off" : ""}`}>
-                      <span>{HOME_SECTIONS[id]}</span>
-                      <button aria-label="Move up" disabled={!i} onClick={() => move(-1)}><ChevronUp size={18} /></button>
-                      <button aria-label="Move down" disabled={i === prefs.homeOrder.length - 1} onClick={() => move(1)}><ChevronDown size={18} /></button>
-                      <button aria-label={off ? "Show" : "Hide"} onClick={() => (buzz(), setMobilePref({ homeHidden: off ? prefs.homeHidden.filter((h) => h !== id) : [...prefs.homeHidden, id] }))}>
-                        {off ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </motion.div>
-                  );
-                })}
+                <h2>Sort by</h2>
+                {(Object.keys(SORTS) as (keyof typeof SORTS)[]).map((k) => (
+                  <button key={k} className={`ocm-item ${sortKey === k ? "on" : ""}`} onClick={() => (buzz(), setSortKey(k))}>
+                    {SORTS[k]}
+                    {sortKey === k && <Check size={18} className="ocm-check" />}
+                  </button>
+                ))}
+                <h2 className="ocm-sheet-sub">Show only</h2>
+                {FILTERS.map(([k, label]) => (
+                  <button key={k} className={`ocm-item ${shows.has(k) ? "on" : ""}`} onClick={() => (buzz(), setShows((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; }))}>
+                    {k in STATUSES ? <span className="ocm-status-dot" style={{ background: STATUSES[k as keyof typeof STATUSES].color.text }} /> : k === "overdue" ? <Clock size={20} /> : <CalendarDays size={20} />} {label}
+                    {shows.has(k) && <Check size={18} className="ocm-check" />}
+                  </button>
+                ))}
+                <button className="ocm-item ocm-share-go" disabled={!shows.size && sortKey === "edited"} onClick={() => (buzz(), setShows(new Set()), setSortKey("edited"))}>
+                  Reset
+                </button>
+              </>
+            )}
+            {sheet === "bulktag" && (
+              <>
+                <h2>Add a tag to {selected.size} {selected.size === 1 ? "page" : "pages"}</h2>
+                {p.tagLibrary.length ? (
+                  p.tagLibrary.map((t) => (
+                    <button key={t} className="ocm-item" onClick={() => bulk((x) => !x.tags?.includes(t) && p.onProps(x.id, { ...propsOf(x), tags: [...(x.tags ?? []), t] }))}>
+                      <TagChip tag={t} />
+                    </button>
+                  ))
+                ) : (
+                  <p className="ocm-empty">No tags yet. Add one from a page's properties first.</p>
+                )}
+              </>
+            )}
+            {sheet === "bulkstatus" && (
+              <>
+                <h2>Set status for {selected.size} {selected.size === 1 ? "page" : "pages"}</h2>
+                {(Object.keys(STATUSES) as (keyof typeof STATUSES)[]).map((k) => (
+                  <button key={k} className="ocm-item" onClick={() => bulk((x) => p.onProps(x.id, { ...propsOf(x), status: k }))}>
+                    <span className="ocm-status-dot" style={{ background: STATUSES[k].color.text }} /> {STATUSES[k].label}
+                  </button>
+                ))}
+                <button className="ocm-item ocm-danger" onClick={() => bulk((x) => p.onProps(x.id, { ...propsOf(x), status: null }))}>
+                  <X size={20} /> Clear status
+                </button>
               </>
             )}
             {sheet === "workspaces" && (
@@ -596,7 +693,7 @@ export function MobileShell(p: Props) {
                 </button>
               </>
             )}
-            {(sheet === "date" || sheet === "status" || sheet === "tags" || sheet === "addprop") && note && (
+            {(sheet === "date" || sheet === "status" || sheet === "tags" || sheet === "addprop" || sheet === "props") && note && (
               <PropSheet
                 kind={sheet}
                 value={propsOf(note)}
@@ -652,15 +749,16 @@ export function MobileShell(p: Props) {
   // The open page slides in from the right over the list; back slides it out.
   const screen = openPage ? (
     <motion.div key="page" className="ocm ocm-page ocm-layer" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={spring}>
-      <header className="ocm-pagebar">
+      <header className={`ocm-pagebar${pageScrolled ? " scrolled" : ""}`}>
         <motion.button {...press} className="ocm-icon" aria-label="Back" onClick={() => history.back()}>
           <ChevronLeft size={24} />
         </motion.button>
+        <span className="ocm-pagebar-title">{openPage.icon} {openPage.title || "Untitled"}</span>
         <motion.button {...press} className="ocm-icon" aria-label="Page menu" onClick={() => (buzz(), setSheet("page"))}>
           <MoreHorizontal size={22} />
         </motion.button>
       </header>
-      <div className="ocm-editor">{p.editor}</div>
+      <div className="ocm-editor" onScrollCapture={(e) => setPageScrolled((e.target as HTMLElement).scrollTop > 110)}>{p.editor}</div>
     </motion.div>
   ) : (
     <motion.div
@@ -683,6 +781,8 @@ export function MobileShell(p: Props) {
                     <span key={i} className="ocm-star" style={{ left: `${x}%`, top: `${8 + ((i * 37) % 50)}%`, animationDelay: `${i * 0.4}s` }} aria-hidden />
                   ))}
                 <Waves />
+                {/* Boat rides on the front wave. */}
+                <Boat />
                 <div className="ocm-hero-row">
                   <div>
                     <h1>
@@ -703,6 +803,25 @@ export function MobileShell(p: Props) {
               <motion.button className="ocm-search ocm-glass ocm-find" onClick={() => (buzz(), openFilter(null), setTimeout(() => searchRef.current?.focus(), 300))} {...rise(0)} {...press}>
                 <Search size={18} /> Find any page
               </motion.button>
+              <motion.section className="ocm-create" {...rise(0)}>
+                <div className="ocm-create-head">Create</div>
+                <div className="ocm-tiles">
+                <motion.button className="ocm-tile ocm-tile-page" onClick={() => (buzz(), p.onCreate())} {...press}>
+                  <Plus size={17} /> New page <FileText className="ocm-tile-art" size={40} />
+                </motion.button>
+                <motion.button className="ocm-tile ocm-tile-task" onClick={() => (buzz(), p.onCreateTask())} {...press}>
+                  <Plus size={17} /> New task <CheckSquare className="ocm-tile-art" size={40} />
+                </motion.button>
+                </div>
+                <div className="ocm-start-label">Or, start with</div>
+                <div className="ocm-tiles ocm-tiles-3">
+                  {([["photo", "Photo", Camera], ["image", "Image", ImagePlus], ["file", "File", Paperclip]] as const).map(([kind, label, Icon]) => (
+                    <motion.button key={kind} className={`ocm-tile ocm-tile-${kind}`} onClick={() => (buzz(), p.onCreateWith(kind))} {...press}>
+                      <Icon size={17} /> {label} <Icon className="ocm-tile-art" size={40} />
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.section>
               {/* Sections glide to their new order and fade when hidden or shown. */}
               <AnimatePresence>
                 {prefs.homeOrder
@@ -720,15 +839,21 @@ export function MobileShell(p: Props) {
             </motion.div>
           ) : (
             <motion.div key="pages" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
-              <header className="ocm-title">
-                <h1>Pages</h1>
-                <p>{pages.length} pages · last edited first</p>
+              <header className="ocm-title ocm-pages-head">
+                <div>
+                  <h1>Pages</h1>
+                  <p>{selecting ? `${selected.size} selected` : `${listed.length} of ${pages.length} pages · ${SORTS[sortKey].toLowerCase()}`}</p>
+                </div>
+                <button className="ocm-head-btn" onClick={() => (buzz(), setSelecting((v) => !v), setSelected(new Set()))}>
+                  {selecting ? "Done" : "Select"}
+                </button>
               </header>
               {filter && (
                 <button className="ocm-chip ocm-chip-on" onClick={() => (buzz(), setFilter(null))}>
                   {"tag" in filter ? <Tag size={13} /> : <FileText size={13} />} {"tag" in filter ? filter.tag : filter.title} <X size={14} />
                 </button>
               )}
+              <div className="ocm-search-row">
               <form className="ocm-search" onSubmit={(e) => (e.preventDefault(), remember(query), searchRef.current?.blur())}>
                 <Search size={18} />
                 <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all pages" enterKeyHint="search" onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
@@ -738,6 +863,11 @@ export function MobileShell(p: Props) {
                   </button>
                 )}
               </form>
+              <button className={`ocm-filter-btn${shows.size || sortKey !== "edited" ? " on" : ""}`} aria-label="Sort and filter" onClick={() => (buzz(), setSheet("filter"))}>
+                <SlidersHorizontal size={18} />
+                {shows.size > 0 && <em>{shows.size}</em>}
+              </button>
+              </div>
               {/* Recent searches: shown while the empty box is focused. Pointer-down keeps the keyboard up. */}
               {focused && !q && recents.length > 0 && (
                 <div className="ocm-recents" onPointerDown={(e) => e.preventDefault()}>
@@ -762,7 +892,19 @@ export function MobileShell(p: Props) {
               )}
               <div className="ocm-list">
                 {listed.map((x, i) => (
-                  <motion.button key={x.id} className="ocm-row" onClick={() => (q && remember(query), p.onOpen(x.id))} {...hold(x.id)} {...rise(i)} {...press}>
+                  <motion.button
+                    key={x.id}
+                    className={`ocm-row${selected.has(x.id) ? " sel" : ""}`}
+                    onClick={() =>
+                      selecting
+                        ? (buzz(), setSelected((prev) => { const n = new Set(prev); n.has(x.id) ? n.delete(x.id) : n.add(x.id); return n; }))
+                        : (q && remember(query), p.onOpen(x.id))
+                    }
+                    {...(selecting ? {} : hold(x.id))}
+                    {...rise(i)}
+                    {...press}
+                  >
+                    {selecting && <span className={`ocm-row-check${selected.has(x.id) ? " on" : ""}`}>{selected.has(x.id) && <Check size={14} />}</span>}
                     <span className="ocm-row-icon">{x.icon || "📄"}</span>
                     <span className="ocm-row-main">
                       <span className="ocm-row-title"><Highlight text={x.title || "Untitled"} query={query} /></span>
@@ -787,6 +929,22 @@ export function MobileShell(p: Props) {
       <AnimatePresence>
         {plusMenu && <motion.div className="ocm-plus-scrim" onClick={() => setPlusMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
       </AnimatePresence>
+      {selecting && tab === "pages" ? (
+        <div className="ocm-bulk">
+          <button disabled={!selected.size} onClick={() => bulk((x) => (picked2.every((y) => y.pinned) ? x.pinned : !x.pinned) && p.onPin(x.id))}>
+            <Pin size={19} /> {picked2.length && picked2.every((y) => y.pinned) ? "Unpin" : "Pin"}
+          </button>
+          <button disabled={!selected.size} onClick={() => (buzz(), setSheet("bulktag"))}>
+            <Tag size={19} /> Tag
+          </button>
+          <button disabled={!selected.size} onClick={() => (buzz(), setSheet("bulkstatus"))}>
+            <CheckSquare size={19} /> Status
+          </button>
+          <button disabled={!selected.size} className="ocm-danger" onClick={() => bulk((x) => p.onTrash(x.id))}>
+            <Trash2 size={19} /> Trash
+          </button>
+        </div>
+      ) : (
       <nav className={`ocm-nav${compact ? " compact" : ""}`}>
         <div className="ocm-pill ocm-liquid">
           {TABS.map(([id, Icon, label]) => (
@@ -820,6 +978,7 @@ export function MobileShell(p: Props) {
           </motion.button>
         </span>
       </nav>
+      )}
     </motion.div>
   );
 
@@ -830,6 +989,7 @@ export function MobileShell(p: Props) {
         {/* No initial={false} here: Motion would then block entrance animations of everything inside. */}
         <AnimatePresence>{screen}</AnimatePresence>
         {sheets}
+        {viewing && <AvatarViewer src={p.avatar} onClose={() => setViewing(false)} />}
       </div>
     </MotionConfig>
   );

@@ -1,67 +1,59 @@
-/* Phone splash (see mobile-splash.js). A file, not an injected <style>: the CSP blocks those.
-   Same scene as splash.html, sized in vh: the world is 200vh tall, surface at 58vh.
-   Only transform/opacity animate, so it stays smooth on phones. */
+/* Phone splash (see mobile-splash.js): "calm horizon". A file, not an injected <style>: the CSP blocks those.
+   Colours match the Home banner (src/mobile/mobile.css). The page starts on the
+   native window colour (#020a18), so there is no flash before the sky fades in.
+   Only transform / opacity / clip-path animate, so it stays smooth on phones. */
 #oc-splash { position: fixed; inset: 0; z-index: 2147483647; overflow: hidden; background: #020a18; pointer-events: none; }
-#oc-splash .world { position: absolute; inset: 0 0 auto; height: 200vh; transform: translateY(-100vh); }
-#oc-splash.go .world { animation: ocs-ascend 1.5s cubic-bezier(.45, 0, .2, 1) forwards; }
-@keyframes ocs-ascend { to { transform: none; } }
-#oc-splash .sky { position: absolute; inset: 0 0 auto; height: 58vh; background: linear-gradient(#030817, #0a1a3a 70%, #133062); }
-#oc-splash .water { position: absolute; inset: 58vh 0 0; background: radial-gradient(60% 40px at 50% 0%, rgba(120, 190, 255, .25), transparent),
-  linear-gradient(#155a9e 0%, #0f4c8a 4%, #0b3466 14%, #072248 30%, #031027 55%, #01060f); }
-#oc-splash .rays { position: absolute; left: -30%; right: -30%; top: 58vh; height: 100vh;
-  background: repeating-linear-gradient(102deg, transparent 0 40px, rgba(150, 210, 255, .07) 52px 78px, transparent 92px 140px);
-  -webkit-mask-image: linear-gradient(black, transparent 90%); mask-image: linear-gradient(black, transparent 90%);
-  animation: ocs-sway 8s ease-in-out infinite alternate; }
-@keyframes ocs-sway { from { transform: skewX(-4deg) translateX(-14px); } to { transform: skewX(4deg) translateX(14px); } }
-#oc-splash .star { position: absolute; width: 2px; height: 2px; border-radius: 9px; background: #cfe6ff; animation: ocs-tw var(--t) var(--dl) ease-in-out infinite; }
-@keyframes ocs-tw { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
-/* Bubbles: pure CSS, rising from the depths to just under the surface. */
-#oc-splash .bub { position: absolute; bottom: 0; border-radius: 99px; border: 1px solid rgba(170, 220, 255, .5);
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .55), rgba(90, 162, 233, .08) 60%);
-  animation: ocs-bub var(--d) var(--dl) linear infinite; opacity: 0; }
-@keyframes ocs-bub {
-  0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: .85; }
-  50% { transform: translate(var(--x), -70vh); } 100% { transform: translate(calc(var(--x) * -1), -138vh); opacity: 0; } }
-#oc-splash .wv { position: absolute; left: 0; width: 200%; height: 32px; top: calc(58vh - 16px); animation: ocs-roll 7s linear infinite; }
-#oc-splash .wv.back { opacity: .45; top: calc(58vh - 19px); animation-duration: 11s; animation-direction: reverse; }
-@keyframes ocs-roll { to { transform: translateX(-50%); } }
-/* The shell rises out of the water: its holder clips at the waterline. */
-#oc-splash .rise { position: absolute; left: 50%; top: 0; width: 140px; height: calc(58vh - 4px); margin-left: -70px; overflow: hidden; }
-#oc-splash .logo { position: absolute; left: 22px; bottom: 6px; width: 96px; height: 96px; transform: translateY(150px);
-  filter: drop-shadow(0 0 18px rgba(60, 160, 255, .55)); }
-#oc-splash.up .logo { animation: ocs-emerge 1.4s cubic-bezier(.2, .8, .25, 1) forwards, ocs-bob 4.5s 1.4s ease-in-out infinite; }
-@keyframes ocs-emerge { 0% { transform: translateY(150px); } 70% { transform: translateY(-8px); } 100% { transform: none; } }
-@keyframes ocs-bob { 0%, 100% { transform: none; } 50% { transform: translateY(-5px); } }
-#oc-splash .ripple { position: absolute; left: 50%; top: 58vh; width: 160px; height: 16px; margin: -8px 0 0 -80px; border-radius: 50%;
-  border: 1.5px solid rgba(170, 225, 255, .7); opacity: 0; }
-#oc-splash.up .ripple { animation: ocs-ripple 2.4s var(--dl) ease-out forwards; }
-@keyframes ocs-ripple { 0% { transform: scale(.3); opacity: .9; } 100% { transform: scale(2.6); opacity: 0; } }
-#oc-splash .drop { position: absolute; left: 50%; top: calc(58vh - 4px); width: 4px; height: 4px; border-radius: 9px; background: #bfe6ff; opacity: 0; }
-#oc-splash.up .drop { animation: ocs-drop 900ms var(--dl) cubic-bezier(.2, .6, .4, 1) forwards; }
-@keyframes ocs-drop { 0% { opacity: 1; transform: none; } 60% { opacity: 1; transform: translate(var(--x), var(--y)); }
-  100% { opacity: 0; transform: translate(calc(var(--x) * 1.4), 8px); } }
-#oc-splash .reflect { position: absolute; left: 50%; top: calc(58vh + 16px); width: 96px; height: 96px; margin-left: -48px;
-  transform: scaleY(-.8); transform-origin: center top; opacity: 0; filter: blur(1.5px); transition: opacity 1s 1s;
-  -webkit-mask-image: linear-gradient(to top, black, transparent 80%); mask-image: linear-gradient(to top, black, transparent 80%); }
-#oc-splash.up .reflect { opacity: .22; }
-#oc-splash .word { position: absolute; left: 0; right: 0; top: calc(58vh + 22px); text-align: center; font: 800 34px/1 Inter, system-ui, sans-serif;
-  letter-spacing: 1px; background: linear-gradient(90deg, #8fc9ff, #e8f4ff 40%, #5aa2e9 60%, #bfe6ff); background-size: 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent; opacity: 0; filter: blur(6px); }
-#oc-splash.up .word { animation: ocs-word 1.1s .9s ease-out forwards, ocs-shim 3s 2s linear infinite; }
-@keyframes ocs-word { to { opacity: .95; filter: none; } }
-@keyframes ocs-shim { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-/* Exit: a big wave sweeps up over the screen, then recedes off the top leaving Home. */
-#oc-splash .wash { position: absolute; left: 0; right: 0; top: 100%; height: 160vh; transform: none; }
-#oc-splash .wash .body { position: absolute; inset: 40px 0; background: linear-gradient(#1a6bb5, #0b3466 30%, #072248 70%, #0b3466); }
-#oc-splash .wash svg { position: absolute; left: 0; width: 200%; height: 44px; animation: ocs-roll 2.4s linear infinite; }
-#oc-splash .wash .crest { top: 0; }
-#oc-splash .wash .tail { bottom: 0; }
-#oc-splash.wash-go .wash { animation: ocs-wash 1.6s cubic-bezier(.5, 0, .3, 1) forwards; }
-@keyframes ocs-wash { to { transform: translateY(calc(-100% - 100vh)); } }
-#oc-splash.wash-go { transition: background-color 0s .7s; background-color: transparent; }
-#oc-splash.wash-go .world { transition: visibility 0s .7s; visibility: hidden; }
+#oc-splash.ocs-dawn { --sky1: #c9789f; --sky2: #e59a6c; --sun: #fff1c1; --glow: rgba(253, 186, 116, .7); --ocs-sun-y: 30vh; --wave: #fb7185; --sea: #7a3352; }
+#oc-splash.ocs-day { --sky1: #5aa9d6; --sky2: #93c9e6; --sun: #fffbe6; --glow: rgba(255, 244, 180, .7); --ocs-sun-y: 14vh; --wave: #3d8fc0; --sea: #1d5f8c; }
+#oc-splash.ocs-dusk { --sky1: #4a2f8a; --sky2: #c8653a; --sun: #fdba74; --glow: rgba(249, 115, 22, .6); --ocs-sun-y: 32vh; --wave: #b5583a; --sea: #5e2a1e; }
+#oc-splash.ocs-night { --sky1: #0b1035; --sky2: #1e1b4b; --sun: #e2e8f0; --glow: rgba(226, 232, 240, .3); --ocs-sun-y: 12vh; --wave: #312e81; --sea: #1e1b4b; }
+
+#oc-splash .scene { position: absolute; inset: 0; opacity: 0; transition: opacity .5s ease; }
+#oc-splash.in .scene { opacity: 1; }
+#oc-splash .sky { position: absolute; inset: 0; background: linear-gradient(175deg, var(--sky1), var(--sky2) 60%); }
+#oc-splash .sun { position: absolute; right: 22%; top: var(--ocs-sun-y); width: 56px; height: 56px; border-radius: 50%;
+  background: var(--sun); box-shadow: 0 0 40px 12px var(--glow); }
+/* Full moon with soft craters (same as the Home banner). */
+#oc-splash.ocs-night .sun { background: radial-gradient(circle at 30% 35%, rgba(120,130,150,.35) 0 9%, transparent 11%),
+    radial-gradient(circle at 62% 28%, rgba(120,130,150,.28) 0 6%, transparent 8%),
+    radial-gradient(circle at 55% 62%, rgba(120,130,150,.32) 0 12%, transparent 14%),
+    radial-gradient(circle at 26% 70%, rgba(120,130,150,.25) 0 5%, transparent 7%),
+    radial-gradient(circle at 76% 52%, rgba(120,130,150,.22) 0 4%, transparent 6%),
+    radial-gradient(circle at 40% 35%, #f8fafc, #d8dee8 70%, #c3cad6); box-shadow: inset -4px -4px 8px rgba(0, 0, 0, .18), 0 0 30px 6px var(--glow); }
+#oc-splash .stars i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; opacity: .2; animation: ocs-tw 2.6s ease-in-out infinite alternate; }
+@keyframes ocs-tw { to { opacity: .9; } }
+
+/* Sea: waves sit on the horizon (55vh); the front wave hides the shell until it floats up. */
+#oc-splash .sea { position: absolute; left: 0; right: 0; top: calc(55vh - 70px); bottom: 0; }
+#oc-splash .sea svg { position: absolute; left: 0; top: 0; width: 100%; height: 140px; }
+#oc-splash .w1 path { fill: var(--wave); opacity: .18; animation: ocs-drift 9s ease-in-out infinite alternate; }
+#oc-splash .w2 path { fill: var(--wave); opacity: .3; animation: ocs-drift 7s ease-in-out infinite alternate-reverse; }
+#oc-splash .w3 path { fill: var(--sea); animation: ocs-drift 5s ease-in-out infinite alternate; }
+@keyframes ocs-drift { from { transform: translateX(-40px); } to { transform: translateX(40px); } }
+#oc-splash .deep { position: absolute; left: 0; right: 0; top: 138px; bottom: 0; background: linear-gradient(var(--sea), color-mix(in srgb, var(--sea) 55%, #000)); }
+
+/* Shell: starts below the waterline, floats up, then bobs. */
+#oc-splash .float { position: absolute; left: 50%; top: 0; width: 96px; height: 112px; margin-left: -48px; }
+#oc-splash .logo { position: absolute; left: 8px; top: 0; width: 80px; height: 80px; opacity: 0; transform: translateY(70px);
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, .25)); }
+#oc-splash.up .logo { animation: ocs-float 1.2s cubic-bezier(.2, .8, .25, 1) forwards, ocs-bob 3.6s 1.2s ease-in-out infinite alternate; }
+@keyframes ocs-float { from { opacity: 0; transform: translateY(70px); } 40% { opacity: 1; } to { opacity: 1; transform: translateY(16px); } }
+@keyframes ocs-bob { from { transform: translateY(16px) rotate(-2deg); } to { transform: translateY(11px) rotate(2deg); } }
+
+#oc-splash .word { position: absolute; left: 0; right: 0; top: 170px; text-align: center; font: 700 30px/1 Inter, system-ui, sans-serif;
+  letter-spacing: .14em; color: #fff; opacity: 0; transform: translateY(8px); transition: opacity .8s ease, transform .8s cubic-bezier(.2, .8, .25, 1); }
+#oc-splash.word-in .word { opacity: .95; transform: none; }
+
+/* Exit: the scene shrinks up to the Home banner's height while the shell and word fade, then it all fades out. */
+#oc-splash.out { background: transparent; transition: background-color 0s .3s; }
+#oc-splash.out .scene { clip-path: inset(0 0 calc(100% - 170px) 0); opacity: 0;
+  transition: clip-path .6s cubic-bezier(.5, 0, .3, 1), opacity .3s .5s ease; }
+#oc-splash .scene { clip-path: inset(0 0 0 0); }
+#oc-splash.out .float, #oc-splash.out .word { opacity: 0; transition: opacity .25s ease; }
+
 @media (prefers-reduced-motion: reduce) {
   #oc-splash *, #oc-splash { animation: none !important; transition: none !important; }
-  #oc-splash .world, #oc-splash .logo { transform: none; }
-  #oc-splash .word { opacity: .95; filter: none; }
+  #oc-splash .scene { opacity: 1; }
+  #oc-splash .logo { opacity: 1; transform: translateY(16px); }
+  #oc-splash .word { opacity: .95; transform: none; }
 }

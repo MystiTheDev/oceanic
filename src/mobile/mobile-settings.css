@@ -87,3 +87,7 @@ button.ocs-row:active { background: rgba(var(--oc-ink), 0.06); }
 .oct-name .ocs-input { text-align: left; }
 .oct-pages { max-height: 40vh; overflow-y: auto; }
 .oct-danger { color: var(--color-red-500); font-weight: 600; }
+
+/* Home screen order (Appearance): drag handle rows. */
+.ocs-reorder { position: relative; background: var(--oc-raised); list-style: none; }
+.ocs-grip { display: grid; place-items: center; width: 32px; height: 40px; margin-left: -6px; color: var(--ocs-muted); touch-action: none; }

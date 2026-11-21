@@ -3,14 +3,14 @@
  * that edit them. The sheets live in MobileShell; chips open them via `openProp`.
  */
 import { useRef, useState } from "react";
-import { CalendarDays, Check, CircleDot, Plus, Search, Tag, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, CircleDot, Plus, Search, Tag, X } from "lucide-react";
 import type { PageProperties as Props, PageStatus } from "../data/api";
 import { COLOR_IDS, STATUSES, parseIsoDate } from "../lib/colors";
 import { StatusBadge, TagChip } from "../components/PageProperties";
 import { buzz } from "./mobilePrefs";
 import { iso } from "./MobileCalendar";
 
-export type PropKind = "date" | "status" | "tags" | "addprop";
+export type PropKind = "date" | "status" | "tags" | "addprop" | "props";
 
 let opener: (id: string, kind: PropKind) => void = () => {};
 /** MobileShell registers how to open a property sheet for a page. */
@@ -19,30 +19,37 @@ const open = (id: string, kind: PropKind) => () => (buzz(), opener(id, kind));
 
 export const fmtDue = (d: string) => parseIsoDate(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-/** Filled properties only, plus "+ Property" while any is empty. */
+/** Due date as its own chip; status and tags folded into one quiet pill that opens the Properties sheet. */
 export function MobilePropChips({ id, value }: { id: string; value: Props }) {
+  const [first, ...rest] = value.tags;
+  const empty = !value.status && !first;
   return (
     <div className="ocm-props">
       {value.dueDate && (
         <button className="ocm-prop" onClick={open(id, "date")}>
-          <CalendarDays size={14} /> {fmtDue(value.dueDate)}
+          <CalendarDays size={13} /> {fmtDue(value.dueDate)}
         </button>
       )}
-      {value.status && (
-        <button onClick={open(id, "status")}>
-          <StatusBadge status={value.status} />
-        </button>
-      )}
-      {value.tags.length > 0 && (
-        <button className="ocm-prop-tags" onClick={open(id, "tags")}>
-          {value.tags.map((t) => <TagChip key={t} tag={t} />)}
-        </button>
-      )}
-      {(!value.dueDate || !value.status || !value.tags.length) && (
-        <button className="ocm-prop ocm-prop-add" onClick={open(id, "addprop")}>
-          <Plus size={14} /> Property
-        </button>
-      )}
+      <button className={`ocm-prop ocm-prop-pill${empty ? " ocm-prop-add" : ""}`} onClick={open(id, "props")}>
+        {empty ? (
+          <>
+            <Plus size={13} /> {value.dueDate ? "Properties" : "Add properties"}
+          </>
+        ) : (
+          <>
+            {value.status && (
+              <>
+                <span className="ocm-status-dot" style={{ background: STATUSES[value.status].color.text }} />
+                {STATUSES[value.status].label}
+              </>
+            )}
+            {value.status && first && <span className="ocm-prop-sep">·</span>}
+            {first && <span className="ocm-prop-tag">#{first}</span>}
+            {rest.length > 0 && <em>+{rest.length}</em>}
+            <ChevronDown size={13} />
+          </>
+        )}
+      </button>
     </div>
   );
 }
@@ -84,6 +91,22 @@ export function PropSheet({
   const dateRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const set = (patch: Partial<Props>, close = true) => (buzz(), onChange({ ...value, ...patch }), close && onDone());
+
+  if (kind === "props")
+    return (
+      <>
+        <h2>Properties</h2>
+        <button className="ocm-item" onClick={() => (buzz(), onKind("date"))}>
+          <CalendarDays size={20} /> Due date <em>{value.dueDate ? fmtDue(value.dueDate) : "Empty"}</em> <ChevronRight size={16} className="ocm-chev" />
+        </button>
+        <button className="ocm-item" onClick={() => (buzz(), onKind("status"))}>
+          <CircleDot size={20} /> Status <em>{value.status ? STATUSES[value.status].label : "Empty"}</em> <ChevronRight size={16} className="ocm-chev" />
+        </button>
+        <button className="ocm-item" onClick={() => (buzz(), onKind("tags"))}>
+          <Tag size={20} /> Tags <em>{value.tags.length ? value.tags.join(", ") : "Empty"}</em> <ChevronRight size={16} className="ocm-chev" />
+        </button>
+      </>
+    );
 
   if (kind === "addprop")
     return (

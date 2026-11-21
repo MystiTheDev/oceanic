@@ -43,7 +43,7 @@ import { BlockHandleMenu } from "./BlockHandleMenu";
 import { getSeedBlocks, type PageMeta } from "../data/workspace";
 import { editorExtensions, getPageLinkItems, getSlashItems, mobileEditorExtensions, schema } from "../editor/schema";
 import { isMobile } from "../mobile/MobileShell";
-import { MobileBlockSheet, MobileSelectionPopup, MobileToolbar } from "../mobile/MobileEditorKit";
+import { MobileSelectionPopup, MobileToolbar } from "../mobile/MobileEditorKit";
 import { editorContextMenu } from "../editor/editorMenu";
 import { openContextMenu } from "./ContextMenu";
 
@@ -560,6 +560,7 @@ export function PageEditor({
         <button
           type="button"
           title="Change icon"
+          data-page-icon
           onClick={(e) => {
             const el = e.currentTarget;
             setIconAnchor((a) => (a ? null : el));
@@ -616,19 +617,13 @@ export function PageEditor({
           slashMenu={false}
           sideMenu={false}
         >
-          {/* Phones: no drag handles; "/" opens a bottom sheet without the AI items. */}
+          {/* Phones: no drag handles and no typed "/" menu; the toolbar's + opens the block sheet. */}
           {!isMobile && (
             <SideMenuController
               sideMenu={(props) => <SideMenu {...props} dragHandleMenu={BlockHandleMenu} />}
             />
           )}
-          {isMobile ? (
-            <SuggestionMenuController
-              triggerCharacter="/"
-              getItems={async (query) => getSlashItems(editor, query).filter((i) => i.group !== "Nerida")}
-              suggestionMenuComponent={MobileBlockSheet}
-            />
-          ) : (
+          {!isMobile && (
             <SuggestionMenuController
               triggerCharacter="/"
               getItems={async (query) => getSlashItems(editor, query)}
@@ -649,7 +644,7 @@ export function PageEditor({
           />
 
         </BlockNoteView>
-        {isMobile && <MobileToolbar editor={editor as never} />}
+        {isMobile && <MobileToolbar editor={editor as never} blocks={() => getSlashItems(editor, "").filter((i) => i.group !== "Nerida" && i.title !== "Image" && i.title !== "File")} links={(q) => getPageLinkItems(editor, q, page.id)} />}
         </div>
       </div>
       </div>

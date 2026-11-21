@@ -30,6 +30,7 @@ export function PageBanner({ pageId }: { pageId: string }) {
   const isImage = !shown.src.startsWith("css:");
   return (
     <div
+      data-page-banner
       className={`group relative h-[30vh] max-h-[280px] min-h-[160px] w-full shrink-0 select-none ${moving ? "cursor-grab active:cursor-grabbing" : ""}`}
       style={{ background: bannerBg(shown) }}
       onPointerDown={(e) => {
@@ -83,7 +84,7 @@ function BannerPicker({ onPick, onClose }: { onPick: (b: Banner) => void; onClos
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="oc-pop-in absolute right-0 z-50 mt-1 w-[380px] rounded-xl border border-white/[0.08] bg-[var(--oc-raised,#262626)] p-3 shadow-2xl">
+      <div data-banner-picker className="oc-pop-in absolute right-0 z-50 mt-1 w-[380px] rounded-xl border border-white/[0.08] bg-[var(--oc-raised,#262626)] p-3 shadow-2xl">
         <div className="mb-3 flex gap-1 text-[13px]">
           {(["gallery", "colors", "upload"] as const).map((t) => (
             <button key={t} type="button" onClick={() => setTab(t)} className={`cursor-pointer rounded-md px-2.5 py-1 capitalize ${tab === t ? "bg-white/10 text-neutral-100" : "text-neutral-400 hover:text-neutral-200"}`}>

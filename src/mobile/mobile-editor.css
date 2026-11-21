@@ -2,14 +2,24 @@
    and bottom sheets for blocks. Scoped to the mobile shell (.ocm-editor). */
 
 /* ---------- Page sizing */
-.ocm-editor .px-10 { padding-left: 16px; padding-right: 16px; }
+.ocm-editor .px-10 { padding-left: 20px; padding-right: 20px; }
 .ocm-editor .pb-32 { padding-bottom: 96px; }
-.ocm-editor [data-page-title] { font-size: 28px; }
-.ocm-editor .bn-editor { padding-inline: 0; font-size: 17px; }
-.ocm-editor .bn-block-content { font-size: 17px; }
-.ocm-editor [data-content-type="heading"][data-level="1"] .bn-inline-content { font-size: 26px; }
-.ocm-editor [data-content-type="heading"][data-level="2"] .bn-inline-content { font-size: 22px; }
-.ocm-editor [data-content-type="heading"][data-level="3"] .bn-inline-content { font-size: 19px; }
+.ocm-editor [data-page-title] { font-size: 30px; line-height: 1.2; letter-spacing: -0.02em; margin-bottom: 8px; }
+/* Page icon: 40px box on phones (desktop is 64px). */
+.ocm-editor [data-page-icon] { width: 40px; height: 40px; font-size: 34px; border-radius: 10px; margin-bottom: 8px; }
+.ocm-editor .bn-editor { padding-inline: 0; font-size: 16px; }
+.ocm-editor .bn-block-content { font-size: 16px; }
+.ocm-editor .bn-inline-content { line-height: 1.6; }
+/* Even rhythm: small gap between blocks, more room above headings. */
+.ocm-editor .bn-block-content { padding-block: 3px; }
+.ocm-editor [data-content-type="heading"] { padding-top: 14px; padding-bottom: 2px; }
+.ocm-editor [data-content-type="heading"] .bn-inline-content { line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; }
+/* Level 1 has no data-level attribute. */
+.ocm-editor [data-content-type="heading"]:not([data-level]) .bn-inline-content,
+.ocm-editor [data-content-type="heading"][data-level="1"] .bn-inline-content { font-size: 25px; }
+.ocm-editor [data-content-type="heading"][data-level="2"] .bn-inline-content { font-size: 21px; }
+.ocm-editor [data-content-type="heading"][data-level="3"] .bn-inline-content { font-size: 18px; }
+.ocm-editor :is([data-content-type="bulletListItem"], [data-content-type="numberedListItem"], [data-content-type="checkListItem"]) { padding-block: 1px; }
 /* Leave room for the toolbar so the last line is never under it. */
 .ocm-editor .bn-editor { padding-bottom: 64px; }
 
@@ -27,9 +37,12 @@
   padding: 0 8px;
   overflow-x: auto;
   scrollbar-width: none;
-  background: var(--oc-surface);
-  border-top: 1px solid rgba(var(--oc-ink), 0.1);
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, calc(0.25 * var(--oc-shadow-k)));
+  /* Neutral frosted, like the bottom tab pill. */
+  background: color-mix(in srgb, var(--oc-surface) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-top: 1px solid rgba(var(--oc-ink), 0.08);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, calc(0.18 * var(--oc-shadow-k)));
 }
 .ocme-bar::-webkit-scrollbar { display: none; }
 .ocme-bar button {
@@ -44,7 +57,13 @@
 }
 .ocme-bar button:active { background: rgba(var(--oc-ink), 0.1); }
 .ocme-bar button:disabled { opacity: 0.3; }
-.ocme-bar .ocme-accent { color: #fff; background: var(--color-sky-500); }
+.ocme-bar .ocme-add { background: rgba(var(--oc-ink), 0.08); }
+/* Active style at the caret: soft accent chip. */
+.ocme-bar button.on, .ocme-pop button.on {
+  color: var(--color-sky-400);
+  background: color-mix(in srgb, var(--color-sky-500) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-sky-500) 35%, transparent);
+}
 .ocme-bar .ocme-aa { font-size: 15px; font-weight: 700; }
 .ocme-sep { flex: 0 0 1px; height: 24px; margin: 0 4px; background: rgba(var(--oc-ink), 0.14); }
 
@@ -124,3 +143,30 @@
 .ocu-progress span.ocu-indef { animation: ocu-pulse 1.2s ease-in-out infinite alternate; }
 .ocu-progress em { position: relative; display: grid; place-items: center; height: 100%; font-style: normal; font-size: 14px; font-weight: 600; color: var(--oc-text-strong); }
 @keyframes ocu-pulse { from { opacity: 0.15; } to { opacity: 0.4; } }
+
+/* ---------- Page banner on phones: shorter, edge to edge. */
+.ocm-editor [data-page-banner] { height: 140px; min-height: 0; max-height: none; }
+/* "Add banner" row: less top gap. */
+.ocm-editor .oc-banner-zone > .relative.px-10 { padding-top: 8px; }
+/* Touch has no hover: keep Change / Reposition / Remove visible. */
+.ocm-editor [data-page-banner] .opacity-0 { opacity: 1; }
+/* Icon sits half over the banner's bottom edge. */
+.ocm-editor .-mt-9 { margin-top: -20px; }
+/* Banner picker: fits the phone and is opaque. */
+.ocm-editor [data-banner-picker] { position: fixed; left: 12px; right: 12px; top: 96px; width: auto; max-height: 70vh; overflow-y: auto; background: var(--oc-surface); }
+
+/* ---------- Colour, page link and table sheets */
+.ocme-sheet h2 + .ocme-colors { margin-bottom: 10px; }
+.ocme-colors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 0 8px 6px; }
+.ocme-swatch { display: grid; place-items: center; height: 46px; border-radius: 12px; font-size: 18px; font-weight: 700; color: var(--oc-text-strong); background: rgba(var(--oc-ink), 0.05); border: 1px solid var(--ocm-line, rgba(var(--oc-ink), 0.08)); }
+.ocme-swatch.on { box-shadow: inset 0 0 0 2px rgb(var(--oc-ink)); }
+.ocme-find { display: flex; align-items: center; gap: 8px; height: 42px; margin: 0 8px 8px; padding: 0 12px; border-radius: 12px; color: rgba(var(--oc-ink), 0.55); background: rgba(var(--oc-ink), 0.06); }
+.ocme-find input { flex: 1; min-width: 0; background: none; outline: none; font-size: 15px; color: var(--oc-text-strong); }
+.ocme-row { display: flex; align-items: center; width: 100%; height: 48px; padding: 0 12px; border-radius: 12px; font-size: 15.5px; font-weight: 500; text-align: left; color: var(--oc-text-strong); }
+.ocme-row:active { background: rgba(var(--oc-ink), 0.07); }
+.ocme-row.ocme-danger { color: #ef4444; }
+/* Tables scroll sideways on narrow screens. */
+.ocm-editor [data-content-type="table"] { overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.ocm-editor .tableWrapper { scrollbar-width: none; }
+.ocm-editor [data-content-type="table"] table { min-width: max-content; }
+.ocm-editor [data-content-type="table"] td, .ocm-editor [data-content-type="table"] th { min-width: 96px; }

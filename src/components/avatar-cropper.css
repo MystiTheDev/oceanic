@@ -1,0 +1,40 @@
+/* Profile photo cropper and viewer (AvatarCropper.tsx). */
+.oc-crop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.oc-crop-box { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 22px 18px; border-radius: 18px; background: var(--oc-surface, #1f1f1f); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
+.oc-crop-box h2 { align-self: flex-start; font-size: 16px; font-weight: 600; color: var(--oc-text-strong, #fafafa); }
+.oc-crop-frame { position: relative; overflow: hidden; border-radius: 16px; background: #000; touch-action: none; cursor: grab; user-select: none; }
+.oc-crop-frame:active { cursor: grabbing; }
+.oc-crop-frame img { position: absolute; max-width: none; pointer-events: none; }
+/* Dim everything outside the circle. */
+.oc-crop-ring { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.55); outline: 2px solid rgba(255, 255, 255, 0.85); outline-offset: -2px; pointer-events: none; }
+.oc-crop-hint { font-size: 12.5px; color: rgba(255, 255, 255, 0.55); }
+.oc-crop-actions { display: flex; gap: 8px; align-self: stretch; justify-content: flex-end; }
+.oc-crop-actions button { height: 36px; padding: 0 16px; border-radius: 10px; font-size: 14px; font-weight: 600; color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.08); }
+.oc-crop-actions .primary { color: #111; background: #fff; }
+.oc-crop-actions button:disabled { opacity: 0.4; }
+/* Phone: full-screen black editor, buttons at the bottom. */
+.oc-crop.phone { background: #000; backdrop-filter: none; }
+.oc-crop.phone .oc-crop-box { width: 100%; height: 100%; justify-content: center; padding: 24px; border: 0; border-radius: 0; background: #000; box-shadow: none; }
+.oc-crop.phone .oc-crop-frame { border-radius: 0; }
+.oc-crop.phone .oc-crop-actions { position: absolute; left: 16px; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); justify-content: space-between; }
+.oc-crop.phone .oc-crop-actions button { height: 46px; flex: 1; border-radius: 14px; font-size: 15px; }
+
+.oc-avatar-view { position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.oc-avatar-view img { width: min(78vw, 320px); aspect-ratio: 1; border-radius: 50%; object-fit: cover; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+
+/* Tools row: rotate, minus, ruler dial, plus, reset. */
+.oc-crop-tools { display: flex; align-items: center; gap: 6px; align-self: stretch; }
+.oc-crop-tools > button { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.08); }
+.oc-crop-tools > button:active { background: rgba(255, 255, 255, 0.16); }
+.oc-crop-tools > button:disabled { opacity: 0.3; }
+.oc-dial { position: relative; flex: 1; min-width: 0; height: 52px; overflow: hidden; cursor: ew-resize; touch-action: none; outline: none; user-select: none; -webkit-user-select: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); }
+.oc-dial-strip { position: absolute; left: 50%; top: 22px; height: 30px; }
+.oc-dial-strip i { position: absolute; top: 0; width: 1px; height: 8px; background: rgba(255, 255, 255, 0.35); }
+.oc-dial-strip i.half { height: 12px; background: rgba(255, 255, 255, 0.55); }
+.oc-dial-strip i.major { height: 16px; width: 2px; margin-left: -0.5px; background: rgba(255, 255, 255, 0.9); }
+.oc-dial-strip b { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 600; color: rgba(255, 255, 255, 0.5); }
+.oc-dial-needle { position: absolute; left: 50%; top: 18px; width: 3px; height: 22px; margin-left: -1.5px; border-radius: 2px; background: #fff; box-shadow: 0 0 8px rgba(255, 255, 255, 0.6); }
+.oc-dial-value { position: absolute; left: 50%; top: 0; transform: translateX(-50%); font-style: normal; font-size: 13px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+.oc-dial:focus-visible .oc-dial-needle { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); }
+.oc-crop:not(.phone) .oc-crop-box { width: 360px; }

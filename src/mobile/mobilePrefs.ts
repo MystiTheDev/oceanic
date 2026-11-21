@@ -2,7 +2,8 @@
 import { useSyncExternalStore } from "react";
 
 /** Home sections in their default order; the user can hide and reorder them. */
-export const HOME_SECTIONS = { create: "New page & task", week: "This week", recent: "Recent pages", shortcuts: "Shortcuts", tags: "Tags & collections", due: "Due soon" };
+/** Home widgets in their default order (notes first); search and the create buttons stay fixed on top. */
+export const HOME_SECTIONS = { recent: "Recent & suggested", today: "Today & pinned", week: "This week", tags: "Tags & collections" };
 export type HomeSection = keyof typeof HOME_SECTIONS;
 export type MobilePrefs = { haptics: boolean; reduceMotion: boolean; homeOrder: HomeSection[]; homeHidden: HomeSection[]; calMode: "month" | "week" };
 const DEFAULTS: MobilePrefs = { haptics: true, reduceMotion: false, homeOrder: Object.keys(HOME_SECTIONS) as HomeSection[], homeHidden: [], calMode: "month" };

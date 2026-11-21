@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { AvatarCropper, AvatarViewer } from "./AvatarCropper";
 import { set as setSrs, useSrs } from "../lib/srs";
 import { PACKS, addToDictionary, forgetLearned, removeFromDictionary, setPacks, setReplacements, setSpellSettings, useSpell, type Dialect } from "../lib/spell/engine";
 import { DELETE_APPS, setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
@@ -639,25 +640,23 @@ export function Avatar({ name, avatar, size = 22 }: { name: string; avatar?: str
   );
 }
 
-/** Square-crops and shrinks a picked image to a 128px JPEG data URL. */
-async function toAvatar(file: File): Promise<string> {
-  const img = await createImageBitmap(file);
-  const s = Math.min(img.width, img.height);
-  const c = document.createElement("canvas");
-  c.width = c.height = 128;
-  c.getContext("2d")!.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128);
-  return c.toDataURL("image/jpeg", 0.85);
-}
-
 function AccountPage({ settings, onChange }: Ctx) {
   const [name, setName] = useState(settings.userName);
   const [picker, setPicker] = useState<HTMLElement | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  const [crop, setCrop] = useState<File | null>(null);
+  const [viewing, setViewing] = useState(false);
   const kind = settings.avatar.startsWith("data:") ? "photo" : settings.avatar ? "emoji" : "initial";
   return (
     <>
       <div className="mt-6 flex items-center gap-5">
-        <Avatar name={settings.userName} avatar={settings.avatar} size={64} />
+        {kind === "photo" ? (
+          <button type="button" title="View photo" className="cursor-zoom-in rounded-full" onClick={() => setViewing(true)}>
+            <Avatar name={settings.userName} avatar={settings.avatar} size={64} />
+          </button>
+        ) : (
+          <Avatar name={settings.userName} avatar={settings.avatar} size={64} />
+        )}
         <div className="min-w-0 flex-1">
           <label className="text-[12px] text-neutral-500">
             Preferred name
@@ -675,7 +674,7 @@ function AccountPage({ settings, onChange }: Ctx) {
       <div className="flex items-center gap-6 border-b border-white/[0.04] py-3.5">
         <div className="min-w-0 flex-1">
           <p className="text-[14px] text-neutral-100">Avatar</p>
-          <p className="mt-0.5 text-[12.5px] text-neutral-500">Shown in the sidebar and here. Photos are shrunk to 128 px and kept inside Oceanic.</p>
+          <p className="mt-0.5 text-[12.5px] text-neutral-500">Shown in the sidebar and here. Photos are cropped to a circle and kept inside Oceanic. Click your photo to view it.</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
           <AvatarChoice on={kind === "initial"} onClick={() => onChange({ avatar: "" })}><span className="text-[12px] font-semibold">Aa</span> Initial</AvatarChoice>
@@ -691,9 +690,11 @@ function AccountPage({ settings, onChange }: Ctx) {
         onChange={async (e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
-          if (f) onChange({ avatar: await toAvatar(f) });
+          if (f) setCrop(f);
         }}
       />
+      {crop && <AvatarCropper file={crop} onDone={(avatar) => (onChange({ avatar }), setCrop(null))} onCancel={() => setCrop(null)} />}
+      {viewing && <AvatarViewer src={settings.avatar} onClose={() => setViewing(false)} />}
       {picker && <EmojiPicker anchor={picker} onSelect={(em) => (onChange({ avatar: em }), setPicker(null))} onClose={() => setPicker(null)} />}
     </>
   );

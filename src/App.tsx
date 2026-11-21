@@ -98,6 +98,7 @@ import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
 import { MobilePropChips } from "./mobile/MobileProps";
+import { attachBlocks, pickFiles, titleFor } from "./mobile/attach";
 import { onOpenedFile, pickFile, shareFile } from "./mobile/share";
 import { buildOceanFile } from "./lib/oceanFile";
 import { MobileSettings } from "./mobile/MobileSettings";
@@ -1567,8 +1568,21 @@ export default function App() {
             const blockId = crypto.randomUUID();
             const id = await createPage(null, today, [{ id: blockId, type: "checkListItem" }]);
             if (!id) return;
-            changeProperties(id, { dueDate: today, status: "not_started", tags: [] });
+            changeProperties(id, { dueDate: today, status: null, tags: [] });
             window.dispatchEvent(new CustomEvent("oc-open-block", { detail: { pageId: id, blockId } }));
+          }}
+          onCreateWith={async (kind) => {
+            // Picker first, straight from the tap; nothing is created if it's cancelled.
+            const files = await pickFiles(kind);
+            const blocks = await attachBlocks(files);
+            if (!blocks.length) return;
+            setView("document");
+            setMobilePageOpen(true);
+            const id = await createPage(null, null, [...blocks, { type: "paragraph" }] as PartialBlock[]);
+            if (!id) return;
+            const title = titleFor(kind, files);
+            patchPage(id, { title });
+            api.renamePage(id, title).catch(report("Rename"));
           }}
           visitedAt={visitedAt}
         />
