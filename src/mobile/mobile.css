@@ -552,15 +552,15 @@
 .ocm-root { touch-action: pan-x pan-y; }
 .ocm-root * { -webkit-tap-highlight-color: transparent; }
 .ocm-editor .oc-banner { height: 140px; min-height: 0; max-height: none; }
-.ocm-editor .oc-banner-zone > div:first-child:not(.oc-banner) { padding: 8px 16px 0; }
-.ocm-editor .oc-page-font > .oc-banner-zone > div:last-child { padding-left: 16px; padding-right: 16px; padding-bottom: 96px; }
+.ocm-editor .oc-banner-zone > div:first-child:not(.oc-banner) { padding: 8px 12px 0; }
+.ocm-editor .oc-page-font > .oc-banner-zone > div:last-child { padding-left: 12px; padding-right: 12px; padding-bottom: 96px; }
 .ocm-editor .oc-page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; }
 .ocm-editor .oc-page-head > button { flex: none; width: 40px; height: 40px; margin: 0; font-size: 30px; border-radius: 10px; }
 .ocm-editor .oc-page-head > input { flex: 1; min-width: 0; margin: 0; font-size: 26px; line-height: 1.2; }
-.ocm-editor .bn-editor { padding-inline: 0; font-size: 16px; line-height: 1.55; }
-.ocm-editor .bn-editor h1 { font-size: 24px; }
-.ocm-editor .bn-editor h2 { font-size: 20px; }
-.ocm-editor .bn-editor h3 { font-size: 17.5px; }
+.ocm-editor .bn-editor { padding-inline: 0; font-size: 16px; line-height: 1.5; }
+.ocm-editor .bn-editor h1 { font-size: 22px; }
+.ocm-editor .bn-editor h2 { font-size: 19px; }
+.ocm-editor .bn-editor h3 { font-size: 17px; }
 .ocm-editor .bn-editor table, .ocm-editor .bn-editor pre { display: block; max-width: 100%; overflow-x: auto; }
 .ocm-editor .bn-editor :is(img, video, iframe) { max-width: 100%; height: auto; }
 .ocm-editor .bn-editor input[type="checkbox"] { width: 20px; height: 20px; }
@@ -576,3 +576,4 @@
 .ocm-row-icon { width: 28px; text-align: center; font-size: 22px; }
 .ocm-row-date { align-self: flex-start; }
 .ocm-item { min-height: 48px; }
+.ocm-editor .bn-block-content[data-content-type="heading"] { padding-top: 8px; }
