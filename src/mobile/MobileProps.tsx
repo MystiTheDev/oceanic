@@ -3,7 +3,7 @@
  * that edit them. The sheets live in MobileShell; chips open them via `openProp`.
  */
 import { useRef, useState } from "react";
-import { CalendarDays, Check, CircleDot, Plus, Search, Tag, X } from "lucide-react";
+import { CalendarDays, Check, CircleDot, Plus, Search, SlidersHorizontal, Tag, X } from "lucide-react";
 import type { PageProperties as Props, PageStatus } from "../data/api";
 import { COLOR_IDS, STATUSES, parseIsoDate } from "../lib/colors";
 import { StatusBadge, TagChip } from "../components/PageProperties";
@@ -19,30 +19,19 @@ const open = (id: string, kind: PropKind) => () => (buzz(), opener(id, kind));
 
 export const fmtDue = (d: string) => parseIsoDate(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-/** Filled properties only, plus "+ Property" while any is empty. */
+/** All properties sit behind one "Properties" chip; tasks (has a status) also show their due date. */
 export function MobilePropChips({ id, value }: { id: string; value: Props }) {
+  const n = +!!value.dueDate + +!!value.status + +(value.tags.length > 0);
   return (
     <div className="ocm-props">
-      {value.dueDate && (
+      {value.status && value.dueDate && (
         <button className="ocm-prop" onClick={open(id, "date")}>
           <CalendarDays size={14} /> {fmtDue(value.dueDate)}
         </button>
       )}
-      {value.status && (
-        <button onClick={open(id, "status")}>
-          <StatusBadge status={value.status} />
-        </button>
-      )}
-      {value.tags.length > 0 && (
-        <button className="ocm-prop-tags" onClick={open(id, "tags")}>
-          {value.tags.map((t) => <TagChip key={t} tag={t} />)}
-        </button>
-      )}
-      {(!value.dueDate || !value.status || !value.tags.length) && (
-        <button className="ocm-prop ocm-prop-add" onClick={open(id, "addprop")}>
-          <Plus size={14} /> Property
-        </button>
-      )}
+      <button className="ocm-prop" onClick={open(id, "addprop")}>
+        <SlidersHorizontal size={14} /> Properties{n > 0 && <em className="ocm-prop-n">{n}</em>}
+      </button>
     </div>
   );
 }
@@ -88,10 +77,10 @@ export function PropSheet({
   if (kind === "addprop")
     return (
       <>
-        <h2>Add property</h2>
-        {!value.dueDate && <button className="ocm-item" onClick={() => onKind("date")}><CalendarDays size={20} /> Due date</button>}
-        {!value.status && <button className="ocm-item" onClick={() => onKind("status")}><CircleDot size={20} /> Status</button>}
-        {!value.tags.length && <button className="ocm-item" onClick={() => onKind("tags")}><Tag size={20} /> Tags</button>}
+        <h2>Properties</h2>
+        <button className="ocm-item" onClick={() => onKind("date")}><CalendarDays size={20} /> Due date<em>{value.dueDate ? fmtDue(value.dueDate) : "Empty"}</em></button>
+        <button className="ocm-item" onClick={() => onKind("status")}><CircleDot size={20} /> Status<em>{value.status ? STATUSES[value.status].label : "Empty"}</em></button>
+        <button className="ocm-item" onClick={() => onKind("tags")}><Tag size={20} /> Tags<em>{value.tags.length ? value.tags.join(", ") : "Empty"}</em></button>
       </>
     );
 

@@ -577,3 +577,4 @@
 .ocm-row-date { align-self: flex-start; }
 .ocm-item { min-height: 48px; }
 .ocm-editor .bn-block-content[data-content-type="heading"] { padding-top: 8px; }
+.ocm-prop-n { font-style: normal; margin-left: 2px; padding: 0 6px; border-radius: 999px; font-size: 11px; background: rgba(var(--oc-ink), 0.1); }
