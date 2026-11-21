@@ -556,7 +556,8 @@ export function PageEditor({
       <div className="oc-banner-zone">
       <PageBanner pageId={page.id} />
       <div className={`mx-auto flex w-full flex-col px-10 max-w-3xl pb-32 ${hasBanner ? "-mt-9 relative" : "pt-4"}`}>
-        {/* Page icon */}
+        {/* Page icon + title; one row on mobile (see mobile.css) */}
+        <div className="oc-page-head contents">
         <button
           type="button"
           title="Change icon"
@@ -585,6 +586,7 @@ export function PageEditor({
           spellCheck={false}
           className="mb-1 w-full bg-transparent text-4xl font-bold tracking-tight text-neutral-50 outline-none placeholder:text-neutral-700"
         />
+        </div>
 
         {/* Notion: "N backlinks" sits right under the title */}
         {properties}

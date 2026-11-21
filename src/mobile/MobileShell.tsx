@@ -25,6 +25,9 @@ import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } 
 
 /** True inside the Android (or iOS) app. */
 export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+// Native feel on phones: no pinch zoom in the webview (desktop keeps its viewport).
+if (isMobile) document.querySelector('meta[name="viewport"]')?.setAttribute("content",
+  "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content, viewport-fit=cover");
 
 type TabId = "home" | "pages" | "calendar";
 const RECENT_KEY = "ocm.recentSearches";

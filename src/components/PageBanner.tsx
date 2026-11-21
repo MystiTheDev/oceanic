@@ -30,7 +30,7 @@ export function PageBanner({ pageId }: { pageId: string }) {
   const isImage = !shown.src.startsWith("css:");
   return (
     <div
-      className={`group relative h-[30vh] max-h-[280px] min-h-[160px] w-full shrink-0 select-none ${moving ? "cursor-grab active:cursor-grabbing" : ""}`}
+      className={`oc-banner group relative h-[30vh] max-h-[280px] min-h-[160px] w-full shrink-0 select-none ${moving ? "cursor-grab active:cursor-grabbing" : ""}`}
       style={{ background: bannerBg(shown) }}
       onPointerDown={(e) => {
         if (!moving || (e.target as HTMLElement).closest("button")) return;
