@@ -415,8 +415,15 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// Launched by "Start in tray with Windows": the first reveal is skipped.
+#[cfg(desktop)]
+static TRAY_START: AtomicBool = AtomicBool::new(false);
+
 #[cfg(desktop)]
 fn show_main(app: &AppHandle) {
+    if TRAY_START.swap(false, Ordering::Relaxed) {
+        return;
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -670,6 +677,36 @@ async fn share_call(app: AppHandle, cmd: String, args: serde_json::Value) -> Res
     Err("Android only".into())
 }
 
+/// "Start in tray with Windows".
+#[tauri::command]
+fn autostart_get(app: AppHandle) -> bool {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        return app.autolaunch().is_enabled().unwrap_or(false);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[tauri::command]
+fn autostart_set(app: AppHandle, on: bool) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let l = app.autolaunch();
+        return if on { l.enable() } else { l.disable() }.map_err(|e| e.to_string());
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, on);
+        Err("Desktop only".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -695,7 +732,8 @@ pub fn run() {
                 .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
                 .build(),
         )
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--tray"])));
     // Android: share sheet for export, .ocean files opened from other apps.
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
@@ -746,6 +784,14 @@ pub fn run() {
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(sync::Sync::default());
             sync::start_listener(app.handle());
+            sync::start_watch(app.handle());
+            #[cfg(desktop)]
+            if std::env::args().any(|a| a == "--tray") {
+                TRAY_START.store(true, Ordering::Relaxed);
+                if let Some(splash) = app.get_webview_window("splash") {
+                    let _ = splash.close();
+                }
+            }
             #[cfg(desktop)]
             app.manage(ai::Ai::default());
             #[cfg(desktop)]
@@ -804,6 +850,14 @@ pub fn run() {
             sync::sync_test,
             sync::sync_now,
             sync::sync_unpair,
+            sync::sync_network,
+            sync::sync_trust,
+            sync::sync_networks,
+            sync::sync_forget_network,
+            sync::sync_android,
+            sync::sync_set_option,
+            autostart_get,
+            autostart_set,
             #[cfg(desktop)]
             ai::ai_status,
             #[cfg(desktop)]

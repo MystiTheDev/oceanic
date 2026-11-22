@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Check, MoreHorizontal, Smartphone, Trash2, Wifi } from "lucide-react";
 import { sync, syncAgo, syncSummary, type SyncInfo } from "../lib/sync";
+import { SyncNetworks, SyncOption } from "./SyncBackground";
 
 const PAIR_SECONDS = 120;
 type DevState = { tone: "idle" | "busy" | "ok" | "err"; text: string };
@@ -22,9 +23,11 @@ export function SyncSettings() {
   const [closed, setClosed] = useState("");
   const [menu, setMenu] = useState("");
   const [confirmId, setConfirmId] = useState("");
+  const [tray, setTray] = useState(false);
   const refresh = () => void sync.info().then(setInfo).catch(() => {});
   useEffect(() => {
     refresh();
+    void sync.autostart().then(setTray).catch(() => {});
     const t = setInterval(refresh, 1000);
     const un = [
       listen<string>("sync-paired", (e) => (setPaired(e.payload), setTimeout(() => setPaired(""), 4000))),
@@ -182,6 +185,13 @@ export function SyncSettings() {
           );
         })}
       </div>
+
+      <H3>Background</H3>
+      <SyncOption label="Start in tray with Windows" hint="Oceanic keeps listening for your phone after sign-in." on={tray} onChange={(on) => (setTray(on), void sync.setAutostart(on).catch(() => setTray(!on)))} />
+      <SyncOption label="Sync automatically" hint="On wake from sleep and when joining a trusted network." on={info.auto} onChange={(on) => void sync.setOption("syncAuto", on).then(refresh)} />
+
+      <H3>Sync networks</H3>
+      <SyncNetworks />
 
       {info.log.length > 0 && (
         <>

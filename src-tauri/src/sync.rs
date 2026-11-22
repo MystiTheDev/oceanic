@@ -40,6 +40,10 @@ struct Pairing {
 pub struct Sync {
     pairing: Mutex<Option<Pairing>>,
     listen_error: Mutex<Option<String>>,
+    /// mDNS announcement while on a trusted network (desktop).
+    announce: Mutex<Option<mdns_sd::ServiceDaemon>>,
+    /// Network key trusted "just this time".
+    once: Mutex<Option<String>>,
 }
 
 #[cfg(target_os = "android")]
@@ -95,6 +99,9 @@ fn ensure(conn: &Connection) -> Res<()> {
          CREATE TABLE IF NOT EXISTS sync_log (
            at INTEGER NOT NULL, peer TEXT NOT NULL,
            added INTEGER NOT NULL, edited INTEGER NOT NULL, deleted INTEGER NOT NULL, error TEXT
+         );
+         CREATE TABLE IF NOT EXISTS sync_networks (
+           key TEXT PRIMARY KEY, name TEXT NOT NULL, trust TEXT NOT NULL
          );",
     )
     .map_err(e)?;
@@ -401,6 +408,8 @@ pub fn sync_info(app: AppHandle, db: State<Db>, st: State<Sync>) -> Res<Value> {
         "listenError": *st.listen_error.lock().unwrap(),
         "pending": conn.query_row("SELECT COUNT(*) FROM sync_clock WHERE seq > (SELECT IFNULL(MIN(sent), 0) FROM sync_peers)", [], |r| r.get::<_, i64>(0)).unwrap_or(0),
         "log": sync_log(&conn),
+        "auto": crate::db::read_setting(&conn, "syncAuto").as_deref() != Some("0"),
+        "notify": crate::db::read_setting(&conn, "syncNotify").as_deref() != Some("0"),
     }))
 }
 
@@ -410,16 +419,20 @@ pub fn sync_pair_start(app: AppHandle, db: State<Db>, st: State<Sync>) -> Res<St
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
     let id = device_id(&db.0.lock().unwrap());
     let name = device_name(&app);
-    let mdns = mdns_sd::ServiceDaemon::new().ok().and_then(|d| {
-        let host = format!("oceanic-{}.local.", &id[..8]);
-        let info = mdns_sd::ServiceInfo::new(SERVICE, &name, &host, "", PORT, [("id", id.as_str())].as_slice()).ok()?.enable_addr_auto();
-        d.register(info).ok()?;
-        Some(d)
-    });
+    // Already announced on a trusted network: don't register twice.
+    let mdns = if st.announce.lock().unwrap().is_some() { None } else { announce(&id, &name) };
     let mut p = st.pairing.lock().unwrap();
     stop_pairing(&mut p);
     *p = Some(Pairing { code: code.clone(), until: Instant::now() + PAIR_WINDOW, fails: 0, mdns });
     Ok(code)
+}
+
+fn announce(id: &str, name: &str) -> Option<mdns_sd::ServiceDaemon> {
+    let d = mdns_sd::ServiceDaemon::new().ok()?;
+    let host = format!("oceanic-{}.local.", &id[..8]);
+    let info = mdns_sd::ServiceInfo::new(SERVICE, name, &host, "", PORT, [("id", id)].as_slice()).ok()?.enable_addr_auto();
+    d.register(info).ok()?;
+    Some(d)
 }
 
 #[tauri::command]
@@ -430,9 +443,15 @@ pub fn sync_pair_cancel(st: State<Sync>) {
 /// Looks for laptops in pairing mode on this network for about 3 seconds.
 #[tauri::command]
 pub async fn sync_discover(app: AppHandle) -> Res<Vec<Value>> {
+    tauri::async_runtime::spawn_blocking(move || browse(&app, None)).await.map_err(|e| e.to_string())?
+}
+
+/// mDNS browse for about 3 seconds: [{ name, addr, id }]. With `want`, stops
+/// once the device with that ID is found.
+fn browse(app: &AppHandle, want: Option<&str>) -> Res<Vec<Value>> {
     #[cfg(target_os = "android")]
     let _ = app.state::<SyncPlugin>().0.run_mobile_plugin::<()>("multicast", json!({ "on": true }));
-    let found = tauri::async_runtime::spawn_blocking(|| -> Res<Vec<Value>> {
+    let found = (|| -> Res<Vec<Value>> {
         let d = mdns_sd::ServiceDaemon::new().map_err(|e| e.to_string())?;
         let rx = d.browse(SERVICE).map_err(|e| e.to_string())?;
         let end = Instant::now() + Duration::from_secs(3);
@@ -443,16 +462,19 @@ pub async fn sync_discover(app: AppHandle) -> Res<Vec<Value>> {
                 let Some(ip) = info.get_addresses_v4().into_iter().next() else { continue };
                 let name = info.get_fullname().trim_end_matches(SERVICE).trim_end_matches('.').to_string();
                 let addr = format!("{ip}:{}", info.get_port());
+                let id = info.get_property_val_str("id").unwrap_or("").to_string();
                 if !out.iter().any(|v| v["addr"] == addr) {
-                    out.push(json!({ "name": name, "addr": addr }));
+                    let hit = want == Some(id.as_str());
+                    out.push(json!({ "name": name, "addr": addr, "id": id }));
+                    if hit {
+                        break;
+                    }
                 }
             }
         }
         let _ = d.shutdown();
         Ok(out)
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    })();
     #[cfg(target_os = "android")]
     let _ = app.state::<SyncPlugin>().0.run_mobile_plugin::<()>("multicast", json!({ "on": false }));
     let _ = &app;
@@ -753,7 +775,16 @@ fn dial(app: &AppHandle, id: &str) -> Res<Channel> {
     if addr.is_empty() {
         return Err("No address known for that device yet.".into());
     }
-    let mut s = connect(&addr)?;
+    // Last address failed: look the peer up over mDNS (trusted networks only).
+    let mut s = match connect(&addr) {
+        Ok(s) => s,
+        Err(e) => {
+            let found = if on_trusted(app) { browse(app, Some(id)).unwrap_or_default() } else { vec![] };
+            let Some(addr) = found.iter().find(|v| v["id"] == id).and_then(|v| v["addr"].as_str()) else { return Err(e) };
+            db.0.lock().unwrap().execute("UPDATE sync_peers SET addr = ?1 WHERE id = ?2", params![addr, id]).map_err(|e| e.to_string())?;
+            connect(addr)?
+        }
+    };
     let io = |e: std::io::Error| e.to_string();
     send_json(&mut s, json!({ "t": "hello", "from": me, "to": id })).map_err(io)?;
     let r = recv_json(&mut s).map_err(io)?;
@@ -766,27 +797,239 @@ fn dial(app: &AppHandle, id: &str) -> Res<Channel> {
 /// "Sync now": swaps changes with a paired device. Returns pages added, edited, deleted here.
 #[tauri::command]
 pub async fn sync_now(app: AppHandle, id: String) -> Res<Value> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let db = app.state::<Db>();
-        let r = (|| {
-            let (mine, snap) = outgoing(&db.0.lock().unwrap(), &id)?;
-            let mut ch = dial(&app, &id)?;
-            let _ = ch.s.set_read_timeout(Some(Duration::from_secs(120)));
-            ch.send(json!({ "t": "sync", "rows": mine }).to_string().as_bytes())?;
-            let theirs = rows_of(&ch.recv()?)?;
-            let stats = apply(&db.0.lock().unwrap(), &theirs)?;
-            ch.send(b"done")?;
-            db.0.lock().unwrap().execute("UPDATE sync_peers SET sent = ?1 WHERE id = ?2", params![snap, id]).map_err(|e| e.to_string())?;
-            Ok(stats)
-        })();
+    tauri::async_runtime::spawn_blocking(move || sync_peer(&app, &id, false).map(|(a, e, d)| json!({ "added": a, "edited": e, "deleted": d })))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// One sync with a peer. `quiet` (background runs) doesn't log failures.
+fn sync_peer(app: &AppHandle, id: &str, quiet: bool) -> Res<Stats> {
+    let db = app.state::<Db>();
+    let r = (|| {
+        let (mine, snap) = outgoing(&db.0.lock().unwrap(), id)?;
+        let mut ch = dial(app, id)?;
+        let _ = ch.s.set_read_timeout(Some(Duration::from_secs(120)));
+        ch.send(json!({ "t": "sync", "rows": mine }).to_string().as_bytes())?;
+        let theirs = rows_of(&ch.recv()?)?;
+        let stats = apply(&db.0.lock().unwrap(), &theirs)?;
+        ch.send(b"done")?;
+        db.0.lock().unwrap().execute("UPDATE sync_peers SET sent = ?1 WHERE id = ?2", params![snap, id]).map_err(|e| e.to_string())?;
+        Ok(stats)
+    })();
+    if !(quiet && r.is_err()) {
         let conn = db.0.lock().unwrap();
-        log(&conn, &peer_name(&conn, &id), &r);
+        log(&conn, &peer_name(&conn, id), &r);
         drop(conn);
         let _ = app.emit("sync-applied", ());
-        r.map(|(a, e, d)| json!({ "added": a, "edited": e, "deleted": d }))
+    }
+    r
+}
+
+// ------------------------------------------------------------ background
+
+/// The current network as (key, display name): Wi-Fi name, else the
+/// router's BSSID or the gateway address.
+fn network(app: &AppHandle) -> Option<(String, String)> {
+    #[cfg(target_os = "android")]
+    {
+        let v = app.state::<SyncPlugin>().0.run_mobile_plugin::<Value>("network", json!({})).ok()?;
+        let get = |k: &str| v[k].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+        return get("ssid")
+            .map(|s| (format!("ssid:{s}"), s))
+            .or_else(|| get("bssid").map(|b| (format!("bssid:{b}"), format!("Wi-Fi {b}"))))
+            .or_else(|| get("gateway").map(|g| (format!("gw:{g}"), format!("Network at {g}"))));
+    }
+    #[cfg(windows)]
+    {
+        let _ = app;
+        let run = |cmd: &str, args: &[&str]| -> String {
+            use std::os::windows::process::CommandExt;
+            std::process::Command::new(cmd)
+                .args(args)
+                .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_default()
+        };
+        let wlan = run("netsh", &["wlan", "show", "interfaces"]);
+        let ssid = wlan.lines().map(str::trim).find(|l| l.starts_with("SSID")).and_then(|l| l.split_once(':')).map(|(_, v)| v.trim().to_string());
+        if let Some(s) = ssid.filter(|s| !s.is_empty()) {
+            return Some((format!("ssid:{s}"), s));
+        }
+        let routes = run("route", &["print", "-4", "0.0.0.0"]);
+        let gw = routes
+            .lines()
+            .map(|l| l.split_whitespace().collect::<Vec<_>>())
+            .find(|f| f.len() >= 3 && f[0] == "0.0.0.0" && f[1] == "0.0.0.0")
+            .map(|f| f[2].to_string())?;
+        return Some((format!("gw:{gw}"), format!("Network at {gw}")));
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = app;
+        None
+    }
+}
+
+fn trust_of(app: &AppHandle, key: &str) -> Option<String> {
+    if app.state::<Sync>().once.lock().unwrap().as_deref() == Some(key) {
+        return Some("once".into());
+    }
+    let db = app.state::<Db>();
+    let conn = db.0.lock().unwrap();
+    ensure(&conn).ok()?;
+    conn.query_row("SELECT trust FROM sync_networks WHERE key = ?1", [key], |r| r.get(0)).optional().ok()?
+}
+
+fn on_trusted(app: &AppHandle) -> bool {
+    network(app).and_then(|(k, _)| trust_of(app, &k)).is_some_and(|t| t != "never")
+}
+
+/// Desktop: announce over mDNS only while on a trusted network.
+fn refresh_announce(app: &AppHandle, trusted: bool) {
+    #[cfg(desktop)]
+    {
+        let st = app.state::<Sync>();
+        let mut a = st.announce.lock().unwrap();
+        if !trusted {
+            if let Some(d) = a.take() {
+                let _ = d.shutdown();
+            }
+        } else if a.is_none() {
+            let id = device_id(&app.state::<Db>().0.lock().unwrap());
+            *a = announce(&id, &device_name(app));
+        }
+    }
+    let _ = (app, trusted);
+}
+
+/// Syncs with every paired device if this network is trusted. Returns how many synced.
+fn auto_sync(app: &AppHandle) -> usize {
+    let ids: Vec<String> = peers(&app.state::<Db>().0.lock().unwrap()).unwrap_or_default().into_iter().map(|p| p.id).collect();
+    if ids.is_empty() || !option(app, "syncAuto") || !on_trusted(app) {
+        return 0;
+    }
+    #[cfg(target_os = "android")]
+    let notify = option(app, "syncNotify");
+    #[cfg(target_os = "android")]
+    if notify {
+        let _ = app.state::<SyncPlugin>().0.run_mobile_plugin::<()>("syncing", json!({ "on": true }));
+    }
+    let n = ids.iter().filter(|id| sync_peer(app, id, true).is_ok()).count();
+    #[cfg(target_os = "android")]
+    if notify {
+        let _ = app.state::<SyncPlugin>().0.run_mobile_plugin::<()>("syncing", json!({ "on": false }));
+    }
+    n
+}
+
+/// Background options, on unless set to "0": syncAuto, syncNotify.
+fn option(app: &AppHandle, key: &str) -> bool {
+    crate::db::read_setting(&app.state::<Db>().0.lock().unwrap(), key).as_deref() != Some("0")
+}
+
+#[tauri::command]
+pub fn sync_set_option(db: State<Db>, key: String, on: bool) -> Res<()> {
+    if !["syncAuto", "syncNotify"].contains(&key.as_str()) {
+        return Err("Unknown option.".into());
+    }
+    crate::db::write_setting(&db.0.lock().unwrap(), &key, if on { "1" } else { "0" }).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Every 30 s (while the app process runs), check the network. On a change
+/// (e.g. Wi-Fi joined), or on wake from sleep (the wall clock jumped),
+/// refresh mDNS and sync with paired devices.
+pub fn start_watch(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last: Option<Option<String>> = None;
+        let mut wall = std::time::SystemTime::now();
+        loop {
+            let woke = wall.elapsed().is_ok_and(|d| d > Duration::from_secs(90));
+            wall = std::time::SystemTime::now();
+            let key = network(&app).map(|n| n.0);
+            let moved = last.as_ref() != Some(&key);
+            if moved {
+                *app.state::<Sync>().once.lock().unwrap() = None;
+                last = Some(key);
+                let _ = app.emit("sync-network", ());
+            }
+            if moved || woke {
+                refresh_announce(&app, on_trusted(&app));
+                auto_sync(&app);
+            }
+            std::thread::sleep(Duration::from_secs(30));
+        }
+    });
+}
+
+/// The current network and its trust: always, never, once, or null (ask).
+#[tauri::command]
+pub async fn sync_network(app: AppHandle) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || match network(&app) {
+        Some((key, name)) => json!({ "key": key, "name": name, "trust": trust_of(&app, &key) }),
+        None => Value::Null,
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Answers the trust prompt: "always", "never" or "once".
+#[tauri::command]
+pub async fn sync_trust(app: AppHandle, key: String, name: String, trust: String) -> Res<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if trust == "once" {
+            *app.state::<Sync>().once.lock().unwrap() = Some(key);
+        } else {
+            let db = app.state::<Db>();
+            let conn = db.0.lock().unwrap();
+            ensure(&conn)?;
+            conn.execute("INSERT OR REPLACE INTO sync_networks VALUES (?1, ?2, ?3)", params![key, name, trust]).map_err(|e| e.to_string())?;
+        }
+        refresh_announce(&app, trust != "never");
+        auto_sync(&app);
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Settings → Sync networks.
+#[tauri::command]
+pub fn sync_networks(db: State<Db>) -> Res<Vec<Value>> {
+    let conn = db.0.lock().unwrap();
+    ensure(&conn)?;
+    let mut st = conn.prepare("SELECT key, name, trust FROM sync_networks ORDER BY name").map_err(|e| e.to_string())?;
+    let rows = st
+        .query_map([], |r| Ok(json!({ "key": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?, "trust": r.get::<_, String>(2)? })))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn sync_forget_network(app: AppHandle, db: State<Db>, key: String) -> Res<()> {
+    db.0.lock().unwrap().execute("DELETE FROM sync_networks WHERE key = ?1", [&key]).map_err(|e| e.to_string())?;
+    refresh_announce(&app, on_trusted(&app));
+    let _ = app.emit("sync-network", ());
+    Ok(())
+}
+
+/// Phone prompts: hasLocation, askLocation, batteryOk, askBattery (SyncPlugin.kt).
+#[tauri::command]
+pub fn sync_android(app: AppHandle, cmd: String) -> Res<bool> {
+    #[cfg(target_os = "android")]
+    {
+        if !["hasLocation", "askLocation", "batteryOk", "askBattery"].contains(&cmd.as_str()) {
+            return Err("Unknown command.".into());
+        }
+        let v = app.state::<SyncPlugin>().0.run_mobile_plugin::<Value>(&cmd, json!({})).map_err(|e| e.to_string())?;
+        return Ok(v["ok"].as_bool().unwrap_or(true));
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, cmd);
+        Ok(true)
+    }
 }
 
 #[cfg(test)]

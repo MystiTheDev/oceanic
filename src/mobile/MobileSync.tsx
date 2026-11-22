@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronRight, Laptop, Loader2, RefreshCw, Smartphone } from "lucide-react";
 import { sync, syncAgo, syncSummary, type FoundLaptop, type SyncInfo } from "../lib/sync";
 import { buzz } from "./mobilePrefs";
+import { Row, Switch } from "./MobileSettings";
+import { SyncNetworks } from "../components/SyncBackground";
 
 type Tone = "idle" | "busy" | "ok" | "err";
 
@@ -11,7 +13,14 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
   const [state, setState] = useState<Record<string, { tone: Tone; text: string }>>({});
   const [arming, setArming] = useState("");
   const refresh = () => void sync.info().then(setInfo).catch(() => {});
-  useEffect(refresh, []);
+  const [battery, setBattery] = useState(true);
+  useEffect(() => {
+    refresh();
+    const check = () => void sync.android("batteryOk").then(setBattery).catch(() => {});
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
   if (!info) return null;
 
   const run = async (id: string, busy: string, job: () => Promise<string>) => {
@@ -111,6 +120,20 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
           </section>
         </>
       )}
+      <h3 className="ocs-head">Background</h3>
+      <section className="ocs-group">
+        <Row title="Sync when joining Wi-Fi">
+          <Switch on={info.auto} onChange={(on) => void sync.setOption("syncAuto", on).then(refresh)} />
+        </Row>
+        <Row title="Show “Syncing notes…” notification">
+          <Switch on={info.notify} onChange={(on) => void sync.setOption("syncNotify", on).then(refresh)} />
+        </Row>
+        <Row title="Battery use: Unrestricted" value={battery ? "Done" : undefined} onClick={battery ? undefined : () => void sync.android("askBattery")} />
+      </section>
+      <h3 className="ocs-head">Sync networks</h3>
+      <section className="ocs-group" style={{ padding: "4px 12px" }}>
+        <SyncNetworks />
+      </section>
       <p className="ocs-note">Page text merging arrives in a later update. For now, if both devices edit the same page, the newest edit wins.</p>
     </>
   );

@@ -29,7 +29,7 @@ type Props = {
 };
 
 
-function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+export function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button role="switch" aria-checked={on} className={`ocs-switch ${on ? "on" : ""}`} onClick={() => (buzz(), onChange(!on))}>
       <span />
@@ -52,7 +52,7 @@ function HomeRow({ id, hidden }: { id: HomeSection; hidden: HomeSection[] }) {
   );
 }
 
-function Row({ icon, title, value, onClick, children }: { icon?: ReactNode; title: string; value?: string; onClick?: () => void; children?: ReactNode }) {
+export function Row({ icon, title, value, onClick, children }: { icon?: ReactNode; title: string; value?: string; onClick?: () => void; children?: ReactNode }) {
   const body = (
     <>
       {icon && <span className="ocs-icon">{icon}</span>}

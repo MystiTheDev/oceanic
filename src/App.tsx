@@ -98,6 +98,7 @@ import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell, isMobile } from "./mobile/MobileShell";
+import { SyncTrustBanner } from "./components/SyncBackground";
 import { MobilePropChips } from "./mobile/MobileProps";
 import { attachBlocks, pickFiles, titleFor } from "./mobile/attach";
 import { onOpenedFile, pickFile, shareFile } from "./mobile/share";
@@ -2170,6 +2171,7 @@ export default function App() {
       )}
       {agentTest && <TestSetup pages={allLivePages} initialNotes={agentTest} onClose={() => setAgentTest(null)} />}
       {isMobile && <MobileUpdater />}
+      <SyncTrustBanner />
       {settingsOpen && isMobile && (
         <MobileSettings
           settings={settings}

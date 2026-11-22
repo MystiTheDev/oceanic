@@ -13,6 +13,9 @@ export type SyncInfo = {
   /** Changes not yet sent to every paired device. */
   pending: number;
   log: SyncLogEntry[];
+  /** Background options (on unless turned off). */
+  auto: boolean;
+  notify: boolean;
 };
 export type SyncLogEntry = { at: number; peer: string; added: number; edited: number; deleted: number; error: string | null };
 export type SyncResult = { added: number; edited: number; deleted: number };
@@ -46,4 +49,15 @@ export const sync = {
   test: (id: string) => call<string>("sync_test", { id }),
   now: (id: string) => call<SyncResult>("sync_now", { id }),
   unpair: (id: string) => call<void>("sync_unpair", { id }),
+  // 7d: trusted networks and background options.
+  network: () => call<SyncNetwork | null>("sync_network"),
+  trust: (n: { key: string; name: string }, trust: "always" | "never" | "once") => call<void>("sync_trust", { key: n.key, name: n.name, trust }),
+  networks: () => call<SyncNetwork[]>("sync_networks"),
+  forget: (key: string) => call<void>("sync_forget_network", { key }),
+  setOption: (key: "syncAuto" | "syncNotify", on: boolean) => call<void>("sync_set_option", { key, on }),
+  autostart: () => call<boolean>("autostart_get"),
+  setAutostart: (on: boolean) => call<void>("autostart_set", { on }),
+  /** Phone only: hasLocation, askLocation, batteryOk, askBattery. */
+  android: (cmd: "hasLocation" | "askLocation" | "batteryOk" | "askBattery") => call<boolean>("sync_android", { cmd }),
 };
+export type SyncNetwork = { key: string; name: string; trust: "always" | "never" | "once" | null };
