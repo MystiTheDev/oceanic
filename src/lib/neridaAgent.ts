@@ -208,7 +208,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const t = asStr(a.title) || "Untitled";
     const parent = a.parent ? findNote(a.parent) : null;
     const md = asStr(a.content);
-    const ok = await approve({ kind: "create", title: `Create note Ã¢â‚¬Å“${t}Ã¢â‚¬Â${parent ? ` in ${title(parent)}` : ""}`, after: md || "(empty)" }, true);
+    const ok = await approve({ kind: "create", title: `Create note “${t}”${parent ? ` in ${title(parent)}` : ""}`, after: md || "(empty)" }, true);
     if (!ok) return rejected(`create note ${t}`);
     const id = await H().createNote(t, parent?.id ?? null, md ? H().markdown(md) : undefined);
     if (!id) throw new Error("Couldn't create the note.");
@@ -246,7 +246,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
       }
     }
     const n = plan.length;
-    const ok = await ask({ kind: "edit", title: `Edit ${n} block${n > 1 ? "s" : ""} in Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, before: was.reverse().join("\n\n"), after: now.reverse().join("\n\n") });
+    const ok = await ask({ kind: "edit", title: `Edit ${n} block${n > 1 ? "s" : ""} in “${title(p)}”`, before: was.reverse().join("\n\n"), after: now.reverse().join("\n\n") });
     if (!ok) return rejected(`edit ${title(p)}`);
     H().setDoc(p.id, doc);
     return { result: `Edited ${n} block${n > 1 ? "s" : ""} in "${title(p)}". Block numbers changed: call read_note again before more edits.`, log: { kind: "edit", text: `Edited ${n} block${n > 1 ? "s" : ""} in ${title(p)}`, pageId: p.id, state: "applied" }, undo: () => H().setDoc(p.id, fresh(before)) };
@@ -259,7 +259,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const old = title(p);
     if (!(await ask({ kind: "edit", title: "Rename note", before: old, after: t }))) return rejected(`rename ${old}`);
     H().rename(p.id, t);
-    return { result: `Renamed "${old}" to "${t}".`, log: { kind: "edit", text: `Renamed ${old} Ã¢â€ â€™ ${t}`, pageId: p.id, state: "applied" }, undo: () => H().rename(p.id, p.title) };
+    return { result: `Renamed "${old}" to "${t}".`, log: { kind: "edit", text: `Renamed ${old} → ${t}`, pageId: p.id, state: "applied" }, undo: () => H().rename(p.id, p.title) };
   },
 
   async move_note(a) {
@@ -269,7 +269,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     if (to?.id === p.id) throw new Error("A note can't go inside itself.");
     const from = p.parentId;
     const where = to ? `into ${title(to)}` : "to the top level";
-    if (!(await ask({ kind: "edit", title: `Move Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â ${where}` }))) return rejected(`move ${title(p)}`);
+    if (!(await ask({ kind: "edit", title: `Move “${title(p)}” ${where}` }))) return rejected(`move ${title(p)}`);
     await H().move(p.id, to?.id ?? null);
     return { result: `Moved "${title(p)}" ${where}.`, log: { kind: "edit", text: `Moved ${title(p)} ${where}`, pageId: p.id, state: "applied" }, undo: () => H().move(p.id, from) };
   },
@@ -280,7 +280,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const rm = new Set(asList(a.remove).map((t) => t.toLowerCase()));
     const tags = [...new Set([...old.filter((t) => !rm.has(t.toLowerCase())), ...asList(a.add)])];
     if (tags.join() === old.join()) return { result: "Tags already match; nothing changed." };
-    if (!(await ask({ kind: "edit", title: `Tags on Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, before: old.join(", ") || "(none)", after: tags.join(", ") || "(none)" }))) return rejected(`tag ${title(p)}`);
+    if (!(await ask({ kind: "edit", title: `Tags on “${title(p)}”`, before: old.join(", ") || "(none)", after: tags.join(", ") || "(none)" }))) return rejected(`tag ${title(p)}`);
     H().setTags(p.id, tags);
     return { result: `Tags on "${title(p)}" are now: ${tags.join(", ") || "none"}.`, log: { kind: "edit", text: `Tagged ${title(p)}: ${tags.join(", ") || "no tags"}`, pageId: p.id, state: "applied" }, undo: () => H().setTags(p.id, old) };
   },
@@ -288,7 +288,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
   async delete_note(a) {
     const p = findNote(a.note);
     const subs = live().filter((x) => x.parentId === p.id).length;
-    if (!(await ask({ kind: "delete", title: `Move Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â to Trash`, warning: subs ? `Its ${subs} sub-note${subs > 1 ? "s go" : " goes"} too.` : undefined }))) return rejected(`delete ${title(p)}`);
+    if (!(await ask({ kind: "delete", title: `Move “${title(p)}” to Trash`, warning: subs ? `Its ${subs} sub-note${subs > 1 ? "s go" : " goes"} too.` : undefined }))) return rejected(`delete ${title(p)}`);
     H().trash(p.id);
     return { result: `Moved "${title(p)}" to the Trash.`, log: { kind: "delete", text: `Moved ${title(p)} to Trash`, state: "applied" }, undo: () => H().restore(p.id) };
   },
@@ -300,7 +300,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     await generateCards(await gatherText([p.id], false), count, ["qa"], "medium", (c) => made.push(c.text));
     if (stopped) return { result: "Stopped." };
     if (!made.length) return { result: `No flashcards from "${title(p)}". ${whyNoFacts()}`, log: { kind: "error", text: `No flashcards from ${title(p)}` } };
-    if (!(await approve({ kind: "study", title: `Add ${made.length} flashcards to Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, lines: made }, true))) return rejected(`flashcards for ${title(p)}`);
+    if (!(await approve({ kind: "study", title: `Add ${made.length} flashcards to “${title(p)}”`, lines: made }, true))) return rejected(`flashcards for ${title(p)}`);
     const before = await H().getDoc(p.id);
     H().setDoc(p.id, withCards(JSON.parse(JSON.stringify(before)), made));
     return { result: `Added ${made.length} flashcards to "${title(p)}".`, log: { kind: "study", text: `Made ${made.length} flashcards in ${title(p)}`, pageId: p.id, state: "applied" }, undo: () => H().setDoc(p.id, fresh(before)) };
@@ -319,7 +319,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const branches = (Array.isArray(a.branches) ? a.branches : []).map((b) => (typeof b === "string" ? { label: b, children: [] } : { label: asStr((b as Args).label), children: asList((b as Args).children) })).filter((b) => b.label).slice(0, 12);
     if (!branches.length) throw new Error("branches is empty.");
     const lines = branches.map((b) => `${b.label}${b.children.length ? `: ${b.children.join(", ")}` : ""}`);
-    if (!(await approve({ kind: "study", title: `Create mind map Ã¢â‚¬Å“${t}Ã¢â‚¬Â`, lines }, true))) return rejected(`mind map ${t}`);
+    if (!(await approve({ kind: "study", title: `Create mind map “${t}”`, lines }, true))) return rejected(`mind map ${t}`);
     const map = await api.createMindmap(t, "");
     const nodes: MindmapNodeRecord[] = [{ id: "root", label: t, positionX: 0, positionY: 0, parentNodeId: null, linkedPageId: link?.id ?? null, styleJson: '{"shape":"pill"}' }];
     branches.forEach((b, i) => {
@@ -341,8 +341,8 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const moving = asList(a.move).map(findNote);
     const lines = [...subs.map((s) => `New: ${s.title}`), ...moving.map((m) => `Move in: ${title(m)}`)];
     // Moving existing notes is a change, so it always asks.
-    if (!(await approve({ kind: "create", title: `Create folder Ã¢â‚¬Å“${t}Ã¢â‚¬Â`, lines: lines.length ? lines : undefined }, !moving.length))) return rejected(`folder ${t}`);
-    const id = await H().createNote(t, null, H().markdown(`Ã°Å¸â€œÂ ${t}`));
+    if (!(await approve({ kind: "create", title: `Create folder “${t}”`, lines: lines.length ? lines : undefined }, !moving.length))) return rejected(`folder ${t}`);
+    const id = await H().createNote(t, null, H().markdown(`📁 ${t}`));
     if (!id) throw new Error("Couldn't create the folder.");
     const made: string[] = [];
     for (const s of subs) {
@@ -366,9 +366,9 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
   async link_notes(a) {
     const [x, y] = [findNote(a.from), findNote(a.to)];
     if (x.id === y.id) throw new Error("Pick two different notes.");
-    if (!(await approve({ kind: "create", title: `Link Ã¢â‚¬Å“${title(x)}Ã¢â‚¬Â Ã¢â€ â€ Ã¢â‚¬Å“${title(y)}Ã¢â‚¬Â` }, true))) return rejected("link");
+    if (!(await approve({ kind: "create", title: `Link “${title(x)}” ↔ “${title(y)}”` }, true))) return rejected("link");
     await api.connectPages(x.id, y.id, "related");
-    return { result: `Linked "${title(x)}" and "${title(y)}" on the Atlas.`, log: { kind: "create", text: `Linked ${title(x)} Ã¢â€ â€ ${title(y)}`, pageId: x.id, state: "applied" }, undo: () => api.deleteCanvasEdge(x.id, y.id) };
+    return { result: `Linked "${title(x)}" and "${title(y)}" on the Atlas.`, log: { kind: "create", text: `Linked ${title(x)} ↔ ${title(y)}`, pageId: x.id, state: "applied" }, undo: () => api.deleteCanvasEdge(x.id, y.id) };
   },
 
   async add_calendar_event(a) {
@@ -376,7 +376,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const date = asStr(a.date);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) throw new Error(`date must be YYYY-MM-DD, got "${date}". Today is ${new Date().toISOString().slice(0, 10)}.`);
     const md = asStr(a.details);
-    if (!(await approve({ kind: "create", title: `Add Ã¢â‚¬Å“${t}Ã¢â‚¬Â on ${date}`, after: md || undefined }, true))) return rejected(`event ${t}`);
+    if (!(await approve({ kind: "create", title: `Add “${t}” on ${date}`, after: md || undefined }, true))) return rejected(`event ${t}`);
     const id = await H().createNote(t, null, md ? H().markdown(md) : undefined, date);
     if (!id) throw new Error("Couldn't create the event.");
     return { result: `Added "${t}" to the calendar on ${date}.`, log: { kind: "create", text: `Added ${t} on ${date}`, pageId: id, state: "applied" }, undo: () => H().trash(id) };
@@ -440,7 +440,7 @@ export const jsonFallback = {
     "To use a tool, reply with ONLY one JSON object and nothing else: {\"tool\": \"<name>\", \"args\": {...}}. " +
     "When you are finished, or no tool is needed, reply in plain text (no JSON).\nTools:\n" +
     tools.map((t) => `- ${t.name}(${Object.keys(t.params).map((k) => (t.required.includes(k) ? k : k + "?")).join(", ")}): ${t.description}`).join("\n"),
-  /** A call written as text: `{"tool":Ã¢â‚¬Â¦}`, `{"name":Ã¢â‚¬Â¦,"arguments":Ã¢â‚¬Â¦}` or `<tool_call>Ã¢â‚¬Â¦</tool_call>`. null = plain answer; Error = a broken attempt. */
+  /** A call written as text: `{"tool":…}`, `{"name":…,"arguments":…}` or `<tool_call>…</tool_call>`. null = plain answer; Error = a broken attempt. */
   parse(text: string): { name: string; args: Args } | Error | null {
     const t = text.replace(/<\/?tool_call>/g, "").replace(/^```(?:json)?|```$/gm, "").trim();
     if (!/^\{[\s\S]*"(tool|name)"/.test(t)) return null;
