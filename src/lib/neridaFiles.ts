@@ -5,9 +5,12 @@ import { relevantPassages, type SourceBook } from "./neridaGuard";
 /* Attachments for Nerida: turn a dropped/picked file into plain text the model
  * can read. Backend only for now; the composer's attach button is not wired yet. */
 
-export type Attachment = { name: string; text: string; truncated: boolean };
+/** `thumb`: a small preview when the attachment is a picture (its text is Nerida's reading of it). */
+export type Attachment = { name: string; text: string; truncated: boolean; thumb?: string };
+export const isImageFile = (f: File) => f.type.startsWith("image/");
+export const MAX_IMAGES = 4;
 
-export const ATTACH_ACCEPT = ".pdf,.docx,.txt,.md,.markdown,.csv,.json,.html,.htm";
+export const ATTACH_ACCEPT = ".pdf,.docx,.txt,.md,.markdown,.csv,.json,.html,.htm,.png,.jpg,.jpeg,.webp,.gif,.bmp";
 const MAX_CHARS = 40_000; // keeps one file from swamping a small model's context
 
 export async function extractFileText(file: File): Promise<Attachment> {
@@ -36,5 +39,5 @@ export async function extractFileText(file: File): Promise<Attachment> {
 /** Prompt section for attachments, appended to the notes context. */
 export const attachmentsContext = (files: Attachment[], book?: SourceBook, question = "") =>
   book
-    ? files.map((f) => book.add("file", `File "${f.name}"${f.truncated ? " (truncated)" : ""}`, relevantPassages(f.text, question, 8000))).filter(Boolean).join("\n\n")
-    : files.map((f) => `### File: ${f.name}${f.truncated ? " (truncated)" : ""}\n${f.text}`).join("\n\n");
+    ? files.map((f) => book.add("file", `${f.thumb ? "Picture" : "File"} "${f.name}"${f.truncated ? " (truncated)" : ""}`, relevantPassages(f.text, question, 8000))).filter(Boolean).join("\n\n")
+    : files.map((f) => `### ${f.thumb ? "Picture" : "File"}: ${f.name}${f.truncated ? " (truncated)" : ""}\n${f.text}`).join("\n\n");

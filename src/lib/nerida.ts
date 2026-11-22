@@ -1,3 +1,4 @@
+import { imageReading } from "./neridaImages";
 import { useSyncExternalStore } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { api } from "../data/api";
@@ -53,7 +54,7 @@ export type ChatMessage = { role: string; content: string | unknown[] | null; to
 export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 /** One line of Nerida's agent activity log, kept on the reply. */
 export type AgentLog = { id: string; kind: "read" | "create" | "edit" | "delete" | "study" | "error"; text: string; pageId?: string; state?: "applied" | "rejected" | "undone"; /** make_test: notes to open the test setup with. */ test?: string[] };
-export type Msg = { role: "user" | "assistant"; content: string; /** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[]; /** Agent mode: what Nerida did. */ actions?: AgentLog[] };
+export type Msg = { role: "user" | "assistant"; content: string; /** Small previews of pictures sent with a user message. */ images?: string[];/** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[]; /** Agent mode: what Nerida did. */ actions?: AgentLog[] };
 export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number; /** Notes pinned to this chat's context. */ pinned?: string[] };
 export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean };
 
@@ -332,11 +333,21 @@ type Node = { type?: string; text?: string; content?: Node[] | string; children?
 /** BlockNote JSON → readable plain text (one line per block). */
 export function docText(json: string | null): string {
   if (!json) return "";
-  const inline = (c: Node["content"]): string =>
-    typeof c === "string" ? c : (c ?? []).map((n) => n.text ?? inline(n.content)).join("");
+  type Cell = Node["content"] | { content?: Node["content"] };
+  const inline = (c: Node["content"]): string => {
+    if (typeof c === "string") return c;
+    // Tables hold { rows: [{ cells }] } instead of an array; one line per row, cells split by " | ".
+    const rows = (c as unknown as { rows?: { cells: Cell[] }[] })?.rows;
+    if (rows) return rows.map((r) => r.cells.map((x) => inline(Array.isArray(x) ? x : (x as { content?: Node["content"] })?.content).trim()).join(" | ")).join("\n");
+    return (Array.isArray(c) ? c : []).map((n) => n.text ?? inline(n.content)).join("");
+  };
   const out: string[] = [];
   const walk = (blocks: Node[], depth: number) => {
     for (const b of blocks) {
+      // Pictures: a label line, then their saved Vision reading (see neridaImages) as normal lines.
+      const pic = b.type === "image" ? (b.props as { url?: string; caption?: string } | undefined) : undefined;
+      const seen = pic?.url ? imageReading(pic.url) : undefined;
+      if (pic?.url) out.push(`[Picture${pic.caption ? ` "${pic.caption}"` : ""}${seen ? ", read by Nerida" : ", not read yet"}]`, ...(seen?.split("\n").map((l) => l.trim()).filter(Boolean) ?? []));
       const t = inline(b.content).trim();
       if (t) {
         const indent = "  ".repeat(depth);

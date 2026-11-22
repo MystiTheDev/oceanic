@@ -294,6 +294,7 @@ export function Sidebar({
         const rest = files.filter((f) => !images.includes(f));
         if (rest.length) onImport(rest);
       }}
+      data-tour="sidebar"
       className="oc-sidebar relative z-10 my-2 ml-2 flex h-[calc(100%-16px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[var(--oc-sidebar)] backdrop-blur"
     >
       {fileOver && (

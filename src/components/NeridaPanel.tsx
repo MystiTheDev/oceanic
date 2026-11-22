@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { runTools, searchWeb } from "../lib/neridaTools";
 import { SourceBook, type SourceRef } from "../lib/neridaGuard";
-import { noteChars, refresh as refreshIndex, searchNotes as searchIndex } from "../lib/noteIndex";
+import { forget as forgetIndex, noteChars, refresh as refreshIndex, searchNotes as searchIndex } from "../lib/noteIndex";
+import { canSeeImages, readImage, readNoteImages, shrink, unreadImages } from "../lib/neridaImages";
+import { ImageAnnotator } from "./ImageAnnotator";
 import { ContextPicker } from "./NeridaContext";
 import { createMindmap } from "../mindmap/MindmapGallery";
 import { MAP_FLAG } from "../mindmap/NeridaMap";
@@ -16,13 +18,13 @@ import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
 import { ASK_WHICH, editPrompt, proposalWarning, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
 import { ModelMenu } from "./NeridaModelMenu";
 import { openNeridaCards } from "./NeridaCards";
-import { ATTACH_ACCEPT, attachmentsContext, extractFileText, type Attachment } from "../lib/neridaFiles";
+import { ATTACH_ACCEPT, attachmentsContext, extractFileText, isImageFile, MAX_IMAGES, type Attachment } from "../lib/neridaFiles";
 import { isTauri } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "../data/api";
 import { NeridaIntro } from "./NeridaIntro";
 import {
-  buildContext, trimHistory, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM, AGENT_SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
+  buildContext, trimHistory, MAX_NOTES, noteBudget, builtin, chatGroups, downloadModel, downloadVision, engine, openNeridaSettings, isCloud, listModels, MODEL_NAMES, modelLabel, nerida, OLLAMA_URL, relatedNotes, setDefaultModel, SYSTEM, EDIT_SYSTEM, AGENT_SYSTEM, withNotes, uid, useNerida, isFeaturesQuestion, isLocked, UPGRADE_MSG,
   type AgentLog, type AiStatus, type Chat, type ContextNote, type ModelId, type ModelRef, type Msg,
 } from "../lib/nerida";
 
@@ -346,12 +348,29 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   // "Essay due Friday" → confirm card; the chat (with the user's message) it answers into.
   const [task, setTask] = useState<{ draft: TaskDraft; base: Chat } | null>(null);
   const filePicker = useRef<HTMLInputElement>(null);
+  /** Pictures need the Vision add-on; this explains it, with a button to add it. */
+  const [needVision, setNeedVision] = useState("");
+  /** A chat picture opened in the viewer. */
+  const [viewing, setViewing] = useState<string | null>(null);
   const addFiles = async (list: FileList | File[]) => {
+    let pics = files.filter((f) => f.thumb).length;
     for (const f of [...list]) {
+      const pic = isImageFile(f);
+      if (pic && pics >= MAX_IMAGES) {
+        setErr(`Up to ${MAX_IMAGES} pictures per message.`);
+        continue;
+      }
+      if (pic && !(await canSeeImages())) {
+        setNeedVision("To read pictures, Nerida needs the Vision add-on.");
+        continue;
+      }
+      if (pic) pics++;
       setReading((n) => n + 1);
       try {
-        const a = await extractFileText(f);
-        setFiles((x) => [...x.filter((y) => y.name !== a.name), a]);
+        const a: Attachment = pic
+          ? { name: f.name || "Pasted picture", text: await readImage(f), truncated: false, thumb: await shrink(f, 240) }
+          : await extractFileText(f);
+        setFiles((x) => [...x.filter((y) => y.name !== a.name || pic), a]);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
@@ -409,13 +428,16 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const intro = !!b && !!status && !status.models.some((m) => m.installed) && !auto;
 
   sendRef.current = (t) => void send(t);
+  /** Questions about the open note itself ("this note", "the image", "here"). */
+  const ABOUT_OPEN_NOTE = /\b(this|the|that)\s+(note|page)\b|\b(this|the|that|these)\s+(image|picture|photo|pic|screenshot|diagram|chart)s?\b|\b(above|below)\b/i;
   const send = async (text: string, history: Msg[] = chat?.messages ?? []) => {
     if (!text.trim() || busy) return;
     if (!(await confirmCloud(model))) return;
     setErr("");
     setInput("");
     const base: Chat = chat ?? { id: uid(), title: text.slice(0, 60), messages: [], updatedAt: Date.now(), ...(pinned.length && { pinned }) };
-    const messages: Msg[] = [...history, { role: "user", content: text }];
+    const pics = files.flatMap((f) => (f.thumb ? [f.thumb] : []));
+    const messages: Msg[] = [...history, { role: "user", content: text, ...(pics.length && { images: pics }) }];
     nerida.upsert({ ...base, messages, updatedAt: Date.now() });
     const draft = detectTask(text);
     if (draft) return setTask({ draft, base: { ...base, messages } });
@@ -476,8 +498,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       let context = "";
       const tools = await runTools(text);
       if (tools) mark("Working it out");
+      // "this note / the picture / here": only the open note, no other notes from the search.
+      const local = !!pageId && !home && ABOUT_OPEN_NOTE.test(text);
+      if (local) used = used.filter((n) => n.why !== "found");
       // Search every note for the exact question (the live search may lag the last keystrokes); removed notes stay out.
-      if (!pdf && !files.length && !isFeaturesQuestion(text)) {
+      if (!pdf && !files.length && !local && !isFeaturesQuestion(text)) {
         const hits = await searchIndex(text, 3, new Set([...used.map((n) => n.id), ...excluded])).catch(() => []);
         const extra = hits.map((h) => ({ id: h.id, title: h.title, icon: pages.get(h.id)?.icon ?? "", why: "found" as const }));
         if (extra.length) {
@@ -487,6 +512,12 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         }
       }
       if (used.length) {
+        // Pictures in these notes: read once with Vision (saved), then they're note text.
+        const ids = used.map((n) => n.id);
+        const unread = await unreadImages(ids);
+        if (unread.length && (await canSeeImages())) {
+          if (await readNoteImages(ids, (n, total) => mark(`Reading picture ${n} of ${total}`))) forgetIndex(ids);
+        } else if (unread.length) setNeedVision(`${unread.length} picture${unread.length > 1 ? "s" : ""} in your notes can't be read without the Vision add-on.`);
         mark(`Reading ${used.length} note${used.length > 1 ? "s" : ""}`);
         const c = await buildContext(used, text, book);
         context = c.text;
@@ -588,13 +619,25 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         <DeepSparkles typing={input} />
         {(files.length > 0 || reading > 0) && (
           <div className="mb-1 flex flex-wrap gap-1">
-            {files.map((f) => (
-              <span key={f.name} title={f.truncated ? "Long file: only the first part is used" : f.name} className="oc-chip-in flex max-w-[180px] items-center gap-1 rounded-full border border-sky-300/20 bg-sky-300/[0.05] px-1.5 py-0.5 text-[11.5px] text-neutral-300">
+            {files.map((f, i) => f.thumb ? (
+              <span key={i} className="oc-chip-in group relative size-14 overflow-hidden rounded-lg border border-white/10 shadow-sm">
+                <button type="button" title={`${f.name}: click to view`} onClick={() => setViewing(f.thumb!)} className="block size-full cursor-zoom-in"><img src={f.thumb} alt={f.name} className="size-full object-cover" /></button>
+                <button type="button" title="Remove" onClick={() => setFiles((x) => x.filter((y) => y !== f))} className="absolute right-0.5 top-0.5 grid size-4 cursor-pointer place-items-center rounded-full bg-black/70 text-neutral-200 opacity-0 transition-opacity hover:bg-black group-hover:opacity-100"><X className="size-3" /></button>
+              </span>
+            ) : (
+              <span key={i} title={f.truncated ? "Long file: only the first part is used" : f.name} className="oc-chip-in flex max-w-[180px] items-center gap-1 rounded-full border border-sky-300/20 bg-sky-300/[0.05] px-1.5 py-0.5 text-[11.5px] text-neutral-300">
                 <FileText className="size-3 shrink-0 text-sky-300" /><span className="truncate">{f.name}</span>
                 <button type="button" title="Remove" className="cursor-pointer text-neutral-500 hover:text-neutral-200" onClick={() => setFiles((x) => x.filter((y) => y !== f))}><X className="size-3" /></button>
               </span>
             ))}
-            {reading > 0 && <span className="oc-nerida-shimmer px-1.5 py-0.5 text-[11.5px]">Reading file…</span>}
+            {reading > 0 && <span className="oc-nerida-shimmer self-center px-1.5 py-0.5 text-[11.5px]">Reading…</span>}
+          </div>
+        )}
+        {needVision && (
+          <div className="oc-fade-in mb-1 flex items-center gap-2 rounded-xl border border-sky-300/20 bg-sky-300/[0.06] px-2.5 py-2 text-[12px] text-neutral-300">
+            <span className="flex-1">{needVision}</span>
+            <button type="button" disabled={!!neridaState.dl} onClick={() => void downloadVision().then((e) => (e ? setErr(e) : (setNeedVision(""), void refresh())))} className="shrink-0 cursor-pointer rounded-lg bg-sky-500/90 px-2 py-1 text-[11.5px] font-medium text-white hover:bg-sky-400 disabled:opacity-50">{neridaState.dl ? "Downloading…" : "Add Vision (668 MB)"}</button>
+            <button type="button" title="Dismiss" onClick={() => setNeedVision("")} className="cursor-pointer text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
           </div>
         )}
         <ContextPicker notes={active} sendCount={sendList.length} tokens={estTokens} cloud={isCloud(model) ? modelLabel(model) : null}
@@ -628,6 +671,10 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             value={input}
             disabled={!ready}
             onChange={(e) => { setInput(e.target.value); setPick(0); }}
+            onPaste={(e) => {
+              const pics = [...e.clipboardData.files].filter(isImageFile);
+              if (pics.length) (e.preventDefault(), void addFiles(pics));
+            }}
             onKeyDown={(e) => {
               const hits = slashHits.length || mentionHits.length;
               if (hits && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -655,7 +702,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           />
           </div>
           <div className="flex items-center gap-1">
-          <button type="button" disabled={!ready || busy} title="Attach PDF, Word or text files" onClick={() => filePicker.current?.click()} className="grid size-7 cursor-pointer place-items-center rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:text-neutral-600"><Paperclip className="size-4" /></button>
+          <button type="button" disabled={!ready || busy} title="Attach pictures, PDF, Word or text files" onClick={() => filePicker.current?.click()} className="grid size-7 cursor-pointer place-items-center rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:text-neutral-600"><Paperclip className="size-4" /></button>
           {b === "plus" && <button type="button" disabled={busy} title={online ? "Web search on" : "Search the web"} aria-pressed={online} onClick={() => setOnline((v) => !v)} className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] ${online ? "text-sky-400" : "text-neutral-400 hover:text-neutral-200"}`}><Globe className="size-4" /></button>}
           {!pdf && <AgentToggle disabled={busy} />}
           <div className="flex-1" />
@@ -681,6 +728,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   return (
     <>
     <NeridaBetaCard />
+    {viewing && <ImageAnnotator url={viewing} name="Picture in chat" readOnly onSave={() => {}} onClose={() => setViewing(null)} />}
     <aside
       onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
       onDrop={(e) => { if (!ready || !e.dataTransfer.files.length) return; e.preventDefault(); e.stopPropagation(); void addFiles(e.dataTransfer.files); }}
@@ -775,7 +823,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         {trimHistory(msgs, model).cut > 0 && <p className="text-center text-[11.5px] text-neutral-500">Earlier messages summarized to keep Nerida fast</p>}
         {msgs.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex flex-col items-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div><div className="mt-1 mr-1 flex justify-end text-neutral-500"><Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act></div></div>
+            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex flex-col items-end">{m.images?.length ? <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5">{m.images.map((src, j) => <button key={j} type="button" title="View picture" onClick={() => setViewing(src)} className="size-20 cursor-zoom-in overflow-hidden rounded-xl border border-white/10 shadow-md shadow-black/20"><img src={src} alt="" className="size-full object-cover" /></button>)}</div> : null}<div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div><div className="mt-1 mr-1 flex justify-end text-neutral-500"><Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act></div></div>
           ) : (
             <div key={i} className="group oc-msg-in mt-5 flex gap-2.5">
               <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
@@ -783,7 +831,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20">
                 {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
                 {m.actions?.length ? <AgentLogList actions={m.actions} onChange={(a) => chat && nerida.upsert({ ...chat, messages: chat.messages.map((x, j) => (j === i ? { ...x, actions: a } : x)) })} /> : null}
-                <Markdown text={m.content} sources={m.sources} />
+                <div className="oc-selectable"><Markdown text={m.content} sources={m.sources} /></div>
               </div>
               <div className={`mt-1 ml-1 flex gap-0.5 text-neutral-500 transition-opacity group-hover:opacity-100 ${i === lastAssistant ? "" : "opacity-0"}`}>
                 <Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act>
