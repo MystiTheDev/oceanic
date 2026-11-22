@@ -91,3 +91,47 @@ button.ocs-row:active { background: rgba(var(--oc-ink), 0.06); }
 /* Home screen order (Appearance): drag handle rows. */
 .ocs-reorder { position: relative; background: var(--oc-raised); list-style: none; }
 .ocs-grip { display: grid; place-items: center; width: 32px; height: 40px; margin-left: -6px; color: var(--ocs-muted); touch-action: none; }
+
+/* Sync (MobileSync). */
+.osy-empty, .osy-code { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 36px 20px 20px; text-align: center; }
+.osy-empty h2, .osy-code h2 { font-size: 20px; font-weight: 700; color: var(--oc-text-strong); }
+.osy-empty p, .osy-code p { max-width: 300px; font-size: 14.5px; line-height: 1.45; color: var(--ocs-muted); }
+.osy-art { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; padding: 22px 26px; border-radius: 24px; background: color-mix(in srgb, var(--ocs-accent) 14%, transparent); color: var(--ocs-accent); }
+.osy-wave { width: 34px; height: 2px; border-radius: 1px; background: repeating-linear-gradient(90deg, var(--ocs-accent) 0 6px, transparent 6px 10px); animation: osy-flow 1.2s linear infinite; }
+@keyframes osy-flow { to { background-position: 20px 0; } }
+.osy-primary { margin-top: 14px; width: 100%; max-width: 320px; height: 50px; border-radius: 14px; background: var(--ocs-accent); color: #fff; font-size: 16px; font-weight: 600; }
+.osy-primary:active { filter: brightness(0.92); }
+.osy-done { display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; background: color-mix(in srgb, var(--color-emerald-500) 20%, transparent); color: var(--color-emerald-500); animation: ocs-up 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+
+.osy-device { padding: 4px 0; }
+.osy-head { display: flex; align-items: center; gap: 14px; padding: 10px 14px; }
+.osy-icon { position: relative; display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px; background: rgba(var(--oc-ink), 0.07); color: var(--oc-text-strong); }
+.osy-icon.big { width: 56px; height: 56px; border-radius: 16px; color: var(--ocs-accent); background: color-mix(in srgb, var(--ocs-accent) 15%, transparent); }
+.osy-dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--oc-raised); background: rgba(var(--oc-ink), 0.35); }
+.osy-dot.busy { background: var(--color-amber-400); }
+.osy-dot.ok { background: var(--color-emerald-500); }
+.osy-dot.err { background: var(--color-red-500); }
+.osy-ok { color: var(--color-emerald-500) !important; }
+.osy-err { color: var(--color-red-500) !important; }
+.osy-actions { display: flex; gap: 8px; padding: 4px 14px 12px; }
+.osy-actions button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; height: 42px; border-radius: 12px; background: rgba(var(--oc-ink), 0.07); font-size: 14.5px; font-weight: 600; color: var(--oc-text-strong); }
+.osy-actions button:disabled { opacity: 0.6; }
+.osy-actions .osy-danger { flex: 0 0 auto; padding: 0 16px; color: var(--color-red-500); }
+.osy-actions .osy-danger.armed { background: var(--color-red-500); color: #fff; }
+
+.osy-boxes { position: relative; display: flex; gap: 8px; margin: 14px 0 6px; }
+.osy-boxes span { display: grid; place-items: center; width: 44px; height: 56px; border-radius: 12px; border: 1.5px solid var(--ocs-line); background: var(--oc-raised); font-size: 26px; font-weight: 700; color: var(--oc-text-strong); font-variant-numeric: tabular-nums; transition: border-color 0.15s; }
+.osy-boxes span.gap { margin-right: 10px; }
+.osy-boxes span.cur { border-color: var(--ocs-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ocs-accent) 20%, transparent); }
+.osy-boxes span.bad { border-color: var(--color-red-500); animation: osy-shake 0.3s; }
+.osy-boxes input { position: absolute; inset: 0; opacity: 0; font-size: 16px; }
+@keyframes osy-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.osy-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px !important; }
+.osy-spin { animation: osy-rot 0.9s linear infinite; }
+@keyframes osy-rot { to { transform: rotate(360deg); } }
+.osy-looking { display: flex; align-items: center; gap: 6px; }
+.osy-accent { color: var(--ocs-accent); font-weight: 600; }
+.osy-radar { position: relative; width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: color-mix(in srgb, var(--ocs-accent) 18%, transparent); }
+.osy-radar::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ocs-accent); animation: osy-ping 1.4s ease-out infinite; }
+@keyframes osy-ping { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.3); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .osy-wave, .osy-radar::after, .osy-spin, .osy-boxes span.bad { animation: none; } }

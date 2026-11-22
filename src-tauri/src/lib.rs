@@ -3,6 +3,7 @@ mod ai;
 mod db;
 mod scope;
 mod amsi;
+mod sync;
 
 use scope::Scope;
 
@@ -715,6 +716,16 @@ pub fn run() {
             })
             .build(),
     );
+    // LAN sync on Android: multicast lock + device name (SyncPlugin.kt).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("lan-sync")
+            .setup(|app, api| {
+                app.manage(sync::SyncPlugin(api.register_android_plugin("io.github.mystithedev.oceanic", "SyncPlugin")?));
+                Ok(())
+            })
+            .build(),
+    );
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -733,6 +744,8 @@ pub fn run() {
             };
             app.manage(Scope::load(app.handle(), legacy)?);
             app.manage(db::Db(Mutex::new(conn)));
+            app.manage(sync::Sync::default());
+            sync::start_listener(app.handle());
             #[cfg(desktop)]
             app.manage(ai::Ai::default());
             #[cfg(desktop)]
@@ -783,6 +796,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             apk_install,
             share_call,
+            sync::sync_info,
+            sync::sync_pair_start,
+            sync::sync_pair_cancel,
+            sync::sync_discover,
+            sync::sync_pair_join,
+            sync::sync_test,
+            sync::sync_unpair,
             #[cfg(desktop)]
             ai::ai_status,
             #[cfg(desktop)]
