@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { api } from "../data/api";
 import { resetAtlasGuide } from "./AtlasGuide";
+import { startTour } from "./Tour";
+import { startSetup } from "./SetupWizard";
 import { APP_VERSION } from "./SidebarFooter";
 import { NeridaSettings } from "./NeridaSettings";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -507,7 +509,7 @@ function AccentPicker({ settings, onChange }: Ctx) {
   );
 }
 
-function SidebarIconsPicker({ settings, onChange }: Ctx) {
+export function SidebarIconsPicker({ settings, onChange }: Ctx) {
   const pal = sidebarPalette({ ...settings, sidebarIcons: "custom" })!;
   return (
     <div className="flex flex-col items-end gap-2">
@@ -699,7 +701,7 @@ function AccountPage({ settings, onChange }: Ctx) {
     </>
   );
 }
-const AvatarChoice = ({ on, onClick, children }: { on: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) => (
+export const AvatarChoice = ({ on, onClick, children }: { on: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) => (
   <button
     type="button"
     onClick={onClick}
@@ -721,6 +723,8 @@ function AboutPage() {
       <p className="max-w-sm text-[13px] text-neutral-400">Notes, Docs, Sketch and Mindmap in one calm, offline-first workspace.</p>
       <div className="mt-2 flex gap-2">
         <Btn onClick={() => void checkForUpdates(true)}>Check for updates</Btn>
+        <Btn onClick={startTour}>Replay tour</Btn>
+        <Btn onClick={startSetup}>Run setup again</Btn>
       </div>
       {/* Creator */}
       <div className="mt-4 flex w-full max-w-md items-center gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-br from-sky-500/10 to-transparent p-3.5 text-left">

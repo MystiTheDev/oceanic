@@ -71,6 +71,8 @@ import { CalendarView } from "./components/CalendarView";
 import { PagePeek } from "./components/PagePeek";
 import { SettingsModal, type AppSettings } from "./components/SettingsModal";
 import { NamePrompt } from "./components/NamePrompt";
+import { SETUP_START, SetupWizard } from "./components/SetupWizard";
+import { TOUR_START, Tour, startTour } from "./components/Tour";
 import { LibraryView } from "./components/LibraryView";
 import { DocsHome } from "./docs/DocsHome";
 import { DocsSidebar } from "./docs/DocsSidebar";
@@ -298,6 +300,15 @@ export default function App() {
   const [linksVersion, setLinksVersion] = useState(0);
   /** The page just moved to Trash, offered back through the Undo toast. */
   const [trashToast, setTrashToast] = useState<{ pageId: string; key: number } | null>(null);
+
+  // Replay tour / Run setup again: close Settings so the tour and wizard show over the app.
+  useEffect(() => {
+    const close = () => setSettingsOpen(false);
+    const setup = () => (setSettingsOpen(false), setAskName(true));
+    window.addEventListener(TOUR_START, close);
+    window.addEventListener(SETUP_START, setup);
+    return () => (window.removeEventListener(TOUR_START, close), window.removeEventListener(SETUP_START, setup));
+  }, []);
 
   /* ------------------------------------------------------------- Load */
   useEffect(() => {
@@ -2152,7 +2163,22 @@ export default function App() {
       {settingsOpen && !isMobile && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}
-      {loaded && askName && (
+      {loaded && askName && !isMobile && (
+        <SetupWizard
+          settings={settings}
+          onChange={changeSettings}
+          workspace={workspaces.find((w) => w.id === activeWorkspaceId)}
+          onWorkspace={(name, icon) => {
+            const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+            if (!ws) return;
+            setWorkspaces((prev) => prev.map((w) => (w.id === ws.id ? { ...w, name, icon } : w)));
+            api.updateWorkspace(ws.id, name, icon, ws.color).catch(report("Save workspace"));
+          }}
+          onDone={() => (setAskName(false), setTimeout(startTour, 300))}
+        />
+      )}
+      {!isMobile && <Tour />}
+      {loaded && askName && isMobile && (
         <NamePrompt
           onSave={(userName) => {
             changeSettings({ userName });
