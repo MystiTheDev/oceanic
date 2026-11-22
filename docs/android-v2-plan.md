@@ -163,3 +163,21 @@ Wait for the user's go-ahead. Plan with questions first.
 - Page outline: a jump-to-heading sheet.
 - Page icon and banner: an emoji icon and a cover image.
 - Trash: a screen to restore or empty deleted pages.
+
+## Phone: Trash and Workspaces rework (agreed 2026-11-22)
+**Trash**
+- Full screen, like Pages. A header shows the count, with Restore all and Empty trash buttons.
+- Rows:
+  - show when each page was deleted;
+  - swipe right to restore, swipe left to delete forever;
+  - long-press starts select mode, with Restore and Delete for the selected pages;
+  - trashed subpages are grouped under their parent.
+- Empty trash and delete-forever use a confirm sheet: "Delete N pages forever? This can't be undone." with a red button.
+- Auto-empty follows the existing desktop "Deleting" setting.
+
+**Workspaces** (in the existing Workspaces sheet)
+- **New workspace:** a "+ New workspace" row. It asks for a name plus an icon or colour, then switches to the new workspace.
+- **Delete:** an Edit button shows a delete icon on each row. Deleting removes all of that workspace's pages forever, and you type the workspace's name to confirm.
+- **Guards:**
+  - the last workspace can't be deleted;
+  - deleting the current workspace switches to another one first.
