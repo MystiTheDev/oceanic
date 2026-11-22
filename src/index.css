@@ -176,3 +176,16 @@
 @media (prefers-reduced-motion: reduce) {
   .oc-malware-backdrop, .oc-malware-card, .oc-malware-shield, .oc-malware-ring, .oc-malware-glow, .oc-malware-item { animation: none; }
 }
+
+/* Modern range slider (image annotator size): filled track up to --oc-range-fill, round thumb. */
+.oc-range { appearance: none; height: 6px; border-radius: 999px; cursor: pointer; background: linear-gradient(to right, #0ea5e9 var(--oc-range-fill, 50%), rgba(255,255,255,0.12) var(--oc-range-fill, 50%)); }
+.oc-range::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 999px; background: #fff; border: 0; box-shadow: 0 0 0 4px rgba(14,165,233,0.25), 0 2px 6px rgba(0,0,0,0.4); transition: transform 120ms; }
+.oc-range:hover::-webkit-slider-thumb { transform: scale(1.12); }
+.oc-range:focus-visible { outline: none; }
+.oc-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 5px rgba(14,165,233,0.45), 0 2px 6px rgba(0,0,0,0.4); }
+
+/* App text isn't selectable (like the Android app); only what you'd copy or edit is:
+ * inputs, editable text (note editor), Nerida replies and PDF text. */
+body { -webkit-user-select: none; user-select: none; }
+:is(input, textarea, [contenteditable="true"], .ProseMirror, .oc-selectable, .textLayer),
+:is(input, textarea, [contenteditable="true"], .ProseMirror, .oc-selectable, .textLayer) * { -webkit-user-select: text; user-select: text; }

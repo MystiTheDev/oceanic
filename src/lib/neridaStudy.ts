@@ -1,6 +1,7 @@
 import { api } from "../data/api";
 import { builtin, docText, engine, nerida, relatedNotes } from "./nerida";
 import type { Question } from "./quiz";
+import { readNoteImages } from "./neridaImages";
 
 /* Nerida → study material, grounded by construction.
  * Tested on Nerida Lite (then Qwen2.5-0.5B; now Qwen3.5-0.8B): asked for a whole quiz it invents facts and loops.
@@ -27,6 +28,7 @@ const LEVEL: Record<Difficulty, string> = {
 export async function gatherText(pageIds: string[], includeRelated: boolean): Promise<SourceText[]> {
   const ids = new Set(pageIds);
   if (includeRelated) for (const id of pageIds) for (const n of await relatedNotes(id)) if (n.why !== "backlink") ids.add(n.id);
+  await readNoteImages([...ids]).catch(() => 0); // pictures count as note text once read (needs Vision)
   const out: SourceText[] = [];
   for (const id of ids) {
     const p = await api.getPage(id);
@@ -37,17 +39,45 @@ export async function gatherText(pageIds: string[], includeRelated: boolean): Pr
 
 /** Study-worthy sentences: skips headings, checklist items, existing flashcards and fragments. */
 function sentences(src: SourceText[], level: Difficulty) {
-  const out: { s: string; pageId: string }[] = [];
-  for (const { text, pageId } of src)
+  const out: { s: string; pageId: string; section: string }[] = [];
+  let lines = 0;
+  for (const { text, pageId } of src) {
+    let section = pageId;
     for (const line of text.split("\n")) {
-      if (/^\s*Heading: |\[(?:not )?done\]$|::|\?\?|\{\{/.test(line)) continue;
+      if (!line.trim()) continue;
+      lines++;
+      if (/^\s*Heading: /.test(line)) section = `${pageId}#${line}`;
+      if (/^\s*Heading: |^\[Picture\b|\[(?:not )?done\]$|::|\?\?|\{\{/.test(line)) continue;
       for (const raw of line.replace(/^\s*- /, "").split(/(?<=[.!?])\s+(?=[A-Z0-9])/)) {
         const s = raw.trim();
         const n = s.split(/\s+/).length;
-        if (n >= (level === "hard" ? 8 : 5) && n <= 45) out.push({ s, pageId });
+        // Short bullets ("Mitochondria – make ATP") count too; "hard" still wants full sentences.
+        if (n >= (level === "hard" ? 8 : 3) && n <= 45) out.push({ s, pageId, section });
       }
     }
+  }
+  lastRun = { lines, usable: out.length, tried: 0, made: 0 };
   return out;
+}
+
+/** Shuffles within each heading's section, then takes one from each section in turn, so questions cover the whole note. */
+function spread<T extends { section: string }>(items: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const x of shuffle(items)) groups.set(x.section, [...(groups.get(x.section) ?? []), x]);
+  const lists = shuffle([...groups.values()]);
+  const out: T[] = [];
+  for (let i = 0; out.length < items.length; i++) for (const l of lists) if (l[i]) out.push(l[i]);
+  return out;
+}
+
+/** Counts from the last generation, for explaining why few or no cards came out. */
+let lastRun = { lines: 0, usable: 0, tried: 0, made: 0 };
+/** Why the last run made nothing, in plain words. */
+export function whyNoFacts(): string {
+  const { lines, usable, tried } = lastRun;
+  if (!lines) return "These notes have no text Nerida can read.";
+  if (!usable) return `None of the ${lines} lines could be used: headings, checklist items, lines under 3 words and lines over 45 words are skipped.`;
+  return `Nerida tried ${tried} of ${usable} usable lines but couldn't write a question it could check against your notes. Try another model.`;
 }
 
 const shuffle = <T,>(a: T[]) => a.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map(([, v]) => v);
@@ -67,8 +97,25 @@ const EXAMPLES = [
   [ASK("Mitochondria produce ATP, the energy currency of the cell.", "medium"), "Q: What is the energy currency of the cell? || A: ATP"],
 ];
 
+/* Words that make "X: …" a label or an instruction, not a term being defined. */
+const LABEL = /^(note|tip|todo|to do|example|e\.g|eg|remember|date|time|due|page|chapter|step|answer|question|q|a|summary|reminder|warning|important|homework|task)s?(\s*\d+)?$/i;
+const VERB = /\b(is|are|was|were|be|do|does|did|has|have|had|will|can|should|must|revise|read|study|finish|write|go|make)\b/i;
+/** "Term: meaning" / "Term – meaning", or null if it reads like a label, an instruction or a date. */
+export function definition(s: string): { term: string; meaning: string } | null {
+  const m = s.match(/^([^:|]{2,60}?)(?::|\s[–—-])\s+(.{3,})$/);
+  if (!m) return null;
+  const term = m[1].replace(/^\*\*|\*\*$/g, "").trim();
+  const meaning = m[2].trim().replace(/[.;,]$/, "");
+  if (term.split(/\s+/).length > 6 || LABEL.test(term) || VERB.test(term)) return null;
+  if (meaning.split(/\s+/).length < 2 || /^[\d\s/.,:-]+(am|pm)?$/i.test(meaning)) return null;
+  return { term, meaning };
+}
+
 /** One grounded question/answer from one sentence, or null if the model's answer isn't in the sentence. */
 async function factFrom(s: string, pageId: string, level: Difficulty): Promise<Fact | null> {
+  // "Term – definition" / "Term: definition" lines are already a card: no model call needed.
+  const def = definition(s);
+  if (def) return { q: `What is ${def.term}?`, a: def.meaning, sentence: s, pageId };
   const model = nerida.get().model;
   let out = "";
   await engine.chat(
@@ -96,12 +143,14 @@ async function factFrom(s: string, pageId: string, level: Difficulty): Promise<F
 async function facts(src: SourceText[], want: number, level: Difficulty, onFact: (f: Fact) => void, skip = new Set<string>()) {
   stopped = false;
   let made = 0;
-  for (const { s, pageId } of shuffle(sentences(src, level))) {
+  for (const { s, pageId } of spread(sentences(src, level))) {
     if (stopped || made >= want) break;
+    lastRun.tried++;
     const f = await factFrom(s, pageId, level).catch(() => null);
     if (!f || skip.has(f.q.toLowerCase())) continue;
     skip.add(f.q.toLowerCase());
     made++;
+    lastRun.made++;
     onFact(f);
   }
   return made;
@@ -119,6 +168,10 @@ export function generateCards(src: SourceText[], count: number, styles: CardStyl
 }
 
 /* ---------------------------------------------------------------- quiz */
+/** Rough answer kind, so wrong options look like the right one: number, name, short term or longer phrase. */
+export const kind = (a: string) =>
+  /\d/.test(a) ? "number" : /^[A-Z]/.test(a) && a.split(/\s+/).every((w) => /^[A-Z]/.test(w)) ? "name" : a.split(/\s+/).length <= 2 ? "term" : "phrase";
+
 /** Generates test questions strictly from the notes. Facts stream in via `onProgress`; the
  *  questions are built at the end (multiple-choice options come from the other answers). */
 export async function generateQuestions(src: SourceText[], count: number, types: ("mcq" | "tf")[], level: Difficulty, onProgress: (n: number) => void): Promise<AiQuestion[]> {
@@ -128,7 +181,9 @@ export async function generateQuestions(src: SourceText[], count: number, types:
   return all.map((f, i) => {
     const id = `ai-${crypto.randomUUID()}`;
     const base = { id, cardId: id, source: f.sentence, pageId: f.pageId, answer: f.a };
-    const others = shuffle(answers.filter((a) => norm(a) !== norm(f.a)));
+    // Wrong options of the same kind first (numbers for numbers, names for names), then the rest.
+    const rest = shuffle(answers.filter((a) => norm(a) !== norm(f.a)));
+    const others = [...rest.filter((a) => kind(a) === kind(f.a)), ...rest.filter((a) => kind(a) !== kind(f.a))];
     const mcq = types.includes("mcq") && others.length >= 3 && (!types.includes("tf") || i % 3 !== 2);
     if (mcq) {
       const options = shuffle([f.a, ...others.slice(0, 3)]);

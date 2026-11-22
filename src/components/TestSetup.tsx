@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ThinkingStatus } from "./NeridaEffort";
-import { gatherText, generateQuestions, saveCards, stopGenerating, type AiQuestion, type Difficulty } from "../lib/neridaStudy";
+import { gatherText, generateQuestions, saveCards, stopGenerating, whyNoFacts, type AiQuestion, type Difficulty } from "../lib/neridaStudy";
 import { modelLabel, useNerida } from "../lib/nerida";
 import { NeridaMark } from "./NeridaOrb";
 import type { PageMeta } from "../data/workspace";
@@ -100,7 +100,7 @@ export function TestSetup({ pages, onClose, initialNotes }: { pages: PageMeta[];
     try {
       const src = await gatherText(aiNotes, related);
       const questions = await generateQuestions(src, count, types, level, (n) => setGen({ n }));
-      if (!questions.length) return setGen({ n: 0, err: "Nerida couldn't find enough facts in these notes. Try longer notes or another model." });
+      if (!questions.length) return setGen({ n: 0, err: whyNoFacts() });
       const timer: TestTimer = timerKind === "total" ? { kind: "total", secs: mins * 60 } : timerKind === "per" ? { kind: "per", secs } : null;
       setGen(null);
       setTest({ title: aiNotes.map((id) => pages.find((p) => p.id === id)?.title || "Untitled").join(", "), questions, timer });

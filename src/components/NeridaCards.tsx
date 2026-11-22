@@ -3,7 +3,7 @@ import { ThinkingStatus } from "./NeridaEffort";
 import { isTauri } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
 import { builtin, engine, MODEL_NAMES, modelLabel, nerida, useNerida } from "../lib/nerida";
-import { gatherText, generateCards, saveCards, setScience, stopGenerating, type CardStyle, type Difficulty, type GenCard } from "../lib/neridaStudy";
+import { gatherText, generateCards, saveCards, setScience, stopGenerating, whyNoFacts, type CardStyle, type Difficulty, type GenCard } from "../lib/neridaStudy";
 import { Modal, ModalButton } from "./Modal";
 import { neridaNote, pdfPages } from "../lib/neridaPdf";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -58,7 +58,7 @@ function NeridaCards({ pageId, selection, pdf, onClose }: Req & { onClose: () =>
           : await gatherText([pageId], related);
       const before = cards?.length ?? 0;
       const made = await generateCards(src, count, styles, level, (c) => setCards((x) => [...(x ?? []), c]), (cards ?? []).map((c) => c.text.split(" :: ")[0]));
-      if (!made && !before) setErr("Nerida couldn't find enough facts to make cards from. Try a longer note or another model.");
+      if (!made && !before) setErr(whyNoFacts());
     } catch (e) {
       setErr(String(e));
     }

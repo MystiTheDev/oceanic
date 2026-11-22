@@ -91,6 +91,9 @@ function put(id: string, title: string, updatedAt: string, json: string | null |
   docs.set(id, { updatedAt, title, chunks, tf: ws.map(tfOf), len: ws.map((w) => w.length), titleTerms: new Set(terms(title)) });
 }
 
+/** Drops these notes from the index so the next refresh re-reads them (e.g. after their pictures were read). */
+export const forget = (ids: string[]) => ids.forEach((id) => docs.delete(id));
+
 /** Re-reads notes that changed since they were indexed; drops deleted ones. `only`: just these notes. */
 export function refresh(only?: string[]): Promise<void> {
   const run = async () => {

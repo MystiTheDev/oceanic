@@ -5,7 +5,7 @@ import type { PageMeta } from "../data/workspace";
 import { docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
 import { scrubInjection } from "./neridaGuard";
 import { searchNotes } from "./noteIndex";
-import { gatherText, generateCards, stopGenerating, withCards } from "./neridaStudy";
+import { gatherText, generateCards, stopGenerating, whyNoFacts, withCards } from "./neridaStudy";
 
 /* Nerida agent mode (Phase 4.5): the model calls the app's tools itself.
  *
@@ -299,7 +299,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const made: string[] = [];
     await generateCards(await gatherText([p.id], false), count, ["qa"], "medium", (c) => made.push(c.text));
     if (stopped) return { result: "Stopped." };
-    if (!made.length) return { result: `Couldn't find enough facts in "${title(p)}" for flashcards.`, log: { kind: "error", text: `No flashcards from ${title(p)}` } };
+    if (!made.length) return { result: `No flashcards from "${title(p)}". ${whyNoFacts()}`, log: { kind: "error", text: `No flashcards from ${title(p)}` } };
     if (!(await approve({ kind: "study", title: `Add ${made.length} flashcards to Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, lines: made }, true))) return rejected(`flashcards for ${title(p)}`);
     const before = await H().getDoc(p.id);
     H().setDoc(p.id, withCards(JSON.parse(JSON.stringify(before)), made));

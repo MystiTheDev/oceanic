@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ImageAnnotator } from "./ImageAnnotator";
 import { copyImageToClipboard } from "../lib/clipboard";
-import { Check, CheckSquare, ChevronLeft, ChevronRight, Layers, Network, X } from "lucide-react";
+import { Check, CheckSquare, ChevronLeft, ChevronRight, Eye, Layers, Network, X } from "lucide-react";
 import { ReviewModal } from "./ReviewModal";
 import { blockText, dueCards, useSrs } from "../lib/srs";
 import { api } from "../data/api";
@@ -254,7 +254,7 @@ export function PageEditor({
   }, [page.id]);
 
   // Picture annotation: hover button (top-right of an image) or right-click → Annotate….
-  const [annotating, setAnnotating] = useState<{ id: string; url: string } | null>(null);
+  const [annotating, setAnnotating] = useState<{ id: string; url: string; name?: string; edit?: boolean } | null>(null);
   const [hoverImg, setHoverImg] = useState<{ id: string; url: string; x: number; y: number } | null>(null);
   // Nerida "Insert into note": Markdown reply goes in after the caret's block.
   useEffect(() => {
@@ -436,7 +436,7 @@ export function PageEditor({
     return () => window.removeEventListener("oc-insert-images", on);
   }, [editor]);
   useEffect(() => {
-    const on = (e: Event) => setAnnotating((e as CustomEvent).detail);
+    const on = (e: Event) => setAnnotating({ ...(e as CustomEvent).detail, edit: true });
     window.addEventListener("oc-annotate", on);
     return () => window.removeEventListener("oc-annotate", on);
   }, []);
@@ -447,6 +447,14 @@ export function PageEditor({
     const r = img.getBoundingClientRect();
     const block = editor.getBlock(id) as { props?: { url?: string } } | undefined;
     if (block?.props?.url) setHoverImg({ id, url: block.props.url, x: r.right - 8, y: r.top + 8 });
+  };
+  /** Clicking a picture opens it in the viewer (View mode; Annotate from there). */
+  const openImage = (e: React.MouseEvent) => {
+    const img = (e.target as HTMLElement).closest?.("[data-content-type='image'] img");
+    const id = img?.closest("[data-id]")?.getAttribute("data-id");
+    const block = id ? (editor.getBlock(id) as { props?: { url?: string; name?: string; caption?: string } } | undefined) : undefined;
+    if (!id || !block?.props?.url) return;
+    setAnnotating({ id, url: block.props.url, name: block.props.caption || block.props.name });
   };
 
   /** Pasted or dropped images become image blocks (resize by dragging its edges; caption via right-click). */
@@ -545,6 +553,7 @@ export function PageEditor({
     <div
       ref={scroller}
       onMouseMove={trackImage}
+      onClick={openImage}
       onMouseLeave={(e) => !(e.relatedTarget as HTMLElement | null)?.closest?.("button") && setHoverImg(null)}
       onScroll={(e) => {
         setHoverImg(null);
@@ -662,16 +671,21 @@ export function PageEditor({
       <button
         type="button"
         onMouseEnter={() => setHoverImg(hoverImg)}
-        onClick={() => setAnnotating({ id: hoverImg.id, url: hoverImg.url })}
+        onClick={() => {
+          const block = editor.getBlock(hoverImg.id) as { props?: { name?: string; caption?: string } } | undefined;
+          setAnnotating({ id: hoverImg.id, url: hoverImg.url, name: block?.props?.caption || block?.props?.name });
+        }}
         className="oc-fade-in fixed z-40 flex h-7 -translate-x-full cursor-pointer items-center gap-1.5 rounded-md bg-black/70 px-2.5 text-[12px] font-medium text-white shadow-lg backdrop-blur hover:bg-black/85"
         style={{ left: hoverImg.x, top: hoverImg.y }}
       >
-        ✎ Annotate
+        <Eye className="size-3.5" /> View
       </button>
     )}
     {annotating && (
       <ImageAnnotator
         url={annotating.url}
+        name={annotating.name}
+        edit={annotating.edit}
         onClose={() => setAnnotating(null)}
         onSave={(url) => editor.updateBlock(annotating.id, { props: { url } } as never)}
       />
