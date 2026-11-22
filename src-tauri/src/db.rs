@@ -326,6 +326,27 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;",
         )?;
     }
+
+    if version < 12 {
+        // LAN sync 7c: the page body as a Yjs doc (merged across devices) and
+        // version history. `ydoc_stale`: content changed outside the editor,
+        // so the editor replays it into the doc. `content_stale`: a sync merged
+        // the doc, so the app rebuilds `content` from it.
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE pages ADD COLUMN ydoc BLOB;
+             ALTER TABLE pages ADD COLUMN ydoc_stale INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE pages ADD COLUMN content_stale INTEGER NOT NULL DEFAULT 0;
+             CREATE TABLE IF NOT EXISTS page_versions (
+               page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+               at      INTEGER NOT NULL,
+               content TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_page_versions ON page_versions(page_id, at);
+             PRAGMA user_version = 12;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -645,9 +666,23 @@ pub fn save_page(
     title: String,
     content: String,
     links: Vec<PageLink>,
+    ydoc: Option<String>,
 ) -> CmdResult<String> {
     let mut conn = db.0.lock().unwrap();
     let tx = conn.transaction().map_err(err)?;
+    snapshot_version(&tx, &id, &content).map_err(err)?;
+    // The editor's Yjs doc merges into the stored one (a sync may have added to it).
+    if let Some(y) = ydoc {
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD.decode(y).map_err(|e| e.to_string())?;
+        let old: Option<Vec<u8>> = tx.query_row("SELECT ydoc FROM pages WHERE id = ?1", [&id], |r| r.get(0)).map_err(err)?;
+        if let Some(m) = crate::sync::ymerge(old.as_deref(), &bytes)? {
+            tx.execute("UPDATE pages SET ydoc = ?2 WHERE id = ?1", params![id, m]).map_err(err)?;
+        }
+        tx.execute("UPDATE pages SET ydoc_stale = 0, content_stale = 0 WHERE id = ?1", [&id]).map_err(err)?;
+    } else {
+        tx.execute("UPDATE pages SET ydoc_stale = 1 WHERE id = ?1 AND ydoc IS NOT NULL AND content IS NOT ?2", params![id, content]).map_err(err)?;
+    }
     let updated_at: String = tx
         .query_row(
             &format!(
@@ -661,6 +696,68 @@ pub fn save_page(
     index_page(&tx, &id).map_err(err)?;
     tx.commit().map_err(err)?;
     Ok(updated_at)
+}
+
+const VERSION_GAP_MS: i64 = 10 * 60 * 1000;
+const VERSION_KEEP: i64 = 20;
+const VERSION_DAYS_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Version history: before the first change of an editing burst (none saved
+/// in the last 10 minutes), keeps the old body. Keeps the last 20 versions or
+/// every version from the last 30 days, whichever is more.
+pub(crate) fn snapshot_version(conn: &Connection, id: &str, new_content: &str) -> rusqlite::Result<()> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let n = conn.execute(
+        "INSERT INTO page_versions (page_id, at, content)
+         SELECT id, ?2, content FROM pages
+         WHERE id = ?1 AND content IS NOT ?3 AND content NOT IN ('', '[]')
+           AND NOT EXISTS (SELECT 1 FROM page_versions WHERE page_id = ?1 AND at > ?2 - ?4)",
+        params![id, now, new_content, VERSION_GAP_MS],
+    )?;
+    if n > 0 {
+        conn.execute(
+            "DELETE FROM page_versions WHERE page_id = ?1 AND at < ?2 - ?3
+             AND rowid NOT IN (SELECT rowid FROM page_versions WHERE page_id = ?1 ORDER BY at DESC LIMIT ?4)",
+            params![id, now, VERSION_DAYS_MS, VERSION_KEEP],
+        )?;
+    }
+    Ok(())
+}
+
+/// A page's saved versions, newest first: `[{at, content}]`.
+#[tauri::command]
+pub fn page_versions(db: State<Db>, id: String) -> CmdResult<Vec<serde_json::Value>> {
+    let conn = db.0.lock().unwrap();
+    let mut st = conn.prepare("SELECT at, content FROM page_versions WHERE page_id = ?1 ORDER BY at DESC").map_err(err)?;
+    let rows = st
+        .query_map([&id], |r| Ok(serde_json::json!({ "at": r.get::<_, i64>(0)?, "content": r.get::<_, String>(1)? })))
+        .map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
+}
+
+/// The page's Yjs doc (base64) and its stale flags, for the editor.
+#[tauri::command]
+pub fn page_ydoc(db: State<Db>, id: String) -> CmdResult<serde_json::Value> {
+    use base64::Engine;
+    let conn = db.0.lock().unwrap();
+    conn.query_row("SELECT ydoc, ydoc_stale, content_stale FROM pages WHERE id = ?1", [&id], |r| {
+        let y: Option<Vec<u8>> = r.get(0)?;
+        Ok(serde_json::json!({
+            "ydoc": y.map(|b| base64::engine::general_purpose::STANDARD.encode(b)),
+            "ydocStale": r.get::<_, i64>(1)? != 0,
+            "contentStale": r.get::<_, i64>(2)? != 0,
+        }))
+    })
+    .map_err(err)
+}
+
+/// Pages whose body a sync merged: the app rebuilds their `content`.
+#[tauri::command]
+pub fn content_stale_pages(db: State<Db>) -> CmdResult<Vec<String>> {
+    let conn = db.0.lock().unwrap();
+    let mut st = conn.prepare("SELECT id FROM pages WHERE content_stale = 1").map_err(err)?;
+    let rows = st.query_map([], |r| r.get(0)).map_err(err)?;
+    rows.collect::<Result<_, _>>().map_err(err)
 }
 
 /// Title-only save (sidebar rename) for pages whose content isn't loaded.

@@ -1,6 +1,7 @@
 import { ASSIGNMENT, EXAM, loadStudy } from "./lib/study";
 import { SIDEBAR_ITEMS, sidebarPalette } from "./components/SettingsModal";
 import { loadSrs, scanAll, syncPage } from "./lib/srs";
+import { rebuildMerged, RESTORE_VERSION, ydocFor, type RestoreDetail } from "./lib/ydoc";
 import { parseImports, pickImportFiles, type ImportedPage, type ImportFailure } from "./lib/importNotes";
 import { importOmap } from "./lib/omapFile";
 import { MalwareAlert } from "./components/MalwareAlert";
@@ -393,7 +394,7 @@ export default function App() {
     const doc = docsRef.current[pageId];
     try {
       const updatedAt = doc
-        ? await api.savePage(pageId, page.title, JSON.stringify(doc), extractLinks(doc))
+        ? await api.savePage(pageId, page.title, JSON.stringify(doc), extractLinks(doc), ydocFor(pageId, JSON.stringify(doc)))
         : await api.renamePage(pageId, page.title);
       setPages((prev) => prev.map((p) => (p.id === pageId ? { ...p, updatedAt } : p)));
       if (doc) setLinksVersion((v) => v + 1);
@@ -921,6 +922,16 @@ export default function App() {
     syncPage(pageId, blocks as never);
   };
 
+  // Version history → Restore for a page with no open editor: save the old body.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<RestoreDetail>).detail;
+      setTimeout(() => !d.handled && changeDocRef.current(d.pageId, d.blocks));
+    };
+    window.addEventListener(RESTORE_VERSION, on);
+    return () => window.removeEventListener(RESTORE_VERSION, on);
+  }, []);
+
   // Nerida flashcards for a note that isn't open in an editor (e.g. test mistakes → cards).
   const changeDocRef = useRef(changeDoc);
   changeDocRef.current = changeDoc;
@@ -1289,6 +1300,12 @@ export default function App() {
       const [live, trashed, ws] = await Promise.all([api.getPages(), api.getTrashedPages(), api.getWorkspaces()]);
       setPages([...live, ...trashed].map(toMeta));
       setWorkspaces(ws);
+      // Merged page bodies: rebuild the JSON copy of closed pages (open editors update themselves).
+      await rebuildMerged(async (id, blocks, ydoc) => {
+        const title = [...live, ...trashed].find((p) => p.id === id)?.title ?? "";
+        await api.savePage(id, title, JSON.stringify(blocks), extractLinks(blocks as never), ydoc);
+        setDocs((prev) => (prev[id] ? { ...prev, [id]: blocks } : prev));
+      }).catch(report("Sync"));
     });
     return () => void off.then((f) => f());
   }, []);

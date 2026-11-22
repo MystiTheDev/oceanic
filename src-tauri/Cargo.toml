@@ -43,6 +43,7 @@ spake2 = "0.4.0"
 snow = "0.10.0"
 mdns-sd = "0.22.0"
 rand = "0.8"
+yrs = "0.28.2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -6,10 +6,12 @@
  * Animations use Motion and follow Android's "Remove animations" setting.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { VersionHistory } from "../components/VersionHistory";
 import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, useScroll, useTransform, type Transition } from "motion/react";
 import {
   ArrowUpLeft, CalendarDays, Camera, SlidersHorizontal, ImagePlus, Paperclip, Check, Clock, CheckSquare, ChevronLeft, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
+  History,
 } from "lucide-react";
 import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
 import { Highlight } from "../components/SearchModal";
@@ -224,6 +226,7 @@ export function MobileShell(p: Props) {
   const [tab, setTab] = useState<TabId>("home");
   const [dir, setDir] = useState(1);
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>(null);
   const [recentTab, setRecentTab] = useState<"recent" | "suggested">("recent");
@@ -669,6 +672,9 @@ export function MobileShell(p: Props) {
                 <button className="ocm-item" onClick={() => run(() => p.onDuplicate(note.id))}>
                   <Copy size={20} /> Duplicate
                 </button>
+                <button className="ocm-item" onClick={() => run(() => setHistoryId(note.id))}>
+                  <History size={20} /> History
+                </button>
                 <button className="ocm-item" onClick={(e) => (e.stopPropagation(), buzz(), setTitle(note.title), setRenaming(true))}>
                   <PenLine size={20} /> Rename
                 </button>
@@ -743,6 +749,9 @@ export function MobileShell(p: Props) {
                 <button className="ocm-item" onClick={() => startExport(openPage.id)}>
                   <Share2 size={20} /> Export
                 </button>
+                <button className="ocm-item" onClick={() => run(() => setHistoryId(openPage.id))}>
+                  <History size={20} /> History
+                </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(openPage.id))}>
                   <Trash2 size={20} /> Move to Trash
                 </button>
@@ -751,6 +760,7 @@ export function MobileShell(p: Props) {
           </motion.div>
         </motion.div>
       )}
+      {historyId && <VersionHistory key="history" pageId={historyId} onClose={() => setHistoryId(null)} />}
     </AnimatePresence>
   );
 

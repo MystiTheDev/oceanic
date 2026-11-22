@@ -21,6 +21,7 @@ import {
 import { buildPageTree, subtreeIds, type PageMeta, type PageNode } from "../data/workspace";
 import { SearchModal } from "./SearchModal";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
+import { VersionHistory } from "./VersionHistory";
 import { TrashPopover } from "./TrashPopover";
 import { ViewSwitcher, type AppView } from "./ViewSwitcher";
 import type { WorkspaceRecord } from "../data/api";
@@ -200,6 +201,7 @@ export function Sidebar({
     endDrag();
   };
 
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const runMenuAction = (action: PageMenuAction) => {
     if (!menu) return;
     const id = menu.pageId;
@@ -207,6 +209,7 @@ export function Sidebar({
     else if (action === "rename") setRenamingKey(menu.anchor.dataset.rowKey ?? id);
     else if (action === "duplicate") onDuplicatePage(id);
     else if (action === "trash") onTrashPage(id);
+    else if (action === "history") setHistoryId(id);
   };
 
   const rowProps = {
@@ -447,6 +450,7 @@ export function Sidebar({
           onClose={() => setSearchOpen(false)}
         />
       )}
+      {historyId && <VersionHistory pageId={historyId} onClose={() => setHistoryId(null)} />}
       {menu && menuPage && (
         <PageMenu
           anchor={menu.anchor}

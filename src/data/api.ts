@@ -201,7 +201,13 @@ export type Api = {
   /** Copies the database to `dir` and restarts the app. */
   moveStorage(dir: string): Promise<void>;
   /** Stores the document and its outgoing links. Returns the new `updatedAt`. */
-  savePage(id: string, title: string, content: string, links: PageLink[]): Promise<string>;
+  savePage(id: string, title: string, content: string, links: PageLink[], ydoc?: string): Promise<string>;
+  /** Saved versions of a page body, newest first (LAN sync 7c). */
+  pageVersions(id: string): Promise<{ at: number; content: string }[]>;
+  /** The page body's Yjs doc (base64) and stale flags. */
+  pageYdoc(id: string): Promise<{ ydoc: string | null; ydocStale: boolean; contentStale: boolean }>;
+  /** Pages whose body a sync merged: `content` needs rebuilding from the Yjs doc. */
+  contentStalePages(): Promise<string[]>;
   renamePage(id: string, title: string): Promise<string>;
   setPageIcon(id: string, icon: string): Promise<string>;
   togglePinPage(id: string): Promise<boolean>;
@@ -285,7 +291,10 @@ const tauriApi: Api = {
   setSetting: (key, value) => invoke("set_setting", { key, value }),
   getStoragePath: () => invoke("get_storage_path"),
   moveStorage: (dir) => invoke("move_storage", { dir }),
-  savePage: (id, title, content, links) => invoke("save_page", { id, title, content, links }),
+  savePage: (id, title, content, links, ydoc) => invoke("save_page", { id, title, content, links, ydoc: ydoc ?? null }),
+  pageVersions: (id) => invoke("page_versions", { id }),
+  pageYdoc: (id) => invoke("page_ydoc", { id }),
+  contentStalePages: () => invoke("content_stale_pages"),
   renamePage: (id, title) => invoke("rename_page", { id, title }),
   setPageIcon: (id, icon) => invoke("set_page_icon", { id, icon }),
   togglePinPage: (id) => invoke("toggle_pin_page", { id }),
@@ -480,6 +489,9 @@ const localApi: Api = {
       writeLinks(s, id, links);
       return Object.assign(find(s, id), { title, content, updatedAt: now() }).updatedAt;
     }),
+  pageVersions: async () => [],
+  pageYdoc: async () => ({ ydoc: null, ydocStale: false, contentStale: false }),
+  contentStalePages: async () => [],
   renamePage: (id, title) => tx((s) => Object.assign(find(s, id), { title, updatedAt: now() }).updatedAt),
   setPageIcon: (id, icon) => tx((s) => Object.assign(find(s, id), { icon, updatedAt: now() }).updatedAt),
   togglePinPage: (id) =>

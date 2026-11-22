@@ -54,9 +54,10 @@ pub struct Peer {
 
 type Res<T> = Result<T, String>;
 
-/// Synced tables and their last-write-wins fields (body text is one field until 7c).
+/// Synced tables and their last-write-wins fields. `ydoc` (the page body as
+/// a Yjs doc) merges instead; `content` only syncs for pages without one yet.
 const TABLES: &[(&str, &[&str])] = &[
-    ("pages", &["title", "icon", "content", "parent_id", "tags", "status", "due_date", "is_pinned", "sort_order", "is_archived", "archived_at", "workspace_id"]),
+    ("pages", &["title", "icon", "content", "ydoc", "parent_id", "tags", "status", "due_date", "is_pinned", "sort_order", "is_archived", "archived_at", "workspace_id"]),
     ("workspaces", &["name", "icon", "color", "sort_order"]),
 ];
 
@@ -298,6 +299,11 @@ fn serve(app: &AppHandle, mut s: TcpStream) -> Res<()> {
         Some("hello") => {
             let from = hello["from"].as_str().unwrap_or("");
             let key = peer_key(&db.0.lock().unwrap(), from);
+            if from == me {
+                // An emulator's saved address can lead back to this laptop.
+                let _ = send_json(&mut s, json!({ "t": "err", "e": "That address leads back to this device. Start the sync from the other device." }));
+                return Ok(());
+            }
             let key = match (hello["to"].as_str() == Some(me.as_str()), key) {
                 (true, Some(k)) => k,
                 _ => {
@@ -526,6 +532,24 @@ fn sync_log(conn: &Connection) -> Vec<Value> {
 
 type Stats = (u32, u32, u32);
 
+/// Merges a peer's Yjs update into ours. Returns the merged doc, or None when
+/// it adds nothing.
+pub fn ymerge(local: Option<&[u8]>, remote: &[u8]) -> Res<Option<Vec<u8>>> {
+    use yrs::{updates::decoder::Decode, ReadTxn, StateVector, Transact, Update};
+    fn add(t: &mut yrs::TransactionMut, b: &[u8]) -> Res<()> {
+        t.apply_update(Update::decode_v1(b).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    }
+    let doc = yrs::Doc::new();
+    let mut t = doc.transact_mut();
+    if let Some(l) = local {
+        add(&mut t, l)?;
+    }
+    let before = t.encode_state_as_update_v1(&StateVector::default());
+    add(&mut t, remote)?;
+    let after = t.encode_state_as_update_v1(&StateVector::default());
+    Ok((local.is_none() || after != before).then_some(after))
+}
+
 fn sql_json(v: rusqlite::types::Value) -> Value {
     use rusqlite::types::Value as V;
     match v {
@@ -570,9 +594,16 @@ fn outgoing(conn: &Connection, peer: &str) -> Res<(Vec<Value>, i64)> {
             Value::Null
         } else {
             let Some(f) = field_of(&tbl, &field) else { continue };
+            // A page with a Yjs doc sends the doc, not its JSON copy.
+            if tbl == "pages" && f == "content" && conn.query_row("SELECT ydoc IS NOT NULL FROM pages WHERE id = ?1", [&id], |r| r.get(0)).optional().map_err(e)? == Some(true) {
+                continue;
+            }
             let v: Option<rusqlite::types::Value> =
                 conn.query_row(&format!("SELECT {f} FROM {tbl} WHERE id = ?1"), [&id], |r| r.get(0)).optional().map_err(e)?;
             let Some(v) = v else { continue };
+            if v == rusqlite::types::Value::Null && f == "ydoc" {
+                continue;
+            }
             sql_json(v)
         };
         rows.push(json!([tbl, id, field, val, hlc, dev]));
@@ -624,7 +655,9 @@ fn apply(conn: &Connection, rows: &[Value]) -> Res<Stats> {
             .query_row("SELECT hlc, dev FROM sync_clock WHERE tbl = ?1 AND id = ?2 AND field = ?3", params![tbl, id, f], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()
             .map_err(e)?;
-        if tomb || local.is_some_and(|(h, d)| (h, d.as_str()) >= (hlc, dev)) {
+        let ydoc = f == "ydoc";
+        let remote_doc = if ydoc { r[3].as_str().and_then(|s| B64.decode(s).ok()) } else { None };
+        if tomb || (ydoc && remote_doc.is_none()) || (!ydoc && local.as_ref().is_some_and(|(h, d)| (*h, d.as_str()) >= (hlc, dev))) {
             continue;
         }
         let key = (tbl.to_string(), id.to_string());
@@ -634,11 +667,26 @@ fn apply(conn: &Connection, rows: &[Value]) -> Res<Stats> {
             tx.execute(&format!("INSERT INTO {tbl} {cols}"), [id]).map_err(e)?;
             added.insert(key.clone());
         }
-        tx.execute(&format!("UPDATE {tbl} SET {f} = ?2 WHERE id = ?1"), params![id, json_sql(&r[3])]).map_err(e)?;
+        if let Some(theirs) = remote_doc {
+            // Body text: merge both docs; the app then rebuilds `content` from it.
+            let mine: Option<Vec<u8>> = tx.query_row("SELECT ydoc FROM pages WHERE id = ?1", [id], |r| r.get(0)).map_err(e)?;
+            let Some(m) = ymerge(mine.as_deref(), &theirs)? else { continue };
+            crate::db::snapshot_version(&tx, id, "").map_err(e)?;
+            tx.execute("UPDATE pages SET ydoc = ?2, content_stale = 1 WHERE id = ?1", params![id, m]).map_err(e)?;
+            let h = local.map_or(hlc, |(h, _)| h.max(hlc));
+            tx.execute("UPDATE sync_state SET seq = seq + 1", []).map_err(e)?;
+            tx.execute("INSERT OR REPLACE INTO sync_clock SELECT 'pages', ?1, 'ydoc', ?2, ?3, seq FROM sync_state", params![id, h, dev]).map_err(e)?;
+        } else {
+            tx.execute(&format!("UPDATE {tbl} SET {f} = ?2 WHERE id = ?1"), params![id, json_sql(&r[3])]).map_err(e)?;
+            if f == "content" {
+                // Old-style body edit: the editor replays it into the Yjs doc.
+                tx.execute("UPDATE pages SET ydoc_stale = 1 WHERE id = ?1 AND ydoc IS NOT NULL", [id]).map_err(e)?;
+            }
+            stamp(f)?;
+        }
         if !added.contains(&key) {
             edited.insert(key);
         }
-        stamp(f)?;
     }
     tx.execute("UPDATE sync_state SET applying = 0, hlc = MAX(hlc, ?1)", [max_hlc]).map_err(e)?;
     tx.commit().map_err(e)?;
@@ -804,5 +852,39 @@ mod tests {
         b.execute("UPDATE pages SET title = 'Edit after delete' WHERE id = 'p1'", []).unwrap();
         swap(&a, &b);
         assert_eq!((title(&a, "p1"), title(&b, "p1")), (None, None));
+    }
+
+    #[test]
+    fn body_merge() {
+        use yrs::{GetString, ReadTxn, StateVector, Text, Transact, Update, updates::decoder::Decode};
+        fn edit(base: &[u8], at: u32, s: &str) -> Vec<u8> {
+            let d = yrs::Doc::new();
+            let t = d.get_or_insert_text("t");
+            let mut x = d.transact_mut();
+            x.apply_update(Update::decode_v1(base).unwrap()).unwrap();
+            t.insert(&mut x, at, s);
+            x.encode_state_as_update_v1(&StateVector::default())
+        }
+        fn text(b: &[u8]) -> String {
+            let d = yrs::Doc::new();
+            let t = d.get_or_insert_text("t");
+            d.transact_mut().apply_update(Update::decode_v1(b).unwrap()).unwrap();
+            let s = t.get_string(&d.transact());
+            s
+        }
+        let (a, b) = (db("ya"), db("yb"));
+        let base = edit(&yrs::Doc::new().transact().encode_state_as_update_v1(&StateVector::default()), 0, "hello world");
+        a.execute("INSERT INTO pages (id, title, ydoc) VALUES ('p', 'P', ?1)", [&base]).unwrap();
+        swap(&a, &b);
+        // Both devices edit the same body; both edits survive.
+        a.execute("UPDATE pages SET ydoc = ?1", [edit(&base, 0, "A: ")]).unwrap();
+        b.execute("UPDATE pages SET ydoc = ?1", [edit(&base, 11, " (B)")]).unwrap();
+        swap(&a, &b);
+        for c in [&a, &b] {
+            let y: Vec<u8> = c.query_row("SELECT ydoc FROM pages", [], |r| r.get(0)).unwrap();
+            assert_eq!(text(&y), "A: hello world (B)");
+        }
+        // Nothing new: a second sync changes nothing.
+        assert_eq!(swap(&a, &b), ((0, 0, 0), (0, 0, 0)));
     }
 }
