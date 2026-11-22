@@ -375,6 +375,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     isTauri() ? engine.status().then(setStatus).catch((e) => setErr(String(e))) : setErr("Nerida runs in the Oceanic desktop app.");
   useEffect(() => {
     void refresh();
+    // The engine stops itself when idle: re-check so the "asleep" notice stays true.
+    const t = setInterval(() => void refresh(), 30_000);
+    return () => clearInterval(t);
   }, []);
   useEffect(() => {
     setExcluded(new Set());
@@ -400,11 +403,6 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   }, [chat?.messages.length, draft]);
 
   const b = builtin(model);
-  // Warm the built-in engine when the panel opens, so the first reply doesn't wait for startup.
-  const installed = !!b && !!status?.server && !!status.models.find((m) => m.id === b)?.installed;
-  useEffect(() => {
-    if (installed && b) engine.start(b).catch(() => {});
-  }, [installed, b]);
   const ready = b ? !!status?.server && !!status.models.find((m) => m.id === b)?.installed : !!status;
   // First use: the intro popup instead of a bare download card.
   const [auto, setAuto] = useState(false);
@@ -458,7 +456,10 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         throw null;
       }
       if (blocks.length) {
-        if (b) await engine.start(b);
+        if (b) {
+          if (status?.running !== b) mark("Starting Nerida…");
+          await engine.start(b);
+        }
         mark("Editing your note");
         let raw = "";
         await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (raw += t), onThink);
@@ -527,7 +528,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         }
       }
       if (b) {
-        if (status?.running !== b) mark(`Waking up ${MODEL_NAMES[b]}`);
+        if (status?.running !== b) mark("Starting Nerida…");
         await engine.start(b);
         void refresh();
       }
@@ -576,8 +577,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
 
 
   const msgs = chat?.messages ?? [];
+  // Built-in engine not running (never started, or stopped when idle): the first reply waits for it to load.
+  const asleep = ready && !!b && !!status && status.running !== b && !busy && !neridaState.warming;
   const composer = (
       <div className="relative">
+        {asleep && <p className="mb-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-1.5 text-[11.5px] text-neutral-400">💤 Nerida is asleep to save memory. The first reply takes a few seconds.</p>}
         <input ref={filePicker} type="file" multiple accept={ATTACH_ACCEPT} className="hidden"
           onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
         <div className="relative flex flex-col gap-1 rounded-2xl border border-white/[0.09] bg-white/[0.035] p-2 shadow-lg shadow-black/20 transition-[border-color,box-shadow] duration-300 focus-within:border-teal-300/35 focus-within:shadow-[0_0_0_3px_rgba(45,212,191,0.08),0_10px_30px_-10px_rgba(0,0,0,0.5)]">

@@ -168,14 +168,13 @@ void api.getSettings().then((s) => {
   } catch {
     /* corrupt history: start fresh */
   }
-  // Warm at launch, then again when the model, GPU, reply style, effort or Thinking changes.
-  let key = "", timer: ReturnType<typeof setTimeout> | undefined;
-  const check = () => {
+  // No warm-up at launch: the engine starts on first use (it holds GBs of memory) and stops when idle.
+  // Re-warm only a running engine when the model, GPU, reply style, effort or Thinking changes.
+  let key = [state.model, state.gpu, state.style, state.effort, state.thinking].join("|"), timer: ReturnType<typeof setTimeout> | undefined;
+  nerida.subscribe(() => {
     const k = [state.model, state.gpu, state.style, state.effort, state.thinking].join("|");
-    if (k !== key) (key = k, clearTimeout(timer), (timer = setTimeout(() => void warmup(), 1000)));
-  };
-  check();
-  nerida.subscribe(check);
+    if (k !== key) (key = k, clearTimeout(timer), (timer = setTimeout(() => void engine.status().then((s) => { if (s.running) void warmup(); }).catch(() => {}), 1000)));
+  });
 });
 
 /** The main chat's system prompt: reply style, and Fast's 1-3 sentence cap. */
@@ -207,7 +206,8 @@ export const engine = {
     return invoke<void>("ai_download", { item, onProgress: ch });
   },
   cancelDownload: () => invoke<void>("ai_cancel_download"),
-  start: (model: ModelId) => invoke<string>("ai_start", { model, gpu: state.gpu }),
+  /** `vision`: also load the image add-on (scanned pages); otherwise it's left out to save memory. */
+  start: (model: ModelId, vision = false) => invoke<string>("ai_start", { model, gpu: state.gpu, vision }),
   /** Graphics cards the engine can use. */
   gpus: () => invoke<{ id: string; name: string; mem_mib: number }[]>("ai_gpus"),
   /** Streams the answer to `onToken`; Deep's thinking goes only to `onThink` (never into notes or quizzes). */
@@ -216,7 +216,8 @@ export const engine = {
     const b = builtin(ref);
     let baseUrl: string, keyId: string | null = null, model: string;
     if (b && state.dl) throw new Error(UPGRADE_MSG);
-    if (b) [baseUrl, model] = [await engine.start(b), b];
+    const images = messages.some((m) => Array.isArray(m.content) && m.content.some((c) => (c as { type?: string }).type === "image_url"));
+    if (b) [baseUrl, model] = [await engine.start(b, images), b];
     else if (ref.startsWith("ollama:")) [baseUrl, model] = [OLLAMA_URL, ref.slice(7)];
     else {
       const c = parseCustom(ref);

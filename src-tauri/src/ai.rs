@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -337,13 +337,19 @@ pub fn ai_delete_model(app: AppHandle, state: State<Ai>, model: String) -> Resul
 
 /// Starts (or reuses) the local engine for `model`; returns its base URL.
 #[tauri::command]
-pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: String) -> Result<String, String> {
+pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: String, vision: Option<bool>) -> Result<String, String> {
     // gpu: "auto" | "cpu" | "cuda" | a Vulkan device id from ai_gpus. A different choice restarts the engine.
+    // vision: load the add-on (scanned pages). Without it the engine skips ~0.6 GB plus its image buffer;
+    // an image request restarts it with vision.
+    let vision = vision.unwrap_or(false);
+    touch();
+    reaper(&app);
     let gpus = if gpu == "auto" { list_gpus(&app) } else { vec![] };
     let port = {
         let mut guard = state.server.lock().unwrap();
         if let Some((m, port, child)) = guard.as_mut() {
-            if *m == format!("{model}|{gpu}") && child.try_wait().ok().flatten().is_none() {
+            let same = *m == format!("{model}|{gpu}|v") || (!vision && *m == format!("{model}|{gpu}"));
+            if same && child.try_wait().ok().flatten().is_none() {
                 return Ok(format!("http://127.0.0.1:{port}/v1"));
             }
         }
@@ -375,7 +381,8 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
         *ENGINE_KEY.lock().unwrap() = Some((port, key));
         cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "-c", "8192", "--jinja", "-np", "1", "--cache-reuse", "256"]);
         let mmproj = dir(&app)?.join(VISION.file);
-        if mmproj.exists() {
+        let vision = vision && mmproj.exists();
+        if vision {
             // Cap each image's tokens: Qwen's default reserves a ~4.8 GB GPU buffer for huge images,
             // which fails on most laptop GPUs and makes scanned pages take minutes.
             // 512 still reads a page at ~768 px and leaves memory for the answer (1024 ran out mid-answer).
@@ -395,7 +402,7 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
                 .to_string(),
             _ => format!("Couldn't start Nerida: {e}"),
         })?;
-        *guard = Some((format!("{model}|{gpu}"), port, child));
+        *guard = Some((format!("{model}|{gpu}{}", if vision { "|v" } else { "" }), port, child));
         port
     };
 
@@ -509,6 +516,7 @@ pub async fn ai_chat(
     let mut thinking = false;
     let mut calls: Vec<serde_json::Value> = Vec::new();
     while let Some(chunk) = stream.next().await {
+        touch(); // a long answer is use, not idle
         if state.stop_chat.load(Ordering::Relaxed) {
             return Ok(Vec::new()); // stopped: no half-made tool calls
         }
@@ -568,7 +576,36 @@ pub fn ai_stop(state: State<Ai>) {
     state.stop_chat.store(true, Ordering::Relaxed);
 }
 
-/// Kills the engine process (on app exit or model removal).
+/// Last engine use (seconds since the epoch), for the idle shutdown.
+static LAST_USE: AtomicU64 = AtomicU64::new(0);
+const IDLE_SECS: u64 = 5 * 60;
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+fn touch() {
+    LAST_USE.store(now_secs(), Ordering::Relaxed);
+}
+
+/// Once per run: kills the engine after IDLE_SECS unused, freeing its memory. The next use starts it again.
+fn reaper(app: &AppHandle) {
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    if STARTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            if now_secs().saturating_sub(LAST_USE.load(Ordering::Relaxed)) >= IDLE_SECS {
+                shutdown(&app.state::<Ai>());
+            }
+        }
+    });
+}
+
+/// Kills the engine process (on app exit, model removal or idle).
 pub fn shutdown(state: &Ai) {
     if let Some((_, _, mut child)) = state.server.lock().unwrap().take() {
         let _ = child.kill();
