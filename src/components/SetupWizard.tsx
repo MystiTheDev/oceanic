@@ -7,6 +7,8 @@ import { Stepper } from "./Stepper";
 import { AvatarCropper } from "./AvatarCropper";
 import { EmojiPicker } from "./EmojiPicker";
 import { Avatar, AvatarChoice, Select, SidebarIconsPicker, type AppSettings } from "./SettingsModal";
+import { NeridaMark } from "./NeridaOrb";
+import { DiffCard } from "./NeridaDiff";
 import { downloadModel, engine, useNerida, type AiStatus } from "../lib/nerida";
 
 /** Fired by Settings → About to open the wizard again. */
@@ -175,37 +177,44 @@ function AiStep() {
   );
 }
 
-const ANSWER = "Photosynthesis turns light, water and CO₂ into glucose and oxygen, inside the chloroplasts.".split(" ");
+const SCENES = [
+  { ask: "Summarise my Biology note", answer: "Photosynthesis turns light, water and CO₂ into glucose and oxygen. It happens in the chloroplasts, powered by chlorophyll." },
+  { ask: "Make this sentence clearer", before: "Plants use sun stuff to make their food.", after: "Plants turn sunlight into glucose for energy." },
+];
 
-/** Looping demo: a chat answer streams in, then Nerida rewrites a sentence. */
+/** Looping mini Nerida panel: a question is typed and sent, Nerida thinks, then answers (scene 1) or proposes an edit (scene 2). 150 ms ticks, 40 per scene. */
 function Showcase() {
   const [t, setT] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setT((n) => (n + 1) % 32), 250);
+    const id = setInterval(() => setT((n) => (n + 1) % 80), 150);
     return () => clearInterval(id);
   }, []);
-  const chat = t < 18;
-  const box = "rounded-lg px-2.5 py-1.5 text-[12px] leading-relaxed";
+  const s = t < 40 ? 0 : 1;
+  const k = t % 40; // tick within scene: 0-10 typing, 11-15 thinking, 16+ reply
+  const sc = SCENES[s];
+  const typed = sc.ask.slice(0, Math.round((sc.ask.length * k) / 10));
+  const words = sc.answer?.split(" ") ?? [];
   return (
-    <div className="mb-4 h-[112px] overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
+    <div className="mb-4 flex h-[196px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.025]">
+      <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-1.5 text-[12px] font-medium text-neutral-300">
+        <NeridaMark size={14} busy={k > 10 && k < 16} /> Nerida
+      </div>
       <AnimatePresence mode="wait">
-        <motion.div key={chat ? "chat" : "edit"} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="flex flex-col gap-2">
-          {chat ? (
-            <>
-              <p className={`${box} self-end bg-sky-500/20 text-neutral-100`}>Summarise my Biology note</p>
-              <p className={`${box} self-start bg-white/[0.05] text-neutral-300`}>{ANSWER.slice(0, Math.max(1, t - 3)).join(" ")}</p>
-            </>
-          ) : (
-            <>
-              <p className={`${box} self-end bg-sky-500/20 text-neutral-100`}>Make this clearer</p>
-              <p className={`${box} bg-white/[0.05] text-neutral-300`}>
-                Plants <span className={t > 22 ? "text-red-400/80 line-through" : ""}>use sun stuff to make food</span>
-                {t > 24 && <span className="text-emerald-400"> turn sunlight into glucose</span>}.
-              </p>
-            </>
-          )}
+        <motion.div key={s} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-3 py-2 text-[12px]">
+          {k > 10 && <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="self-end rounded-lg bg-sky-500/15 px-2.5 py-1 text-neutral-100">{sc.ask}</motion.p>}
+          {k > 10 && k < 16 && <p className="flex gap-1 px-1 py-1.5">{[0, 1, 2].map((d) => <span key={d} className="size-1.5 animate-bounce rounded-full bg-neutral-500" style={{ animationDelay: `${d * 120}ms` }} />)}</p>}
+          {k >= 16 && (sc.answer
+            ? <p className="leading-relaxed text-neutral-300">{words.slice(0, (k - 15) * 2).join(" ")}</p>
+            : <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="pointer-events-none" style={{ zoom: 0.85 }}><DiffCard before={sc.before!} after={sc.after!} onAccept={() => {}} onReject={() => {}} /></motion.div>)}
         </motion.div>
       </AnimatePresence>
+      <div className="flex items-center gap-2 border-t border-white/[0.05] px-3 py-1.5">
+        <span className="shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 text-[10.5px] text-neutral-400">📄 Biology</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] text-neutral-200">
+          {k <= 10 ? typed : <span className="text-neutral-500">Ask Nerida…</span>}
+          {k <= 10 && <span className="ml-px inline-block h-3 w-px animate-pulse bg-neutral-300 align-middle" />}
+        </span>
+      </div>
     </div>
   );
 }
