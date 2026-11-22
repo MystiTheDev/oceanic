@@ -308,8 +308,8 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const onDown = (e: React.PointerEvent) => {
     const d = docRef.current;
     if (e.pointerType === "touch" && penId.current !== null) return;
-    // Pen side button or eraser end: button 5 / buttons bit 32.
-    const penErase = e.pointerType === "pen" && (e.button === 5 || (e.buttons & 32) !== 0);
+    // Pen side button or eraser end: button 5 / buttons bit 32; PC tablet drivers send the side button as right-click.
+    const penErase = e.pointerType === "pen" && (e.button === 5 || e.button === 2 || (e.buttons & 34) !== 0);
     if (!d || (e.button !== 0 && e.button !== 2 && e.button !== 1 && !penErase) || drag.current) return;
     if (e.pointerType === "pen") penId.current = e.pointerId;
     const tool: Tool = penErase ? "eraser" : toolNow;
