@@ -308,8 +308,10 @@ export default function App() {
   const [trashToast, setTrashToast] = useState<{ pageId: string; key: number } | null>(null);
 
   // Replay tour / Run setup again: close Settings so the tour and wizard show over the app.
+  // The tour also opens a page so its editor and "Ask Nerida" stops have something to point at.
+  const tourPageRef = useRef<() => void>(() => {});
   useEffect(() => {
-    const close = () => setSettingsOpen(false);
+    const close = () => (setSettingsOpen(false), tourPageRef.current());
     const setup = () => (setSettingsOpen(false), setAskName(true));
     window.addEventListener(TOUR_START, close);
     window.addEventListener(SETUP_START, setup);
@@ -539,6 +541,11 @@ export default function App() {
   }, [tabs, activeTabId, loaded]);
 
   /* ------------------------------------------------------------- Tabs */
+  tourPageRef.current = () => {
+    if (activePage) return;
+    const first = allLivePages[0];
+    if (first) openPage(first.id);
+  };
   /** Sidebar / search: focus the tab already showing the page, else open a new one. */
   const openPage = (pageId: string) => {
     if (pageId === MINDMAPS) return setActiveTabId(MM_HOME_TAB);

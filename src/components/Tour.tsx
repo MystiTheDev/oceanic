@@ -28,8 +28,11 @@ export function Tour() {
     if (i === null) return;
     const measure = () => setRect(document.querySelector(STOPS[i].target)?.getBoundingClientRect() ?? null);
     measure();
+    // The target may mount a moment later (the tour opens a page first): keep measuring briefly.
+    const id = setInterval(measure, 100);
+    const stop = setTimeout(() => clearInterval(id), 1500);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    return () => (clearInterval(id), clearTimeout(stop), window.removeEventListener("resize", measure));
   }, [i]);
 
   useEffect(() => {
