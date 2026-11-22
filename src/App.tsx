@@ -109,6 +109,7 @@ import { buildOceanFile } from "./lib/oceanFile";
 import { buildExport } from "./lib/export";
 import { MobileSettings } from "./mobile/MobileSettings";
 import { MobileUpdater } from "./mobile/MobileUpdater";
+import { VersionLock } from "./components/VersionLock";
 
 /** The pinned Home tab: always first, can't be closed, moved or duplicated. */
 const HOME_TAB = "home-tab";
@@ -2216,6 +2217,7 @@ export default function App() {
       )}
       {agentTest && <TestSetup pages={allLivePages} initialNotes={agentTest} onClose={() => setAgentTest(null)} />}
       {isAndroid && <MobileUpdater />}
+      <VersionLock />
       <SyncTrustBanner />
       {settingsOpen && phoneUI && (
         <MobileSettings
