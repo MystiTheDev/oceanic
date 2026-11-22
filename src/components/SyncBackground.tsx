@@ -1,10 +1,13 @@
 /** LAN sync 7d: the "Sync notes on …?" banner and the Sync networks list (desktop and phone). */
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import { isTauri } from "@tauri-apps/api/core";
 import { Trash2, Wifi } from "lucide-react";
 import { sync, type SyncNetwork } from "../lib/sync";
 
 const isAndroid = /Android/i.test(navigator.userAgent);
+/** Tauri event listener; a no-op in a plain browser (web dev preview). */
+const listen = (ev: string, cb: () => void) => (isTauri() ? tauriListen(ev, cb) : Promise.resolve(() => {}));
 const BATTERY_ASKED = "oc-sync-battery-asked";
 
 /** Asks once per unknown network, only when a device is paired. */
