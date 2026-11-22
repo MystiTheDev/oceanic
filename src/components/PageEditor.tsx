@@ -42,7 +42,7 @@ import { fontStack } from "../lib/fonts";
 import { BlockHandleMenu } from "./BlockHandleMenu";
 import { getSeedBlocks, type PageMeta } from "../data/workspace";
 import { editorExtensions, getPageLinkItems, getSlashItems, mobileEditorExtensions, schema } from "../editor/schema";
-import { isMobile } from "../mobile/MobileShell";
+import { isAndroid, usePhoneUI, useSoftKeyboard } from "../mobile/formFactor";
 import { MobileSelectionPopup, MobileToolbar } from "../mobile/MobileEditorKit";
 import { editorContextMenu } from "../editor/editorMenu";
 import { openContextMenu } from "./ContextMenu";
@@ -98,8 +98,8 @@ function SelectionToolbar() {
       <FontButton key="font" />
       <ColorStyleButton key="color" />
       <span key="d4" className="oc-toolbar-divider" />
-      <EditWithNerida key="nerida-edit" />
-      <CardsFromSelection key="nerida" />
+      {!isAndroid && <EditWithNerida key="nerida-edit" />}
+      {!isAndroid && <CardsFromSelection key="nerida" />}
       <ToolbarOverflow key="more" />
     </FormattingToolbar>
   );
@@ -230,6 +230,8 @@ function PageEditorBody({
   ydoc,
   stale,
 }: PageEditorProps & { ydoc: Y.Doc; stale: boolean }) {
+  const isMobile = usePhoneUI();
+  const keyboard = useSoftKeyboard();
   // One editor per open page — remounted (keyed) whenever the active tab changes.
   // The body is the page's Yjs doc, so edits from another device merge in.
   const editor = useCreateBlockNote(
@@ -668,7 +670,7 @@ function PageEditorBody({
           {!isMobile && (
             <SuggestionMenuController
               triggerCharacter="/"
-              getItems={async (query) => getSlashItems(editor, query)}
+              getItems={async (query) => getSlashItems(editor, query).filter((i) => !isAndroid || i.group !== "Nerida")}
             />
           )}
           {/* Link to page: `[[` (wiki-style) and `@` (Notion's mention) */}
@@ -686,7 +688,7 @@ function PageEditorBody({
           />
 
         </BlockNoteView>
-        {isMobile && <MobileToolbar editor={editor as never} blocks={() => getSlashItems(editor, "").filter((i) => i.group !== "Nerida" && i.title !== "Image" && i.title !== "File")} links={(q) => getPageLinkItems(editor, q, page.id)} />}
+        {(isMobile || keyboard) && <MobileToolbar editor={editor as never} blocks={() => getSlashItems(editor, "").filter((i) => i.group !== "Nerida" && i.title !== "Image" && i.title !== "File")} links={(q) => getPageLinkItems(editor, q, page.id)} />}
         </div>
       </div>
       </div>

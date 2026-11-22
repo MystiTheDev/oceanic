@@ -7,7 +7,7 @@ import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { Modal, ModalButton } from "./Modal";
 import { StatusBadge, TagChip } from "./PageProperties";
 import { TagPicker } from "./TagPicker";
-import { isMobile } from "../mobile/MobileShell";
+import { usePhoneUI } from "../mobile/formFactor";
 
 type TagsPanelProps = {
   /** Live pages of every workspace. */
@@ -24,6 +24,7 @@ type TagsPanelProps = {
 
 /** Every tag and status across all pages; pick several to filter (pages must match all). */
 export function TagsPanel({ pages, onOpenPage, onRenameTag, onDeleteTag, onTagColor, library, onCreateTag, onClose }: TagsPanelProps) {
+  const isMobile = usePhoneUI();
   const [creating, setCreating] = useState(false);
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<PageStatus>>(new Set());

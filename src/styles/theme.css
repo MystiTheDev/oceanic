@@ -2816,3 +2816,12 @@
 /* The note editor and canvases keep their own caret/selection cues. `!important` because the ring rule
  * above is more specific (`[tabindex]:not(...)`) and the editor has tabindex="0". */
 :is(.bn-editor, .ProseMirror, [contenteditable="true"]):focus-visible { outline: none !important; }
+
+/* ---------- Landscape tablets: desktop UI with touch-sized targets */
+html.tablet { -webkit-tap-highlight-color: transparent; }
+@media (hover: none) and (orientation: landscape) {
+  /* Controls that only show on hover stay visible. */
+  .tablet .group .opacity-0 { opacity: 1; }
+  .tablet button, .tablet [role="menuitem"], .tablet [role="option"] { min-height: 36px; }
+  .tablet .bn-side-menu { transform: scale(1.3); }
+}

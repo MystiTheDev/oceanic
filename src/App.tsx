@@ -97,7 +97,8 @@ import { PDF_CHANGED } from "./pdf/pdfjs";
 import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
-import { MobileShell, isMobile } from "./mobile/MobileShell";
+import { MobileShell } from "./mobile/MobileShell";
+import { isAndroid, isTablet, usePhoneUI } from "./mobile/formFactor";
 import { SyncTrustBanner } from "./components/SyncBackground";
 import { MobilePropChips } from "./mobile/MobileProps";
 import { attachBlocks, pickFiles, titleFor } from "./mobile/attach";
@@ -209,11 +210,13 @@ const currentPage = (tab: Tab) => tab.history[tab.index];
 
 export default function App() {
   const [loaded, setLoaded] = useState(false);
-  const { open: neridaOpen, homeMode } = useNerida();
+  const { open: neridaOn, homeMode } = useNerida();
+  // Android (phone and tablet) has no Nerida, study home or audio blocks, like the phone UI.
+  const neridaOpen = neridaOn && !isAndroid;
   // Ctrl+J toggles Nerida's side panel.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+      if (!isAndroid && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
         e.preventDefault();
         nerida.toggle();
       }
@@ -1349,7 +1352,7 @@ export default function App() {
       key: Date.now(),
     })).catch(() => {});
     void invoke<string | null>("launch_file").then((p) => { if (p) void openFile(p); }).catch(() => {});
-    if (isMobile) onOpenedFile(async (f) => openBytes(f.name, new Uint8Array(await f.arrayBuffer())));
+    if (isAndroid) onOpenedFile(async (f) => openBytes(f.name, new Uint8Array(await f.arrayBuffer())));
     const offFile = listen<string>("open-file", ({ payload }) => void openFile(payload));
     const offPage = listen<string>("tray-open-page", ({ payload }) => {
       setView("document");
@@ -1426,7 +1429,7 @@ export default function App() {
     if (!tagLibrary.includes(ASSIGNMENT)) createTag(ASSIGNMENT, "blue");
     if (!tagLibrary.includes(EXAM)) createTag(EXAM, "red");
   }, [loaded]);
-  const propertiesFor = (p: PageMeta) => isMobile ? <MobilePropChips id={p.id} value={propsOf(p)} /> : (
+  const propertiesFor = (p: PageMeta) => phoneUI ? <MobilePropChips id={p.id} value={propsOf(p)} /> : (
     <PageProperties value={propsOf(p)} onChange={(v) => changeProperties(p.id, v)} library={tagLibrary} onCreateTag={createTag} />
   );
 
@@ -1478,6 +1481,26 @@ export default function App() {
   /** Bumped as the loader fades: Homes remount so their intro plays where you can see it. */
   const [homeKey, setHomeKey] = useState(0);
   const appRoot = useRef<HTMLDivElement>(null);
+  // Tablets swap phone UI (portrait) and desktop UI (landscape) on rotation.
+  // The open page lives in App state; keep its editor scroll position across the swap.
+  const phoneUI = usePhoneUI();
+  const editorScroll = useRef(0);
+  const editorScroller = () => {
+    let el = appRoot.current?.querySelector(".bn-editor")?.parentElement ?? null;
+    while (el && el.scrollHeight <= el.clientHeight) el = el.parentElement;
+    return el;
+  };
+  const firstUI = useRef(true);
+  useEffect(() => {
+    if (firstUI.current) return void (firstUI.current = false);
+    if (phoneUI) setMobilePageOpen(!!activePage);
+    const ratio = editorScroll.current;
+    const t = setTimeout(() => {
+      const el = editorScroller();
+      if (el) el.scrollTop = ratio * (el.scrollHeight - el.clientHeight);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [phoneUI]); // eslint-disable-line react-hooks/exhaustive-deps
   const switchApp = (app: AppId) => {
     const doc = activePageId?.startsWith("doc:") ? activePageId.slice(4) : null;
     if (doc && isDirtyUntitled(doc)) return setSavePrompt({ path: doc, proceed: () => go(app) });
@@ -1508,7 +1531,7 @@ export default function App() {
     for (const [k] of SIDEBAR_ITEMS) document.documentElement.style.setProperty(`--oc-ic-${k}`, pal?.[k] ?? "");
   }, [settings.sidebarIcons, settings.sidebarColors]);
   setOpenProbe((entry) => tabs.some((t) => currentPage(t) === entry));
-  const neridaHome = homeMode === "nerida" && view === "document" && activePageId === HOME;
+  const neridaHome = !isAndroid && homeMode === "nerida" && view === "document" && activePageId === HOME;
   const inDocEditor = view === "document" && (!!activePageId?.startsWith("doc:") || !!activePageId?.startsWith("sketch:") || !!activePageId?.startsWith("mindmap:"));
   useEffect(() => setSidebarCollapsed(inDocEditor), [inDocEditor]);
   const inDocsApp = view === "document" && !!activePageId && isDocEntry(activePageId);
@@ -1532,8 +1555,12 @@ export default function App() {
   );
 
   return (
-    <div ref={appRoot} className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100">
-      {isMobile ? (
+    <div ref={appRoot} className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100"
+      onScrollCapture={isTablet ? (e) => {
+        const el = e.target as HTMLElement;
+        if (el.querySelector(".bn-editor") && el.scrollHeight > el.clientHeight) editorScroll.current = el.scrollTop / (el.scrollHeight - el.clientHeight);
+      } : undefined}>
+      {phoneUI ? (
         <MobileShell
           userName={settings.userName}
           avatar={settings.avatar}
@@ -1858,10 +1885,10 @@ export default function App() {
             />
           ) : activePageId === HOME ? (
             <div className="relative flex h-full min-h-0 flex-col">
-            <HomeSwitch />
+            {!isAndroid && <HomeSwitch />}
             {neridaHome ? (
               <NeridaPanel pageId={null} home />
-            ) : settings.homeStyle === "student" ? (
+            ) : settings.homeStyle === "student" && !isAndroid ? (
             <StudyHome
               key={homeKey}
               userName={settings.userName}
@@ -2107,9 +2134,9 @@ export default function App() {
         />
       )}
       <Tooltip />
-      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} sheet={isMobile} />}
+      {metaAsk && <ImportMetaDialog titles={metaAsk.titles} existingTags={metaAsk.existingTags} newTags={metaAsk.newTags} onDone={metaAsk.resolve} sheet={isAndroid && !isTablet} />}
       {dupAsk && (
-        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5" sheet={isMobile}>
+        <Modal onClose={() => dupAsk.resolve("cancel")} className="w-[440px] p-5" sheet={isAndroid && !isTablet}>
           <h2 className="text-[15px] font-semibold text-neutral-100">“{dupAsk.title}” is already in Oceanic</h2>
           <p className="mt-1 text-[13px] text-neutral-400">An identical note exists. What should happen?</p>
           <div className="mt-4 flex justify-end gap-2">
@@ -2170,9 +2197,9 @@ export default function App() {
         />
       )}
       {agentTest && <TestSetup pages={allLivePages} initialNotes={agentTest} onClose={() => setAgentTest(null)} />}
-      {isMobile && <MobileUpdater />}
+      {isAndroid && <MobileUpdater />}
       <SyncTrustBanner />
-      {settingsOpen && isMobile && (
+      {settingsOpen && phoneUI && (
         <MobileSettings
           settings={settings}
           onChange={changeSettings}
@@ -2182,7 +2209,7 @@ export default function App() {
           onImport={() => void pickFile().then((f) => f && (setSettingsOpen(false), importNotes([f], true))).catch(report("Import"))}
         />
       )}
-      {settingsOpen && !isMobile && (
+      {settingsOpen && !phoneUI && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}
       {loaded && askName && (

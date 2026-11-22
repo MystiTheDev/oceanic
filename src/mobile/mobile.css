@@ -736,3 +736,14 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
 .ocm-bulk button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0; border-radius: 16px; font-size: 12px; font-weight: 600; color: var(--oc-text-strong); }
 .ocm-bulk button:active { background: rgba(var(--oc-ink), 0.08); }
 .ocm-bulk button:disabled { opacity: 0.35; }
+
+/* ---------- Portrait tablets (landscape tablets use the desktop UI) */
+@media (min-width: 600px) {
+  .tablet .ocm-root { zoom: 1.1; }
+  .tablet .ocm-scroll > *, .tablet .ocm-editor > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+  .tablet .ocm-folders, .tablet .ocm-tiles, .tablet .ocm-shortcuts { grid-template-columns: repeat(3, 1fr); }
+  /* Bottom sheets become centred dialogs. */
+  .tablet .ocm-sheet-bg { align-items: center; justify-content: center; }
+  .tablet .ocm-sheet { width: min(520px, 90%); border-radius: 22px; padding-bottom: 16px; }
+  .tablet .ocm-grab { display: none; }
+}
