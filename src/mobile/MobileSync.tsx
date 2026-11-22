@@ -1,7 +1,7 @@
-/** Settings → Sync on the phone (phase 7a): paired laptops and the two-step pairing flow. */
+/** Settings → Sync on the phone: paired laptops with Sync now, the sync log, and the two-step pairing flow. */
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronRight, Laptop, Loader2, RefreshCw, Smartphone } from "lucide-react";
-import { sync, type FoundLaptop, type SyncInfo } from "../lib/sync";
+import { sync, syncAgo, syncSummary, type FoundLaptop, type SyncInfo } from "../lib/sync";
 import { buzz } from "./mobilePrefs";
 
 type Tone = "idle" | "busy" | "ok" | "err";
@@ -14,16 +14,25 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
   useEffect(refresh, []);
   if (!info) return null;
 
-  const test = async (id: string) => {
+  const run = async (id: string, busy: string, job: () => Promise<string>) => {
     buzz();
-    setState((s) => ({ ...s, [id]: { tone: "busy", text: "Testing…" } }));
+    setState((s) => ({ ...s, [id]: { tone: "busy", text: busy } }));
     try {
-      await sync.test(id);
-      setState((s) => ({ ...s, [id]: { tone: "ok", text: "Connected" } }));
+      const text = await job();
+      setState((s) => ({ ...s, [id]: { tone: "ok", text } }));
     } catch (e) {
       setState((s) => ({ ...s, [id]: { tone: "err", text: (e as Error).message } }));
     }
+    refresh();
   };
+  const last = info.log[0];
+  const rest: { tone: Tone; text: string } = last?.error
+    ? { tone: "err", text: last.error }
+    : info.pending
+      ? { tone: "busy", text: `${info.pending} change${info.pending === 1 ? "" : "s"} waiting` }
+      : last
+        ? { tone: "ok", text: `Synced ${syncAgo(last.at)}` }
+        : { tone: "idle", text: "Not synced yet" };
   const unpair = (id: string) => {
     buzz();
     if (arming !== id) {
@@ -55,7 +64,8 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
     <>
       <h3 className="ocs-head">Paired devices</h3>
       {info.peers.map((d) => {
-        const st = state[d.id] ?? { tone: "idle" as Tone, text: d.addr ? `Last seen at ${d.addr}` : "Not tested" };
+        const st = state[d.id] ?? rest;
+        const busy = st.text.endsWith("…");
         return (
           <section key={d.id} className="ocs-group osy-device">
             <div className="osy-head">
@@ -69,9 +79,10 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
               </span>
             </div>
             <div className="osy-actions">
-              <button onClick={() => void test(d.id)} disabled={st.tone === "busy"}>
-                {st.tone === "busy" ? <Loader2 size={16} className="osy-spin" /> : <RefreshCw size={16} />} Test connection
+              <button onClick={() => void run(d.id, "Syncing…", async () => `Synced: ${syncSummary(await sync.now(d.id))}`)} disabled={busy}>
+                {busy ? <Loader2 size={16} className="osy-spin" /> : <RefreshCw size={16} />} Sync now
               </button>
+              <button onClick={() => void run(d.id, "Testing…", () => sync.test(d.id))} disabled={busy}>Test</button>
               <button className={`osy-danger ${arming === d.id ? "armed" : ""}`} onClick={() => unpair(d.id)}>
                 {arming === d.id ? "Tap again to unpair" : "Unpair"}
               </button>
@@ -85,7 +96,22 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
           <ChevronRight size={18} className="ocs-chev" />
         </button>
       </section>
-      <p className="ocs-note">Notes don't sync yet. This update pairs devices and checks the connection.</p>
+      {info.log.length > 0 && (
+        <>
+          <h3 className="ocs-head">Sync log</h3>
+          <section className="ocs-group">
+            {info.log.slice(0, 10).map((l, i) => (
+              <div key={i} className="ocs-row">
+                <span className="ocs-title">
+                  {l.error ? <span className="osy-err">{l.error}</span> : syncSummary(l)}
+                  <em>{l.peer} · {syncAgo(l.at)}</em>
+                </span>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
+      <p className="ocs-note">Page text merging arrives in a later update. For now, if both devices edit the same page, the newest edit wins.</p>
     </>
   );
 }

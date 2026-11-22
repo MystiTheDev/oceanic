@@ -802,6 +802,7 @@ pub fn run() {
             sync::sync_discover,
             sync::sync_pair_join,
             sync::sync_test,
+            sync::sync_now,
             sync::sync_unpair,
             #[cfg(desktop)]
             ai::ai_status,

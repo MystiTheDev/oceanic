@@ -1281,6 +1281,17 @@ export default function App() {
   }, []);
 
   // Tray menu → "New page" (the window is shown first on the Rust side).
+  // LAN sync applied changes from another device: reload the page list and workspaces.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const off = listen("sync-applied", async () => {
+      const [live, trashed, ws] = await Promise.all([api.getPages(), api.getTrashedPages(), api.getWorkspaces()]);
+      setPages([...live, ...trashed].map(toMeta));
+      setWorkspaces(ws);
+    });
+    return () => void off.then((f) => f());
+  }, []);
+
   useEffect(() => {
     if (!isTauri()) return;
     // Tray menu actions (the Rust side shows the window first).

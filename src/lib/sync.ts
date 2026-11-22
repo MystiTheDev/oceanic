@@ -1,4 +1,4 @@
-/** LAN sync (phase 7a): pairing and an encrypted test connection. Rust side: src-tauri/src/sync.rs. */
+/** LAN sync 7a pairing + 7b metadata sync. Rust side: src-tauri/src/sync.rs. */
 import { invoke } from "@tauri-apps/api/core";
 
 export type SyncPeer = { id: string; name: string; addr: string };
@@ -10,6 +10,21 @@ export type SyncInfo = {
   peers: SyncPeer[];
   pairing: { code: string; secondsLeft: number } | null;
   listenError: string | null;
+  /** Changes not yet sent to every paired device. */
+  pending: number;
+  log: SyncLogEntry[];
+};
+export type SyncLogEntry = { at: number; peer: string; added: number; edited: number; deleted: number; error: string | null };
+export type SyncResult = { added: number; edited: number; deleted: number };
+
+/** "3 added, 1 edited" or "Up to date". */
+export const syncSummary = (r: SyncResult) =>
+  [r.added && `${r.added} added`, r.edited && `${r.edited} edited`, r.deleted && `${r.deleted} deleted`].filter(Boolean).join(", ") || "Up to date";
+
+/** "just now", "5 min ago", or a date. */
+export const syncAgo = (at: number) => {
+  const m = Math.round((Date.now() - at) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : new Date(at).toLocaleString();
 };
 export type FoundLaptop = { name: string; addr: string };
 
@@ -29,5 +44,6 @@ export const sync = {
   discover: () => call<FoundLaptop[]>("sync_discover"),
   pairJoin: (addr: string, code: string) => call<string>("sync_pair_join", { addr, code }),
   test: (id: string) => call<string>("sync_test", { id }),
+  now: (id: string) => call<SyncResult>("sync_now", { id }),
   unpair: (id: string) => call<void>("sync_unpair", { id }),
 };

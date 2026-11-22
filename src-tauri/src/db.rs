@@ -373,7 +373,7 @@ fn plain_text(content: &str) -> String {
 }
 
 /// Refreshes one page's row in the search index from what's stored.
-fn index_page(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+pub(crate) fn index_page(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM page_search WHERE page_id = ?1", [id])?;
     let row: Option<(String, Option<String>)> = conn
         .query_row("SELECT title, content FROM pages WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))

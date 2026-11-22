@@ -1,8 +1,8 @@
-/** Settings → Sync on desktop (phase 7a): pairing code card and paired-device cards. */
+/** Settings → Sync on desktop pairing code card, paired devices with Sync now, and the sync log. */
 import { useEffect, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Check, MoreHorizontal, Smartphone, Trash2 } from "lucide-react";
-import { sync, type SyncInfo } from "../lib/sync";
+import { Check, MoreHorizontal, Smartphone, Trash2, Wifi } from "lucide-react";
+import { sync, syncAgo, syncSummary, type SyncInfo } from "../lib/sync";
 
 const PAIR_SECONDS = 120;
 type DevState = { tone: "idle" | "busy" | "ok" | "err"; text: string };
@@ -35,20 +35,32 @@ export function SyncSettings() {
   if (!info) return null;
   const p = info.pairing;
 
-  const test = async (id: string) => {
-    setState((s) => ({ ...s, [id]: { tone: "busy", text: "Testing…" } }));
+  const run = async (id: string, busy: string, job: () => Promise<string>) => {
+    setState((s) => ({ ...s, [id]: { tone: "busy", text: busy } }));
     try {
-      await sync.test(id);
-      setState((s) => ({ ...s, [id]: { tone: "ok", text: "Connected" } }));
+      const text = await job();
+      setState((s) => ({ ...s, [id]: { tone: "ok", text } }));
     } catch (e) {
       setState((s) => ({ ...s, [id]: { tone: "err", text: (e as Error).message } }));
     }
+    refresh();
   };
+  const test = (id: string) => run(id, "Testing…", () => sync.test(id));
+  const syncNow = (id: string) => run(id, "Syncing…", async () => `Synced: ${syncSummary(await sync.now(id))}`);
+  const last = info.log[0];
+  /** Status dot when nothing is running: error, pending or synced. */
+  const rest: DevState = last?.error
+    ? { tone: "err", text: last.error }
+    : info.pending
+      ? { tone: "busy", text: `${info.pending} change${info.pending === 1 ? "" : "s"} waiting` }
+      : last
+        ? { tone: "ok", text: `Synced ${syncAgo(last.at)}` }
+        : { tone: "idle", text: "Not synced yet" };
 
   return (
     <>
       <p className="mt-4 text-[13px] leading-relaxed text-neutral-400">
-        Sync notes with your phone over Wi-Fi, a hotspot or USB tethering. No account or internet needed. This version pairs devices; note syncing arrives in the next update.
+        Sync notes with your phone over Wi-Fi, a hotspot or USB tethering. No account or internet needed. Tap Sync now to swap changes. Page text merging arrives in a later update: for now, if both devices edit the same page, the newest edit wins.
       </p>
       {info.listenError && <p className="mt-3 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-[13px] text-red-300">{info.listenError}</p>}
 
@@ -121,8 +133,8 @@ export function SyncSettings() {
       {!info.peers.length && <p className="py-2 text-[13px] text-neutral-500">No devices yet.</p>}
       <div className="flex flex-col gap-2">
         {info.peers.map((d) => {
-          const st = state[d.id] ?? { tone: "idle", text: "" };
-          const sub = st.tone === "idle" ? (d.addr ? `Last seen at ${d.addr}` : "Not tested") : st.text;
+          const st = state[d.id] ?? rest;
+          const sub = st.text;
           return (
             <div key={d.id} className="relative flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3">
               <span className="relative grid size-10 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-neutral-300">
@@ -147,7 +159,7 @@ export function SyncSettings() {
                 </span>
               ) : (
                 <>
-                  <Btn disabled={st.tone === "busy"} onClick={() => void test(d.id)}>Test connection</Btn>
+                  <Btn disabled={st.text.endsWith("…")} onClick={() => void syncNow(d.id)}>Sync now</Btn>
                   <button type="button" aria-label="More" onClick={() => setMenu(menu === d.id ? "" : d.id)} className="grid size-8 cursor-pointer place-items-center rounded-md text-neutral-400 hover:bg-white/[0.06]">
                     <MoreHorizontal className="size-4" />
                   </button>
@@ -157,6 +169,9 @@ export function SyncSettings() {
                 <>
                   <div className="fixed inset-0 z-10" onMouseDown={() => setMenu("")} />
                   <div className="oc-pop-in absolute right-3 top-12 z-20 min-w-[160px] rounded-lg border border-white/[0.08] bg-[var(--oc-raised)] p-1 shadow-2xl shadow-black/50">
+                    <button type="button" onClick={() => (setMenu(""), void test(d.id))} className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-neutral-200 hover:bg-white/[0.06]">
+                      <Wifi className="size-4" /> Test connection
+                    </button>
                     <button type="button" onClick={() => (setMenu(""), setConfirmId(d.id))} className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-red-300 hover:bg-white/[0.06]">
                       <Trash2 className="size-4" /> Unpair…
                     </button>
@@ -167,6 +182,21 @@ export function SyncSettings() {
           );
         })}
       </div>
+
+      {info.log.length > 0 && (
+        <>
+          <H3>Sync log</H3>
+          <div className="flex flex-col text-[12.5px]">
+            {info.log.map((l, i) => (
+              <div key={i} className="flex gap-3 border-b border-white/[0.04] py-1.5">
+                <span className="w-36 shrink-0 text-neutral-500">{syncAgo(l.at)}</span>
+                <span className="w-32 shrink-0 truncate text-neutral-400">{l.peer}</span>
+                <span className={l.error ? "text-red-300" : "text-neutral-300"}>{l.error ?? syncSummary(l)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 }
