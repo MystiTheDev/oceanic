@@ -101,6 +101,7 @@ import { MobilePropChips } from "./mobile/MobileProps";
 import { attachBlocks, pickFiles, titleFor } from "./mobile/attach";
 import { onOpenedFile, pickFile, shareFile } from "./mobile/share";
 import { buildOceanFile } from "./lib/oceanFile";
+import { buildExport } from "./lib/export";
 import { MobileSettings } from "./mobile/MobileSettings";
 import { MobileUpdater } from "./mobile/MobileUpdater";
 
@@ -1529,11 +1530,13 @@ export default function App() {
           onWorkspace={selectWorkspace}
           onPin={togglePin}
           onDuplicate={duplicatePage}
-          onExport={(id, only) =>
-            void buildOceanFile(id, livePages, async (x) => docsRef.current[x] ?? (await loadBlocks(x)), true, true, new Set(only))
-              .then((b) => shareFile(`${livePages.find((x) => x.id === id)?.title || "Untitled"}.ocean`, b))
-              .catch(report("Export"))
-          }
+          onExport={(id, only, format) => {
+            const load = async (x: string) => docsRef.current[x] ?? (await loadBlocks(x));
+            void (format === "ocean"
+              ? buildOceanFile(id, livePages, load, true, true, new Set(only)).then((b) => shareFile(`${livePages.find((x) => x.id === id)?.title || "Untitled"}.ocean`, b))
+              : buildExport({ rootId: id, pages: livePages.filter((x) => x.id === id || only.includes(x.id)), format, includeSubpages: only.length > 0, loadBlocks: load }).then((f) => shareFile(f.filename, f.data))
+            ).catch(report("Export"));
+          }}
           onTrash={trashPage}
           onRename={(id, title) => (patchPage(id, { title }), api.renamePage(id, title).catch(report("Rename")))}
           onRestore={restorePage}

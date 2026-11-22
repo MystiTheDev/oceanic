@@ -58,8 +58,8 @@ type Props = {
   onWorkspace: (id: string) => void;
   onPin: (id: string) => void;
   onDuplicate: (id: string) => void;
-  /** Shares the page plus the subpages in `only` as a .ocean file. */
-  onExport: (id: string, only: string[]) => void;
+  /** Shares the page plus the subpages in `only` as a .ocean, Markdown or web-page file. */
+  onExport: (id: string, only: string[], format: "ocean" | "markdown" | "html") => void;
   onTrash: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onRestore: (id: string) => void;
@@ -301,6 +301,7 @@ export function MobileShell(p: Props) {
   // Export sheet: the page's subpages (depth-first, with depth), all ticked at first.
   const [exportId, setExportId] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [format, setFormat] = useState<"ocean" | "markdown" | "html">("ocean");
   const subtree = useMemo(() => {
     const out: { page: PageMeta; depth: number }[] = [];
     const walk = (id: string, depth: number) => pages.filter((x) => x.parentId === id).forEach((c) => (out.push({ page: c, depth }), walk(c.id, depth + 1)));
@@ -308,8 +309,6 @@ export function MobileShell(p: Props) {
     return out;
   }, [exportId, pages]);
   const startExport = (id: string) => {
-    const kids = pages.filter((x) => x.parentId === id);
-    if (!kids.length) return run(() => p.onExport(id, []));
     buzz();
     setExportId(id);
     const all = new Set<string>();
@@ -686,7 +685,7 @@ export function MobileShell(p: Props) {
                   <Share2 size={20} /> Share as text
                 </button>
                 <button className="ocm-item" onClick={() => startExport(note.id)}>
-                  <Share2 size={20} /> Share as .ocean
+                  <Share2 size={20} /> Export
                 </button>
                 <button className="ocm-item ocm-danger" onClick={() => run(() => p.onTrash(note.id))}>
                   <Trash2 size={20} /> Move to Trash
@@ -706,7 +705,15 @@ export function MobileShell(p: Props) {
             )}
             {sheet === "export" && exportId && (
               <>
-                <h2 className="ocm-sheet-title">Share as .ocean</h2>
+                <h2 className="ocm-sheet-title">Export as</h2>
+                {([["ocean", "Oceanic file (.ocean)"], ["markdown", "Markdown (.md)"], ["html", "Web page (.html)"]] as const).map(([f, label]) => (
+                  <button key={f} className="ocm-item" onClick={() => (buzz(), setFormat(f))}>
+                    {label}
+                    {format === f && <Check size={20} className="ocm-check" />}
+                  </button>
+                ))}
+                {subtree.length > 0 && <>
+                <h2 className="ocm-sheet-title">Subpages</h2>
                 <button className="ocm-item" onClick={() => (buzz(), setPicked(picked.size === subtree.length ? new Set() : new Set(subtree.map((x) => x.page.id))))}>
                   <Layers size={20} /> Select all
                   {picked.size === subtree.length && <Check size={20} className="ocm-check" />}
@@ -719,7 +726,8 @@ export function MobileShell(p: Props) {
                     </button>
                   ))}
                 </div>
-                <button className="ocm-item ocm-share-go" onClick={() => run(() => p.onExport(exportId, [...picked]))}>
+                </>}
+                <button className="ocm-item ocm-share-go" onClick={() => run(() => p.onExport(exportId, [...picked].filter((x) => subtree.some((s) => s.page.id === x && included(s.page))), format))}>
                   <Share2 size={20} /> Share
                 </button>
               </>
