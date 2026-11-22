@@ -275,6 +275,15 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     start: Pt; last: Pt; button: number; color: string; moveSel?: Pt; resize?: boolean; pan?: Pt; spray?: number;
     id?: number; tool?: Tool; ink?: Stroke; loop?: Pt[]; lassoMove?: { from: Rect; orig: Stroke[]; scale: boolean };
   } | null>(null);
+  /** Brush-size ring (black with a white edge, visible on any background) for painting tools. */
+  const ringCursor = () => {
+    const w = { pencil: Math.max(1, Math.round(size / 3)), brush: size, marker: size, airbrush: size * 2, eraser: size * 2 }[tool as string];
+    if (!w) return undefined;
+    const d = Math.round(Math.min(120, Math.max(8, w * zoom + 4)));
+    const c = d / 2;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}"><circle cx="${c}" cy="${c}" r="${c - 1.5}" fill="none" stroke="white" stroke-width="3"/><circle cx="${c}" cy="${c}" r="${c - 1.5}" fill="none" stroke="black" stroke-width="1"/></svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${c} ${c}, crosshair`;
+  };
   /** Pen pressure 0..1 (mouse and touch draw at full width). */
   const pressure = (e: React.PointerEvent) => (e.pointerType === "pen" ? Math.max(0.05, e.pressure || 0.5) : 1);
   const toCanvas = (e: { clientX: number; clientY: number }): Pt => {
@@ -719,7 +728,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
           <div
             ref={stackRef}
             className={`oc-checker absolute inset-0 touch-none ${tool === "hand" ? "cursor-grab" : tool === "text" ? "cursor-text" : tool === "select" ? "cursor-default" : "cursor-crosshair"}`}
-            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto" }}
+            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto", cursor: ringCursor() }}
             onPointerDown={onDown}
             onPointerMove={onMove}
             onPointerUp={onUp}
