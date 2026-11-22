@@ -2,7 +2,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Check, MoreHorizontal, Smartphone, Trash2, Wifi } from "lucide-react";
-import { sync, syncAgo, syncSummary, type SyncInfo } from "../lib/sync";
+import { sync, syncAgo, syncSummary, TETHER_HELP, type SyncInfo } from "../lib/sync";
 import { SyncNetworks, SyncOption } from "./SyncBackground";
 
 const PAIR_SECONDS = 120;
@@ -110,6 +110,12 @@ export function SyncSettings() {
               Not listed on the phone? Tap “Enter address” and type <span className="font-mono text-neutral-300">{info.ip ?? "?"}</span>
             </p>
           </div>
+          {p.qr && (
+            <div className="shrink-0 text-center">
+              <div className="size-[132px] overflow-hidden rounded-lg bg-white p-1.5 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: p.qr }} />
+              <p className="mt-1.5 text-[11.5px] text-neutral-500">or scan with the phone</p>
+            </div>
+          )}
           <Btn onClick={() => void sync.pairCancel().then(refresh)}>Cancel</Btn>
         </div>
       ) : (
@@ -190,8 +196,35 @@ export function SyncSettings() {
       <SyncOption label="Start in tray with Windows" hint="Oceanic keeps listening for your phone after sign-in." on={tray} onChange={(on) => (setTray(on), void sync.setAutostart(on).catch(() => setTray(!on)))} />
       <SyncOption label="Sync automatically" hint="On wake from sleep and when joining a trusted network." on={info.auto} onChange={(on) => void sync.setOption("syncAuto", on).then(refresh)} />
 
+      <SyncOption label="Hold large files on a hotspot" hint="Text syncs right away; bigger attachments wait for Wi-Fi." on={info.hold} onChange={(on) => void sync.setOption("syncHold", on).then(refresh)} />
+      {info.hold && (
+        <label className="flex items-center gap-2 pb-2 pl-1 text-[13px] text-neutral-400">
+          Hold files over
+          <input
+            type="number"
+            min={1}
+            defaultValue={info.holdMb}
+            onBlur={(e) => void sync.setHoldMb(Math.max(1, Number(e.target.value) || 10)).then(refresh)}
+            className="h-8 w-16 rounded-md border border-white/[0.1] bg-transparent px-2 text-neutral-200"
+          />
+          MB
+        </label>
+      )}
+
       <H3>Sync networks</H3>
       <SyncNetworks />
+
+      <details className="mt-6 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-[13px] text-neutral-400">
+        <summary className="cursor-pointer text-neutral-200">Can't find the phone? Sync over USB or Bluetooth</summary>
+        {TETHER_HELP.map((g) => (
+          <div key={g.title} className="mt-3">
+            <p className="font-medium text-neutral-300">{g.title}</p>
+            <ol className="ml-5 mt-1 list-decimal space-y-0.5">
+              {g.steps.map((s) => <li key={s}>{s}</li>)}
+            </ol>
+          </div>
+        ))}
+      </details>
 
       {info.log.length > 0 && (
         <>

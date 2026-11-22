@@ -65,7 +65,9 @@ class SyncPlugin(private val activity: Activity) : Plugin(activity) {
     val bssid = info?.bssid?.takeUnless { it == "02:00:00:00:00:00" } ?: ""
     val g = wifi.dhcpInfo?.gateway ?: 0
     val gw = if (g == 0) "" else "${g and 255}.${g shr 8 and 255}.${g shr 16 and 255}.${g shr 24 and 255}"
-    invoke.resolve(JSObject().put("ssid", ssid).put("bssid", bssid).put("gateway", gw))
+    // Metered = mobile data, e.g. while this phone hosts a hotspot.
+    val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    invoke.resolve(JSObject().put("ssid", ssid).put("bssid", bssid).put("gateway", gw).put("metered", cm.isActiveNetworkMetered))
   }
 
   @SuppressLint("MissingPermission")

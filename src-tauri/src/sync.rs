@@ -325,6 +325,11 @@ fn serve(app: &AppHandle, mut s: TcpStream) -> Res<()> {
             if msg == b"ping" {
                 return ch.send(b"pong");
             }
+            if msg == b"unpair" {
+                let _ = db.0.lock().unwrap().execute("DELETE FROM sync_peers WHERE id = ?1", [from]);
+                let _ = app.emit("sync-applied", ());
+                return Ok(());
+            }
             serve_sync(app, ch, from, &msg)
         }
         _ => Ok(()),
@@ -397,11 +402,18 @@ fn connect(addr: &str) -> Res<TcpStream> {
 pub fn sync_info(app: AppHandle, db: State<Db>, st: State<Sync>) -> Res<Value> {
     let conn = db.0.lock().unwrap();
     let pairing = st.pairing.lock().unwrap();
-    let pairing = pairing.as_ref().filter(|p| p.until > Instant::now()).map(|p| json!({ "code": p.code, "secondsLeft": (p.until - Instant::now()).as_secs() }));
+    let ip = local_ip();
+    let pairing = pairing.as_ref().filter(|p| p.until > Instant::now()).map(|p| {
+        // QR for the phone's camera: same address and code, same 2-minute life.
+        let qr = ip.and_then(|ip| qrcode::QrCode::new(format!("oceanic://pair?a={ip}:{PORT}&c={}", p.code)).ok()).map(|q| {
+            q.render::<qrcode::render::svg::Color>().min_dimensions(180, 180).build()
+        });
+        json!({ "code": p.code, "secondsLeft": (p.until - Instant::now()).as_secs(), "qr": qr })
+    });
     Ok(json!({
         "id": device_id(&conn),
         "name": device_name(&app),
-        "ip": local_ip().map(|i| i.to_string()),
+        "ip": ip.map(|i| i.to_string()),
         "port": PORT,
         "peers": peers(&conn)?,
         "pairing": pairing,
@@ -410,6 +422,8 @@ pub fn sync_info(app: AppHandle, db: State<Db>, st: State<Sync>) -> Res<Value> {
         "log": sync_log(&conn),
         "auto": crate::db::read_setting(&conn, "syncAuto").as_deref() != Some("0"),
         "notify": crate::db::read_setting(&conn, "syncNotify").as_deref() != Some("0"),
+        "hold": crate::db::read_setting(&conn, "syncHold").as_deref() != Some("0"),
+        "holdMb": hold_mb(&conn),
     }))
 }
 
@@ -525,12 +539,22 @@ pub async fn sync_test(app: AppHandle, id: String) -> Res<String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Removes a paired device on this side only (key rotation comes in 7e).
+/// Unpairs a device: its key is deleted here, so it can't connect again.
+/// If it's reachable it is told to forget this device too; if it's offline,
+/// its next connection is simply rejected. Pairing again makes a new key.
 #[tauri::command]
-pub fn sync_unpair(db: State<Db>, id: String) -> Res<()> {
-    let conn = db.0.lock().unwrap();
-    ensure(&conn)?;
-    conn.execute("DELETE FROM sync_peers WHERE id = ?1", [id]).map(|_| ()).map_err(|e| e.to_string())
+pub async fn sync_unpair(app: AppHandle, id: String) -> Res<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(mut ch) = dial(&app, &id) {
+            let _ = ch.send(b"unpair");
+        }
+        let db = app.state::<Db>();
+        let conn = db.0.lock().unwrap();
+        ensure(&conn)?;
+        conn.execute("DELETE FROM sync_peers WHERE id = ?1", [id]).map(|_| ()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn sync_log(conn: &Connection) -> Vec<Value> {
@@ -754,6 +778,7 @@ fn serve_sync(app: &AppHandle, mut ch: Channel, peer: &str, msg: &[u8]) -> Res<(
             return Err("The other device stopped mid-sync.".to_string());
         }
         db.0.lock().unwrap().execute("UPDATE sync_peers SET sent = ?1 WHERE id = ?2", params![snap, peer]).map_err(|e| e.to_string())?;
+        swap_files(app, &mut ch, false)?;
         Ok(stats)
     })();
     let conn = db.0.lock().unwrap();
@@ -814,6 +839,7 @@ fn sync_peer(app: &AppHandle, id: &str, quiet: bool) -> Res<Stats> {
         let stats = apply(&db.0.lock().unwrap(), &theirs)?;
         ch.send(b"done")?;
         db.0.lock().unwrap().execute("UPDATE sync_peers SET sent = ?1 WHERE id = ?2", params![snap, id]).map_err(|e| e.to_string())?;
+        swap_files(app, &mut ch, true)?;
         Ok(stats)
     })();
     if !(quiet && r.is_err()) {
@@ -823,6 +849,133 @@ fn sync_peer(app: &AppHandle, id: &str, quiet: bool) -> Res<Stats> {
         let _ = app.emit("sync-applied", ());
     }
     r
+}
+
+// ------------------------------------------------------------ files
+
+/// Attachments (app_data/assets) follow the text in the same session, in
+/// 256 KB chunks. Asking for chunk n acknowledges chunk n-1. A partial file
+/// waits as `<name>.part`, and the next sync resumes from its size.
+const CHUNK: u64 = 256 * 1024;
+
+fn hold_mb(conn: &Connection) -> u64 {
+    crate::db::read_setting(conn, "syncHoldMb").and_then(|v| v.parse().ok()).unwrap_or(10)
+}
+
+/// Complete files in the assets folder: [[name, size]].
+fn list_files(dir: &std::path::Path) -> Vec<(String, u64)> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
+    rd.flatten()
+        .filter_map(|e| {
+            let m = e.metadata().ok().filter(|m| m.is_file())?;
+            let n = e.file_name().into_string().ok().filter(|n| !n.ends_with(".part"))?;
+            Some((n, m.len()))
+        })
+        .collect()
+}
+
+/// Phone hosting a hotspot (metered), or a laptop on one (typical gateways).
+fn hotspot(app: &AppHandle) -> bool {
+    const GW: [&str; 2] = ["192.168.43.1", "172.20.10.1"];
+    #[cfg(target_os = "android")]
+    {
+        let v = app.state::<SyncPlugin>().0.run_mobile_plugin::<Value>("network", json!({})).unwrap_or_default();
+        return v["metered"].as_bool() == Some(true) || GW.contains(&v["gateway"].as_str().unwrap_or(""));
+    }
+    #[cfg(windows)]
+    {
+        let _ = app;
+        return win_gateway().is_some_and(|g| GW.contains(&g.as_str()));
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, GW);
+        false
+    }
+}
+
+fn swap_files(app: &AppHandle, ch: &mut Channel, first: bool) -> Res<()> {
+    let dir = crate::assets_dir(app)?;
+    let mine = list_files(&dir);
+    let hot = hotspot(app);
+    let hello = json!({ "files": mine, "hot": hot }).to_string();
+    let theirs: Value = if first {
+        ch.send(hello.as_bytes())?;
+        serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())?
+    } else {
+        let t = serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())?;
+        ch.send(hello.as_bytes())?;
+        t
+    };
+    let limit = {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().unwrap();
+        let hot = hot || theirs["hot"].as_bool() == Some(true);
+        (hot && crate::db::read_setting(&conn, "syncHold").as_deref() != Some("0")).then(|| hold_mb(&conn) * 1024 * 1024)
+    };
+    let want: Vec<(String, u64)> = serde_json::from_value::<Vec<(String, u64)>>(theirs["files"].clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(n, s)| !mine.iter().any(|(m, _)| m == n) && limit.is_none_or(|l| *s <= l))
+        .collect();
+    if first {
+        pull_files(ch, &dir, &want)?;
+        serve_files(ch, &dir, &mine)
+    } else {
+        serve_files(ch, &dir, &mine)?;
+        pull_files(ch, &dir, &want)
+    }
+}
+
+fn pull_files(ch: &mut Channel, dir: &std::path::Path, want: &[(String, u64)]) -> Res<()> {
+    let e = |e: std::io::Error| e.to_string();
+    for (name, size) in want {
+        // Only plain file names from the other side.
+        if std::path::Path::new(name).file_name().and_then(|n| n.to_str()) != Some(name.as_str()) {
+            continue;
+        }
+        let part = dir.join(format!("{name}.part"));
+        let mut at = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0) / CHUNK * CHUNK;
+        let mut f = std::fs::OpenOptions::new().create(true).write(true).truncate(false).open(&part).map_err(e)?;
+        f.set_len(at).map_err(e)?;
+        use std::io::Seek;
+        f.seek(std::io::SeekFrom::Start(at)).map_err(e)?;
+        while at < *size {
+            ch.send(json!({ "get": name, "n": at / CHUNK }).to_string().as_bytes())?;
+            let data = ch.recv()?;
+            if data.is_empty() {
+                break;
+            }
+            f.write_all(&data).map_err(e)?;
+            at += data.len() as u64;
+        }
+        drop(f);
+        if at >= *size {
+            std::fs::rename(&part, dir.join(name)).map_err(e)?;
+        } else {
+            let _ = std::fs::remove_file(&part); // gone on the other side
+        }
+    }
+    ch.send(br#"{"end":true}"#)
+}
+
+fn serve_files(ch: &mut Channel, dir: &std::path::Path, mine: &[(String, u64)]) -> Res<()> {
+    loop {
+        let m: Value = serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())?;
+        if m["end"].as_bool() == Some(true) {
+            return Ok(());
+        }
+        let name = m["get"].as_str().unwrap_or("");
+        let mut data = vec![];
+        if mine.iter().any(|(n, _)| n == name) {
+            if let Ok(mut f) = std::fs::File::open(dir.join(name)) {
+                use std::io::Seek;
+                let _ = f.seek(std::io::SeekFrom::Start(m["n"].as_u64().unwrap_or(0) * CHUNK));
+                let _ = f.take(CHUNK).read_to_end(&mut data);
+            }
+        }
+        ch.send(&data)?;
+    }
 }
 
 // ------------------------------------------------------------ background
@@ -842,26 +995,12 @@ fn network(app: &AppHandle) -> Option<(String, String)> {
     #[cfg(windows)]
     {
         let _ = app;
-        let run = |cmd: &str, args: &[&str]| -> String {
-            use std::os::windows::process::CommandExt;
-            std::process::Command::new(cmd)
-                .args(args)
-                .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-                .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-                .unwrap_or_default()
-        };
-        let wlan = run("netsh", &["wlan", "show", "interfaces"]);
+        let wlan = win_run("netsh", &["wlan", "show", "interfaces"]);
         let ssid = wlan.lines().map(str::trim).find(|l| l.starts_with("SSID")).and_then(|l| l.split_once(':')).map(|(_, v)| v.trim().to_string());
         if let Some(s) = ssid.filter(|s| !s.is_empty()) {
             return Some((format!("ssid:{s}"), s));
         }
-        let routes = run("route", &["print", "-4", "0.0.0.0"]);
-        let gw = routes
-            .lines()
-            .map(|l| l.split_whitespace().collect::<Vec<_>>())
-            .find(|f| f.len() >= 3 && f[0] == "0.0.0.0" && f[1] == "0.0.0.0")
-            .map(|f| f[2].to_string())?;
+        let gw = win_gateway()?;
         return Some((format!("gw:{gw}"), format!("Network at {gw}")));
     }
     #[allow(unreachable_code)]
@@ -869,6 +1008,26 @@ fn network(app: &AppHandle) -> Option<(String, String)> {
         let _ = app;
         None
     }
+}
+
+#[cfg(windows)]
+fn win_run(cmd: &str, args: &[&str]) -> String {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new(cmd)
+        .args(args)
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn win_gateway() -> Option<String> {
+    win_run("route", &["print", "-4", "0.0.0.0"])
+        .lines()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>())
+        .find(|f| f.len() >= 3 && f[0] == "0.0.0.0" && f[1] == "0.0.0.0")
+        .map(|f| f[2].to_string())
 }
 
 fn trust_of(app: &AppHandle, key: &str) -> Option<String> {
@@ -930,10 +1089,16 @@ fn option(app: &AppHandle, key: &str) -> bool {
 
 #[tauri::command]
 pub fn sync_set_option(db: State<Db>, key: String, on: bool) -> Res<()> {
-    if !["syncAuto", "syncNotify"].contains(&key.as_str()) {
+    if !["syncAuto", "syncNotify", "syncHold"].contains(&key.as_str()) {
         return Err("Unknown option.".into());
     }
     crate::db::write_setting(&db.0.lock().unwrap(), &key, if on { "1" } else { "0" }).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Files over this many MB wait while on a hotspot (when syncHold is on).
+#[tauri::command]
+pub fn sync_set_hold_mb(db: State<Db>, mb: u32) -> Res<()> {
+    crate::db::write_setting(&db.0.lock().unwrap(), "syncHoldMb", &mb.max(1).to_string()).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Every 30 s (while the app process runs), check the network. On a change
@@ -1035,6 +1200,34 @@ pub fn sync_android(app: AppHandle, cmd: String) -> Res<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 600 KB file in 256 KB chunks over a real Noise channel, resuming from a
+    /// partial `.part` left by an earlier, dropped sync.
+    #[test]
+    fn file_chunks_resume() {
+        let tmp = std::env::temp_dir().join(format!("oc-files-{}", uuid::Uuid::new_v4()));
+        let (src, dst) = (tmp.join("a"), tmp.join("b"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dst).unwrap();
+        let body: Vec<u8> = (0..600_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(src.join("img.png"), &body).unwrap();
+        // Earlier sync got 1 chunk plus a bit; the bit is re-fetched.
+        std::fs::write(dst.join("img.png.part"), &body[..300_000]).unwrap();
+        let key = [7u8; 32];
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let at = l.local_addr().unwrap();
+        let s2 = src.clone();
+        let server = std::thread::spawn(move || {
+            let mut ch = Channel::open(l.accept().unwrap().0, &key, false).unwrap();
+            serve_files(&mut ch, &s2, &list_files(&s2)).unwrap();
+        });
+        let mut ch = Channel::open(TcpStream::connect(at).unwrap(), &key, true).unwrap();
+        pull_files(&mut ch, &dst, &list_files(&src)).unwrap();
+        server.join().unwrap();
+        assert_eq!(std::fs::read(dst.join("img.png")).unwrap(), body);
+        assert!(!dst.join("img.png.part").exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     fn db(name: &str) -> Connection {
         let dir = std::env::temp_dir().join(format!("oceanic-sync-test-{name}-{}", std::process::id()));

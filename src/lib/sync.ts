@@ -8,7 +8,7 @@ export type SyncInfo = {
   ip: string | null;
   port: number;
   peers: SyncPeer[];
-  pairing: { code: string; secondsLeft: number } | null;
+  pairing: { code: string; secondsLeft: number; qr: string | null } | null;
   listenError: string | null;
   /** Changes not yet sent to every paired device. */
   pending: number;
@@ -16,6 +16,9 @@ export type SyncInfo = {
   /** Background options (on unless turned off). */
   auto: boolean;
   notify: boolean;
+  /** Hold files over holdMb while on a hotspot. */
+  hold: boolean;
+  holdMb: number;
 };
 export type SyncLogEntry = { at: number; peer: string; added: number; edited: number; deleted: number; error: string | null };
 export type SyncResult = { added: number; edited: number; deleted: number };
@@ -54,10 +57,24 @@ export const sync = {
   trust: (n: { key: string; name: string }, trust: "always" | "never" | "once") => call<void>("sync_trust", { key: n.key, name: n.name, trust }),
   networks: () => call<SyncNetwork[]>("sync_networks"),
   forget: (key: string) => call<void>("sync_forget_network", { key }),
-  setOption: (key: "syncAuto" | "syncNotify", on: boolean) => call<void>("sync_set_option", { key, on }),
+  setOption: (key: "syncAuto" | "syncNotify" | "syncHold", on: boolean) => call<void>("sync_set_option", { key, on }),
+  setHoldMb: (mb: number) => call<void>("sync_set_hold_mb", { mb }),
   autostart: () => call<boolean>("autostart_get"),
   setAutostart: (on: boolean) => call<void>("autostart_set", { on }),
   /** Phone only: hasLocation, askLocation, batteryOk, askBattery. */
   android: (cmd: "hasLocation" | "askLocation" | "batteryOk" | "askBattery") => call<boolean>("sync_android", { cmd }),
 };
 export type SyncNetwork = { key: string; name: string; trust: "always" | "never" | "once" | null };
+
+/** Reads the laptop's pairing QR: oceanic://pair?a=<ip:port>&c=<code>. */
+export const parsePairQr = (s: string): { addr: string; code: string } | null => {
+  const m = /^oceanic:\/\/pair\?a=([^&]+)&c=(\d{6})$/.exec(s.trim());
+  return m ? { addr: decodeURIComponent(m[1]), code: m[2] } : null;
+};
+
+/** "Can't find the laptop?" guide, shown on both devices. */
+export const TETHER_HELP: { title: string; steps: string[] }[] = [
+  { title: "USB tethering", steps: ["Connect the phone to the laptop with a USB cable.", "On the phone: Settings → Network → Hotspot & tethering → turn on USB tethering.", "Open Sync on both devices and tap Sync now. If the laptop isn't found, enter its address by hand."] },
+  { title: "Bluetooth tethering", steps: ["Pair the phone and laptop in Bluetooth settings first.", "On the phone: Settings → Network → Hotspot & tethering → turn on Bluetooth tethering.", "On Windows: Bluetooth & devices → the phone → Join a personal area network (Access point).", "Then Sync now works as on Wi-Fi."] },
+  { title: "Phone hotspot", steps: ["Turn on the phone's hotspot and join it from the laptop.", "Large files can wait for Wi-Fi: see “Hold large files on a hotspot”."] },
+];

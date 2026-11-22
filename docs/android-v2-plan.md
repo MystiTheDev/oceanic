@@ -153,6 +153,14 @@ This affects the desktop app too, so it's planned with its own questions and ses
 - **7d, background.** mDNS on trusted networks, with the trusted-network prompt and list. Desktop: tray listening, "Start in tray with Windows", sync on wake. Android: wake on network join with a foreground "Syncing notes…" job, plus the battery-saver prompt. Installer firewall rule.
 - **7e, files and safety.** Attachments in numbered, acknowledged, resumable chunks, with an option to hold large files on a hotspot. Unpair with key rotation. QR pairing. USB and Bluetooth tethering how-to.
 
+**7e decisions (settled 2026-11-22)**
+- **Attachments:** files in `app_data/assets` (images, PDFs, sketches, audio) sync after the text, in the same sync session. Each side lists its files with sizes; the other side asks for the ones it is missing. Files go in 256 KB chunks, each numbered and acknowledged. A partial file is kept as `<name>.part`, and the next sync resumes from its size. The file is renamed into place only when complete.
+- **Hotspot limit:** on by default. Files over 10 MB wait while either device is on a hotspot (the phone's gateway address or an Android metered network). The size is editable in Sync settings.
+- **Unpair:** deletes the peer's key locally at once. If the peer is reachable, it is told to forget this device too. If it is offline, nothing is queued: its old key is unknown here, so its next connection is rejected. Pairing again makes a fresh key (this is the key rotation).
+- **QR pairing:** the desktop pairing screen shows a QR code next to the 6-digit code. It holds `oceanic://pair?a=<ip>:47823&c=<code>` and expires with the code after 2 minutes. The phone scans it with `tauri-plugin-barcode-scanner` and runs the same SPAKE2 join. The desktop draws it with the Rust `qrcode` crate as SVG.
+- **Tethering how-to:** a collapsible "Can't find the laptop?" section on the Sync screen on both devices.
+- **Testing:** C: has too little space for an Android build, so 7e is tested on the desktop side only. The phone side is type-checked but not run.
+
 ## Later phase: Quick actions row (from the Evernote Home study)
 - A row of square buttons on Home: Camera, Scan, Files, Audio, each adding to a new page.
 - Needs native Android plugins (camera/scan, file picker, mic recording), so it gets its own phase.

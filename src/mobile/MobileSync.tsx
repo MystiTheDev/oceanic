@@ -1,7 +1,7 @@
 /** Settings → Sync on the phone: paired laptops with Sync now, the sync log, and the two-step pairing flow. */
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Laptop, Loader2, RefreshCw, Smartphone } from "lucide-react";
-import { sync, syncAgo, syncSummary, type FoundLaptop, type SyncInfo } from "../lib/sync";
+import { Check, ChevronRight, Laptop, Loader2, QrCode, RefreshCw, Smartphone } from "lucide-react";
+import { parsePairQr, sync, syncAgo, syncSummary, TETHER_HELP, type FoundLaptop, type SyncInfo } from "../lib/sync";
 import { buzz } from "./mobilePrefs";
 import { Row, Switch } from "./MobileSettings";
 import { SyncNetworks } from "../components/SyncBackground";
@@ -129,13 +129,45 @@ export function SyncScreen({ onPair }: { onPair: () => void }) {
           <Switch on={info.notify} onChange={(on) => void sync.setOption("syncNotify", on).then(refresh)} />
         </Row>
         <Row title="Battery use: Unrestricted" value={battery ? "Done" : undefined} onClick={battery ? undefined : () => void sync.android("askBattery")} />
+        <Row title="Hold large files on a hotspot">
+          <Switch on={info.hold} onChange={(on) => void sync.setOption("syncHold", on).then(refresh)} />
+        </Row>
+        {info.hold && (
+          <label className="ocs-row">
+            <span className="ocs-title">Hold files over (MB)</span>
+            <input
+              className="ocs-input"
+              inputMode="numeric"
+              defaultValue={info.holdMb}
+              onBlur={(e) => void sync.setHoldMb(Math.max(1, Number(e.target.value) || 10)).then(refresh)}
+            />
+          </label>
+        )}
       </section>
       <h3 className="ocs-head">Sync networks</h3>
       <section className="ocs-group" style={{ padding: "4px 12px" }}>
         <SyncNetworks />
       </section>
       <p className="ocs-note">Page text merging arrives in a later update. For now, if both devices edit the same page, the newest edit wins.</p>
+      <TetherHelp />
     </>
+  );
+}
+
+/** "Can't find the laptop?" USB / Bluetooth tethering how-to. */
+function TetherHelp() {
+  return (
+    <details className="ocs-group" style={{ padding: "10px 14px" }}>
+      <summary className="ocs-title">Can't find the laptop? Use USB or Bluetooth</summary>
+      {TETHER_HELP.map((g) => (
+        <div key={g.title} className="ocs-note" style={{ margin: "8px 0 0", padding: 0 }}>
+          <b>{g.title}</b>
+          <ol style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {g.steps.map((s) => <li key={s}>{s}</li>)}
+          </ol>
+        </div>
+      ))}
+    </details>
   );
 }
 
@@ -158,12 +190,12 @@ export function PairScreen({ onDone }: { onDone: () => void }) {
   }, [step]);
 
   const pick = (l: FoundLaptop) => (buzz(), setTarget(l), setCode(""), setErr(""), setStep(2));
-  const join = async (c: string) => {
-    if (!target) return;
+  const join = async (c: string, to = target) => {
+    if (!to) return;
     setBusy(true);
     setErr("");
     try {
-      setPeer(await sync.pairJoin(target.addr, c));
+      setPeer(await sync.pairJoin(to.addr, c));
       buzz();
       setStep(3);
       setTimeout(onDone, 1600);
@@ -218,10 +250,37 @@ export function PairScreen({ onDone }: { onDone: () => void }) {
     );
   }
 
+  /** Camera scan of the laptop's QR: same address and code as typing them. */
+  const scanQr = async () => {
+    buzz();
+    setErr("");
+    try {
+      const { scan, Format, requestPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
+      if ((await requestPermissions()) !== "granted") return setErr("Camera permission is needed to scan the code.");
+      const qr = parsePairQr((await scan({ windowed: false, formats: [Format.QRCode] })).content);
+      if (!qr) return setErr("That isn't an Oceanic pairing code.");
+      const to = { name: qr.addr.split(":")[0], addr: qr.addr };
+      setTarget(to);
+      setCode(qr.code);
+      setStep(2);
+      void join(qr.code, to);
+    } catch (e) {
+      setErr((e as Error)?.message ?? String(e));
+    }
+  };
+
   const addr = manual.trim();
   return (
     <>
       <p className="ocs-note">On the laptop, open Settings → Sync → Pair a phone. Both devices must be on the same Wi-Fi or hotspot.</p>
+      <section className="ocs-group">
+        <button className="ocs-row" onClick={() => void scanQr()}>
+          <span className="ocs-icon"><QrCode size={19} /></span>
+          <span className="ocs-title osy-accent">Scan the QR code<em>Shown next to the code on the laptop</em></span>
+          <ChevronRight size={18} className="ocs-chev" />
+        </button>
+      </section>
+      {err && <p className="osy-status osy-err">{err}</p>}
       <h3 className="ocs-head osy-looking">
         Laptops nearby {found === null && <Loader2 size={14} className="osy-spin" />}
       </h3>
@@ -255,6 +314,7 @@ export function PairScreen({ onDone }: { onDone: () => void }) {
         )}
       </section>
       <p className="ocs-note">The laptop shows its address under the pairing code.</p>
+      <TetherHelp />
     </>
   );
 }

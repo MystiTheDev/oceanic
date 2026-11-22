@@ -139,7 +139,7 @@ const UPLOAD_EXT: &[&str] = &[
     "txt", "md", "csv", "json", "zip", "7z", "rar", "epub",
 ];
 
-fn assets_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn assets_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("assets");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
@@ -764,6 +764,9 @@ pub fn run() {
             })
             .build(),
     );
+    // Phone scans the laptop's pairing QR code.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -856,6 +859,7 @@ pub fn run() {
             sync::sync_forget_network,
             sync::sync_android,
             sync::sync_set_option,
+            sync::sync_set_hold_mb,
             autostart_get,
             autostart_set,
             #[cfg(desktop)]

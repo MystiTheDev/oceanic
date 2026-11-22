@@ -3082,6 +3082,7 @@ dependencies = [
  "futures-util",
  "keyring",
  "mdns-sd",
+ "qrcode",
  "rand 0.8.8",
  "reqwest",
  "rusqlite",
@@ -3093,6 +3094,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
+ "tauri-plugin-barcode-scanner",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
@@ -3515,6 +3517,12 @@ name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quick-error"
@@ -4821,6 +4829,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bce56ceb0a99b8ab5eebc977ba9ffc62391b862648cb9ab76fc8bc7231b8f7e2"
 dependencies = [
  "auto-launch",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tauri-plugin-barcode-scanner"
+version = "2.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b57ad7e6ed3e8927205dade785400d9829b8208f59cfe24324fcb324f61482b2"
+dependencies = [
+ "log",
  "serde",
  "serde_json",
  "tauri",
