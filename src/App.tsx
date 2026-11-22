@@ -2223,7 +2223,7 @@ export default function App() {
       {settingsOpen && !phoneUI && (
         <SettingsModal settings={settings} onChange={changeSettings} onClose={() => setSettingsOpen(false)} initialPage={typeof settingsOpen === "string" ? settingsOpen : undefined} />
       )}
-      {loaded && askName && !isMobile && (
+      {loaded && askName && !isAndroid && (
         <SetupWizard
           settings={settings}
           onChange={changeSettings}
@@ -2237,8 +2237,8 @@ export default function App() {
           onDone={() => (setAskName(false), setTimeout(startTour, 300))}
         />
       )}
-      {!isMobile && <Tour />}
-      {loaded && askName && isMobile && (
+      {!isAndroid && <Tour />}
+      {loaded && askName && isAndroid && (
         <NamePrompt
           onSave={(userName) => {
             changeSettings({ userName });
