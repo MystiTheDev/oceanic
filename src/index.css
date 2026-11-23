@@ -311,14 +311,15 @@ html.oc-pen * {
 :root[data-theme="light"] .oc-main-composer button:not(:disabled):hover { background: rgb(255 255 255 / 0.85); }
 
 /* Home liquid glass (desktop only): accent blobs behind clear Apple-style glass. */
+.oc-home-glass { overflow-x: hidden; }
 .oc-home-glass > :not(.oc-home-aura) { position: relative; z-index: 1; }
 .oc-home-aura { position: sticky; top: 0; height: 0; z-index: 0; pointer-events: none; }
-.oc-home-aura i { position: absolute; width: 300px; height: 300px; border-radius: 50%; filter: blur(60px); opacity: 0.25; animation: oc-blob 28s ease-in-out infinite alternate; }
+.oc-home-aura i { position: absolute; width: 300px; height: 300px; border-radius: 50%; filter: blur(60px); opacity: 0.14; animation: oc-blob 42s ease-in-out infinite alternate; }
 .oc-home-aura i:nth-child(1) { left: -4%; top: 22vh; background: var(--oc-brand); }
-.oc-home-aura i:nth-child(2) { right: -4%; top: 6vh; background: var(--oc-brand-light); opacity: 0.2; animation-duration: 34s; animation-delay: -10s; }
-.oc-home-aura i:nth-child(3) { left: 46%; top: 88vh; background: color-mix(in srgb, var(--oc-brand) 60%, #a855f7); opacity: 0.2; animation-duration: 40s; animation-delay: -20s; }
-@keyframes oc-blob { to { transform: translate(90px, -60px) scale(1.12); } }
-:root[data-theme="light"] .oc-home-aura i { opacity: 0.16; }
+.oc-home-aura i:nth-child(2) { right: -4%; top: 6vh; background: var(--oc-brand-light); opacity: 0.11; animation-duration: 50s; animation-delay: -10s; }
+.oc-home-aura i:nth-child(3) { left: 46%; top: 88vh; background: color-mix(in srgb, var(--oc-brand) 60%, #a855f7); opacity: 0.11; animation-duration: 60s; animation-delay: -20s; }
+@keyframes oc-blob { to { transform: translate(40px, -30px) scale(1.05); } }
+:root[data-theme="light"] .oc-home-aura i { opacity: 0.09; }
 
 /* Clear glass panes: light frost, bright rim, soft inner glow. Solid fallback first. */
 .oc-home-pane, .oc-home-glass .oc-home-card.oc-glass { background: rgb(38 38 42 / 0.92); border: 1px solid rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 12px 32px -16px rgb(0 0 0 / 0.6); }
