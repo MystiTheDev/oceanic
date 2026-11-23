@@ -1918,6 +1918,7 @@ export default function App() {
               onNewPage={() => createPage(null)}
               onNewMindmap={async () => navigate(mindmapEntry(await createMindmap("")))}
               onImport={() => void importNotes()}
+              onNewSketch={() => openPage(sketchEntry(newSketch(1280, 720)))}
               onOpenApp={(app) =>
                 app === "calendar" ? setView("calendar") : setActiveTabId(app === "docs" ? (lastDocsTab.current ?? DOCS_HOME_TAB) : (lastSketchTab.current ?? SKETCH_HOME_TAB))
               }
