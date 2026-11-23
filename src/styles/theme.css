@@ -73,7 +73,7 @@
   --color-neutral-900: #ffffff;
   --color-neutral-800: #f1f1ef;
   --color-neutral-700: #c7c6c3;
-  --color-neutral-600: #acaba9;
+  --color-neutral-600: #8f8e8a;
   --color-neutral-500: #91918e;
   --color-neutral-400: #787774;
   --color-neutral-300: #5f5e5b;
@@ -134,11 +134,6 @@
   transition: box-shadow 120ms ease, background-color 120ms ease !important;
 }
 
-/* Theme switch: a short cross-fade across every surface. */
-:root.oc-theme-fade,
-:root.oc-theme-fade * {
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, fill 150ms ease !important;
-}
 
 /* --------------------------------------------------------------------------
    1. Design variables — rewire BlockNote dark tokens to Notion's palette
@@ -1593,11 +1588,11 @@
 @media (prefers-reduced-motion: reduce) { .oc-export-card { animation: none; } }
 
 /* ---- Sidebar polish: brand glow up top, accent bar on the active row, footer card ---- */
-.oc-sidebar { background-image: radial-gradient(120% 180px at 0% 0%, color-mix(in srgb, var(--oc-brand) 14%, transparent), transparent 70%); }
+/* (sidebar brand glow removed: tint only) */
 .oc-nav-active { position: relative; background: linear-gradient(90deg, color-mix(in srgb, var(--oc-brand) 22%, transparent), color-mix(in srgb, var(--oc-brand) 6%, transparent)); }
 .oc-nav-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 3px; background: var(--oc-brand-light); }
 .oc-nav-active svg { color: var(--oc-brand-light) !important; }
-.oc-sidebar-foot { box-shadow: 0 -8px 24px -12px rgb(0 0 0 / 0.5); }
+.oc-sidebar-foot { box-shadow: none; }
 
 /* Sidebar icon colours (Settings > Sidebar icons); unset var = keep the grey. */
 :root[style*="--oc-ic-home: #"] .oc-ic-home { color: var(--oc-ic-home) !important; }
@@ -2733,11 +2728,11 @@
 @media (prefers-reduced-motion: reduce) { .oc-export-card { animation: none; } }
 
 /* ---- Sidebar polish: brand glow up top, accent bar on the active row, footer card ---- */
-.oc-sidebar { background-image: radial-gradient(120% 180px at 0% 0%, color-mix(in srgb, var(--oc-brand) 14%, transparent), transparent 70%); }
+/* (sidebar brand glow removed: tint only) */
 .oc-nav-active { position: relative; background: linear-gradient(90deg, color-mix(in srgb, var(--oc-brand) 22%, transparent), color-mix(in srgb, var(--oc-brand) 6%, transparent)); }
 .oc-nav-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 3px; background: var(--oc-brand-light); }
 .oc-nav-active svg { color: var(--oc-brand-light) !important; }
-.oc-sidebar-foot { box-shadow: 0 -8px 24px -12px rgb(0 0 0 / 0.5); }
+.oc-sidebar-foot { box-shadow: none; }
 
 /* Sidebar icon colours (Settings > Sidebar icons); unset var = keep the grey. */
 :root[style*="--oc-ic-home: #"] .oc-ic-home { color: var(--oc-ic-home) !important; }

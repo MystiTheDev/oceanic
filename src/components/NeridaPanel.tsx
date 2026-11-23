@@ -33,7 +33,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { NeridaBetaCard, NeridaMark } from "./NeridaOrb";
 import { confirmCloud } from "./NeridaDiff";
-import { AgentCards, AgentLogList, AgentToggle } from "./NeridaAgentUI";
+import { AgentCards, AgentLogList } from "./NeridaAgentUI";
 import { runAgent, stopAgent, TOOLS } from "../lib/neridaAgent";
 import { neridaSafeMarkdown } from "../lib/neridaSafe";
 
@@ -728,9 +728,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           <div className="flex items-center gap-1">
           <button type="button" disabled={!ready || busy} title="Attach pictures, PDF, Word or text files" onClick={() => filePicker.current?.click()} className="grid size-7 cursor-pointer place-items-center rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:text-neutral-600"><Paperclip className="size-4" /></button>
           {b === "plus" && <button type="button" disabled={busy} title={online ? "Web search on" : "Search the web"} aria-pressed={online} onClick={() => setOnline((v) => !v)} className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] ${online ? "text-sky-400" : "text-neutral-400 hover:text-neutral-200"}`}><Globe className="size-4" /></button>}
-          {!pdf && <AgentToggle disabled={busy} />}
           <div className="flex-1" />
-          <ModelMenu disabled={busy} />
+          <ModelMenu disabled={busy} agent={!pdf} />
           <EffortButton disabled={busy} compact={!home} />
           {/* One button: the arrow morphs into a stop square while Nerida answers. */}
           <button type="button" title={busy ? "Stop" : "Send"} data-busy={busy || undefined} disabled={!busy && (!(input.trim() || cmd) || !ready)}

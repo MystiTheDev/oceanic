@@ -15,6 +15,7 @@ import mindmapLogo from "../assets/mindmap-logo.png";
 import { ROOT, SUBJECTS, fromRecord, layout, logoOf, subjectOf, toRecord, type MNode } from "./model";
 import { tell } from "../components/ConfirmDialog";
 import { MapLogo, askNewMap, changeMapLogo } from "./MapDialogs";
+import { SlidePill } from "../components/SlidePill";
 
 const SAVED = "oceanic:mindmap-saved";
 const announce = (id: string) => window.dispatchEvent(new CustomEvent(SAVED, { detail: id }));
@@ -258,14 +259,16 @@ export function MindmapGallery({ onOpen, openNow, onFocusTab, onCloseTab }: { on
                 {SORTS[sort]}
               </button>
               <div className="flex rounded-lg bg-white/[0.05] p-0.5">
+                <SlidePill />
                 {(["grid", "list"] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
                     title={m === "grid" ? "Grid" : "List"}
+                    aria-pressed={mode === m}
                     onClick={() => setView(m)}
                     className={`grid size-7 cursor-pointer place-items-center rounded-md transition-colors ${
-                      mode === m ? "bg-white/[0.12] text-neutral-100" : "text-neutral-500 hover:text-neutral-200"
+                      mode === m ? "text-neutral-100" : "text-neutral-500 hover:text-neutral-200"
                     }`}
                   >
                     {m === "grid" ? <LayoutGrid size={14} /> : <List size={14} />}

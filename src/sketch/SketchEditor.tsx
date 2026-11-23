@@ -11,6 +11,7 @@ import { Modal, ModalButton } from "../components/Modal";
 import { SketchDoc, ctx2d, drawShape, floodFill, makeCanvas, rgbToHex, type Rect, type ShapeKind } from "./engine";
 import { drawSegment, drawStroke, fitStroke, strokesBounds, strokesInLasso, type Stroke } from "./ink";
 import { NewCanvasDialog } from "./SketchHome";
+import { SlidePill } from "../components/SlidePill";
 import {
   forgetSketch, isUnsavedSketch, markSketchDirty, pickImage, pickSketchSavePath, readImageFile, refreshSketches, sketchTitle, touchRecentSketch,
   untitledSketch, useSketch, writeImageFile,
@@ -885,8 +886,9 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
     <div className="flex rounded-md border border-white/[0.08] p-0.5">
+      <SlidePill className="rounded !bg-[color:var(--oc-sketch)]/20" />
       {options.map(([v, l]) => (
-        <button key={v} type="button" onClick={() => onChange(v)} className={`h-6 cursor-pointer rounded px-2 text-[11.5px] ${value === v ? "bg-[color:var(--oc-sketch)]/20 text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
+        <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)} className={`h-6 cursor-pointer rounded px-2 text-[11.5px] ${value === v ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
           {l}
         </button>
       ))}

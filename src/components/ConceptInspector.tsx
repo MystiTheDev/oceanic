@@ -6,6 +6,7 @@ import type { PageMeta } from "../data/workspace";
 import { REL_COLORS, REL_LABELS, SYMMETRIC_TYPES } from "../data/atlas";
 import { docTitle, useDocs } from "../docs/store";
 import { sketchTitle, useSketch } from "../sketch/store";
+import { SlidePill } from "./SlidePill";
 
 const STATE_LABELS: Record<Concept["state"], string> = {
   unexplored: "Unexplored", learning: "Learning", understood: "Understood", mastered: "Mastered", review: "Needs review",
@@ -142,6 +143,7 @@ export function ConceptInspector({
 
       <p className={heading}>Learning state</p>
       <div role="radiogroup" aria-label="Learning state" className="grid grid-cols-5 gap-0.5 rounded-lg bg-white/[0.04] p-0.5">
+        <SlidePill />
         {CONCEPT_STATES.map((s) => (
           <button
             key={s}
@@ -151,7 +153,7 @@ export function ConceptInspector({
             data-tip={STATE_LABELS[s]}
             onClick={() => save({ state: s })}
             className={`flex h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-md text-[10.5px] transition-colors duration-100 ${
-              concept.state === s ? "bg-white/[0.1] font-medium text-neutral-100" : "text-neutral-500 hover:bg-white/[0.05] hover:text-neutral-200"
+              concept.state === s ? "font-medium text-neutral-100" : "text-neutral-500 hover:bg-white/[0.05] hover:text-neutral-200"
             }`}
           >
             <span className="size-2 rounded-full" style={{ backgroundColor: STATE_COLORS[s] }} />

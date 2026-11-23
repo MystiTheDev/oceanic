@@ -352,3 +352,29 @@ html.oc-pen * {
 :root[data-theme="light"] .oc-home-pane .oc-glass-menu button:hover { background: rgb(0 0 0 / 0.05); }
 :root[data-theme="light"] .oc-home-pane .oc-glass-menu button { color: rgb(38 38 38); }
 :root[data-theme="light"] .oc-home-pane .oc-glass-menu { background: rgb(255 255 255 / 0.97); border-color: rgb(0 0 0 / 0.08); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.2); }
+/* Home | Nerida switch in light mode: gray track, white raised pill (iOS segmented). */
+:root[data-theme="light"] :has(> .oc-switch-pill) { background: rgb(0 0 0 / 0.06); border-color: rgb(0 0 0 / 0.06); }
+:root[data-theme="light"] .oc-switch-pill { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.06); }
+:root[data-theme="light"] .oc-switch-pill.oc-switch-nerida { background: linear-gradient(90deg, rgb(56 189 248 / 0.4), rgb(139 92 246 / 0.45)); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 0 12px -2px rgb(139 92 246 / 0.5); }
+:root[data-theme="light"] :has(> .oc-switch-pill) > button.text-neutral-100 { color: rgb(17 17 17); font-weight: 600; }
+/* Floating glass for portaled menus (not inside another backdrop-filter): model picker. */
+.oc-glass-float { background: rgb(28 28 30 / 0.95); border: 1px solid rgb(255 255 255 / 0.09); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), 0 24px 60px -20px rgb(0 0 0 / 0.7), 0 0 40px -20px rgb(45 212 191 / 0.25); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .oc-glass-float { background: radial-gradient(120% 50% at 50% 0%, rgb(45 212 191 / 0.06), transparent 70%), rgb(28 28 30 / 0.72); -webkit-backdrop-filter: blur(34px) saturate(190%); backdrop-filter: blur(34px) saturate(190%); }
+}
+@media (prefers-reduced-transparency: reduce) { .oc-glass-float { background: rgb(28 28 30 / 0.98); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.oc-glass-menu { border-radius: 16px; }
+.oc-menu-row { transition: background-color 0.15s, box-shadow 0.15s; }
+.oc-menu-row:hover, .oc-menu-row:focus-visible { background: rgb(255 255 255 / 0.06); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08); }
+:root[data-theme="light"] .oc-glass-float { background: rgb(255 255 255 / 0.78); border-color: rgb(0 0 0 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 24px 60px -24px rgb(0 0 0 / 0.25); }
+:root[data-theme="light"] .oc-menu-row:hover, :root[data-theme="light"] .oc-menu-row:focus-visible { background: rgb(0 0 0 / 0.04); }
+
+/* Sliding selection pill for segmented controls and titlebar tabs (SlidePill.tsx). */
+:has(> .oc-seg-pill) { position: relative; }
+:has(> .oc-seg-pill) > :not(.oc-seg-pill) { position: relative; transition-property: color, opacity, background-color; transition-duration: 200ms; }
+.oc-seg-pill { position: absolute; pointer-events: none; background: rgb(255 255 255 / 0.12); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: left 200ms cubic-bezier(.2,0,0,1), top 200ms cubic-bezier(.2,0,0,1), width 200ms cubic-bezier(.2,0,0,1), height 200ms cubic-bezier(.2,0,0,1), opacity 150ms; }
+.oc-seg-pill.oc-tab-active { background: var(--color-neutral-900, #171717); box-shadow: 0 -1px 0 rgb(255 255 255 / 0.06); }
+:root[data-theme="light"] .oc-seg-pill:not(.oc-tab-active) { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.06); }
+.oc-view-pill { transition-duration: 200ms; transition-timing-function: cubic-bezier(.2,0,0,1); }
+@media (prefers-reduced-motion: reduce) { .oc-seg-pill, :has(> .oc-seg-pill) > * { transition: none !important; } }

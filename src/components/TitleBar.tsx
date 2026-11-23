@@ -7,6 +7,7 @@ import docsLogo from "../assets/docs-logo.png";
 import sketchLogo from "../assets/sketch-logo.png";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isAndroid } from "../mobile/formFactor";
+import { SlidePill } from "./SlidePill";
 import {
   ArrowLeft,
   ArrowRight,
@@ -180,6 +181,7 @@ export function TitleBar({
         data-tauri-drag-region
         className="flex h-full min-w-0 flex-1 [scrollbar-width:none] items-end overflow-x-auto"
       >
+        <SlidePill className="oc-tab-active rounded-t-lg" />
         {tabs.map((tab, i) => {
           const active = tab.tabId === activeTabId;
           // Hairline between two inactive neighbours, like browser tabs.
@@ -189,10 +191,11 @@ export function TitleBar({
               <div
                 key={tab.tabId}
                 data-tab-id={tab.tabId}
+                aria-selected={active}
                 title={tab.title}
                 onClick={() => onSelectTab(tab.tabId)}
                 className={`relative grid h-[34px] w-11 shrink-0 cursor-default place-items-center rounded-t-lg transition-colors duration-100 ${
-                  active ? "oc-tab-active z-10 bg-neutral-900" : "hover:bg-white/[0.06]"
+                  active ? "z-10" : "hover:bg-white/[0.06]"
                 }`}
               >
                 <img
@@ -208,6 +211,7 @@ export function TitleBar({
             <div
               key={tab.tabId}
               data-tab-id={tab.tabId}
+              aria-selected={active}
               title={tab.title}
               onClick={() => onSelectTab(tab.tabId)}
               onPointerDown={(e) => startDrag(e, tab.tabId)}
@@ -241,7 +245,7 @@ export function TitleBar({
               }
               className={`oc-tab-in group relative mx-px flex h-[34px] min-w-[72px] max-w-[200px] flex-[0_1_200px] cursor-default items-center gap-2 rounded-t-lg pl-3 pr-1.5 text-[13px] transition-colors duration-100 ${
                 active
-                  ? "oc-tab-active z-10 bg-neutral-900 text-neutral-100 shadow-[0_-1px_0_rgba(255,255,255,0.06)]"
+                  ? "z-10 text-neutral-100"
                   : "text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"
               } ${dragId === tab.tabId ? "oc-tab-dragging z-20 bg-neutral-800" : ""}`}
             >
@@ -347,7 +351,7 @@ function ThemeSwitch() {
   // Slide first, recolor the app after the knob lands.
   const flip = () => {
     setLight((v) => !v);
-    window.setTimeout(() => window.dispatchEvent(new Event("oceanic:toggle-theme")), 380);
+    window.setTimeout(() => window.dispatchEvent(new Event("oceanic:toggle-theme")), 150);
   };
   return (
     <label className="oc-theme-switch mr-2" title={light ? "Dark mode" : "Light mode"}>
