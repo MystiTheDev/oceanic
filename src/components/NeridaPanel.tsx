@@ -22,7 +22,7 @@ const AGENT_CHOICES = ["Just this once", "Just this once, don't ask again", "Tur
 import { GARBLED_NOTE, NERIDA_ASK, pageRange, pdfContext, readScanned, summarizePdf, type AskDetail } from "../lib/neridaPdf";
 import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
-import { AlertCircle, ArrowDown, ArrowUp, Check, ChevronDown, History, MessageSquare, Pencil, Search, Copy, Download, FileInput, FileText, Globe, Loader2, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
+import { AlertCircle, AlignLeft, CalendarDays, CircleHelp, Layers, Lightbulb, Network, Wrench, ArrowDown, ArrowUp, Check, ChevronDown, History, MessageSquare, Pencil, Search, Copy, Download, FileInput, FileText, Globe, Loader2, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 import { usePageDirectory } from "../editor/pageDirectory";
 import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
 import { DELETE_NOTE, ASK_WHICH, editPrompt, proposalWarning, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
@@ -228,6 +228,7 @@ type Step = { label: string; done: boolean };
 
 /** "/" menu. `note`: needs a note (@ or the open one) before it runs. */
 type Cmd = { k: string; label: string; note: boolean; prompt: string; tool?: boolean };
+const CMD_ICON: Record<string, typeof X> = { quiz: CircleHelp, flashcards: Layers, summarize: AlignLeft, explain: Lightbulb, review: RotateCcw, plan: CalendarDays, mindmap: Network };
 const CMDS: Cmd[] = [
   { k: "quiz", label: "Quiz me on a note", note: true, prompt: "Quiz me: ask 5 questions about the main ideas in my notes. Number them. Don't give the answers." },
   { k: "flashcards", label: "Make flashcards", note: true, prompt: "" },
@@ -792,13 +793,13 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             ))}
           </div>
         )}
-          <div className="flex items-start gap-1">
-          {cmd && (
-            <span className="oc-chip-in mt-1 flex shrink-0 items-center gap-1 rounded-md bg-teal-400/15 px-1.5 py-0.5 text-[12px] font-medium text-teal-200">
-              {cmd.label} ▸
+          <div className="flex flex-col items-start gap-1">
+          {cmd && (() => { const Icon = cmd.tool ? Wrench : CMD_ICON[cmd.k] ?? Wrench; return (
+            <span className="oc-glass-inset oc-chip-in mx-1 mt-1 flex items-center gap-1.5 rounded-full py-0.5 pl-2 pr-1.5 text-[12px] font-medium text-teal-200">
+              <Icon className="size-3.5 text-teal-300" />{cmd.label}
               <button type="button" title="Cancel" onClick={() => setCmd(null)} className="cursor-pointer text-teal-300/70 hover:text-teal-100"><X className="size-3" /></button>
             </span>
-          )}
+          ); })()}
           <textarea
             value={input}
             disabled={!ready}
@@ -830,7 +831,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             }}
             rows={Math.min(6, input.split("\n").length)}
             placeholder={!isTauri() ? "Open the Oceanic desktop app to chat" : !ready ? "Download Nerida to start" : cmd?.tool ? "Say what it should do…" : cmd?.k === "plan" ? "What should the plan cover? e.g. Maths Dec 5, Biology next Friday" : cmd ? "Type @ to pick a note" : "Ask Nerida anything…"}
-            className="max-h-40 min-h-[34px] w-full resize-none bg-transparent px-1.5 pt-1 text-[13.5px] text-neutral-100 outline-none placeholder:text-neutral-500"
+            className="scrollbar-thin max-h-40 min-h-[34px] w-full resize-none overflow-y-auto bg-transparent px-1.5 pt-1 text-[13.5px] text-neutral-100 outline-none placeholder:text-neutral-500 [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis [&::placeholder]:whitespace-nowrap"
           />
           </div>
           <div className="flex items-center gap-1">
