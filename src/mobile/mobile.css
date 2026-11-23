@@ -565,6 +565,37 @@
 .ocm-export-list .ocm-item span { flex: none; }
 .ocm-share-go { justify-content: center; margin-top: 6px; font-weight: 600; color: var(--ocm-accent); background: rgba(var(--oc-ink), 0.05); }
 
+/* ---------- Open note: phone layout (Android polish) */
+.ocm-root { touch-action: pan-x pan-y; }
+.ocm-root * { -webkit-tap-highlight-color: transparent; }
+.ocm-editor .oc-banner { height: 140px; min-height: 0; max-height: none; }
+.ocm-editor .oc-banner-zone > div:first-child:not(.oc-banner) { padding: 8px 12px 0; }
+.ocm-editor .oc-page-font > .oc-banner-zone > div:last-child { padding-left: 12px; padding-right: 12px; padding-bottom: 96px; }
+.ocm-editor .oc-page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; }
+.ocm-editor .oc-page-head > button { flex: none; width: 40px; height: 40px; margin: 0; font-size: 30px; border-radius: 10px; }
+.ocm-editor .oc-page-head > input { flex: 1; min-width: 0; margin: 0; font-size: 26px; line-height: 1.2; }
+.ocm-editor .bn-editor { padding-inline: 0; font-size: 16px; line-height: 1.5; }
+.ocm-editor .bn-editor h1 { font-size: 22px; }
+.ocm-editor .bn-editor h2 { font-size: 19px; }
+.ocm-editor .bn-editor h3 { font-size: 17px; }
+.ocm-editor .bn-editor table, .ocm-editor .bn-editor pre { display: block; max-width: 100%; overflow-x: auto; }
+.ocm-editor .bn-editor :is(img, video, iframe) { max-width: 100%; height: auto; }
+.ocm-editor .bn-editor input[type="checkbox"] { width: 20px; height: 20px; }
+.ocm-editor .bn-side-menu button { min-width: 32px; min-height: 32px; }
+
+/* Top bar, home cards, lists and settings. */
+.ocm-pagebar { height: 56px; padding: 0 6px; gap: 2px; }
+.ocm-pagebar-title { font-size: 16px; text-align: center; }
+.ocm-note { height: 180px; padding: 14px; border-radius: 18px; }
+.ocm-note-icon { font-size: 24px; margin-bottom: 6px; }
+.ocm-note-preview { font-size: 13px; }
+.ocm-row { gap: 12px; min-height: 56px; padding: 12px 4px; align-items: center; }
+.ocm-row-icon { width: 28px; text-align: center; font-size: 22px; }
+.ocm-row-date { align-self: flex-start; }
+.ocm-item { min-height: 48px; }
+.ocm-editor .bn-block-content[data-content-type="heading"] { padding-top: 8px; }
+.ocm-prop-n { font-style: normal; margin-left: 2px; padding: 0 6px; border-radius: 999px; font-size: 11px; background: rgba(var(--oc-ink), 0.1); }
+
 /* ---------- Sailboat on the Home banner (dawn to dusk; position follows the clock) */
 .ocm-boat {
   position: absolute;

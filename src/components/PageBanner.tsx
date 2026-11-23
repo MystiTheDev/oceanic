@@ -31,7 +31,7 @@ export function PageBanner({ pageId }: { pageId: string }) {
   return (
     <div
       data-page-banner
-      className={`group relative h-[30vh] max-h-[280px] min-h-[160px] w-full shrink-0 select-none ${moving ? "cursor-grab active:cursor-grabbing" : ""}`}
+      className={`oc-banner group relative h-[30vh] max-h-[280px] min-h-[160px] w-full shrink-0 select-none ${moving ? "cursor-grab active:cursor-grabbing" : ""}`}
       style={{ background: bannerBg(shown) }}
       onPointerDown={(e) => {
         if (!moving || (e.target as HTMLElement).closest("button")) return;
