@@ -10,6 +10,19 @@ import { Bell, Cpu, Eye, Gauge, MessageSquareText, Sparkles, Star, type LucideIc
 import { ask } from "./ConfirmDialog";
 import { useEscape } from "../lib/overlay";
 import { Switch } from "./SettingsModal";
+import { getAskMode, setAskMode, type AskMode } from "../lib/neridaAsk";
+
+function AskModePick() {
+  const [v, setV] = useState(getAskMode);
+  return (
+    <select value={v} onChange={(e) => { const m = e.target.value as AskMode; setV(m); setAskMode(m); }}
+      className="cursor-pointer rounded-lg border border-white/[0.1] bg-neutral-900 px-2 py-1 text-[12.5px] text-neutral-200 outline-none">
+      <option value="smart">When unclear</option>
+      <option value="always">Always</option>
+      <option value="off">Never</option>
+    </select>
+  );
+}
 
 /* Nerida settings look: grouped cards, muted row icons, cyan→violet accent. */
 const card = "overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.025] divide-y divide-white/[0.05]";
@@ -123,6 +136,13 @@ export function NeridaSettings() {
           <p className="text-[12px] text-neutral-500">Desktop notification when Nerida finishes while Oceanic is in the background.</p>
         </div>
         <Switch on={notify} onChange={nerida.setNotify} />
+      </div><div className={rowCls}>
+        <RowIcon icon={MessageSquareText} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] text-neutral-100">Ask before note actions</p>
+          <p className="text-[12px] text-neutral-500">Agent asks questions before creating, deleting, renaming or reading notes.</p>
+        </div>
+        <AskModePick />
       </div></div>
       <p className={sectionTitle}>Performance</p>
       <div className={card}><div className={rowCls}>

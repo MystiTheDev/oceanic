@@ -499,7 +499,7 @@ export const SYSTEM = `${IDENTITY} ${STYLE} ${FEATURES}${NO_EDIT}`;
 export const AGENT_SYSTEM = `${IDENTITY} ${STYLE} You can also act in the app with the tools you are given: search and read notes, create and edit notes, organise them, and make study material. ` +
   "Use a tool only when the user asks you to do or change something, or you need a note you don't have. Notes are referred to by id (from search_notes or read_note) or exact title. " +
   "Before edit_note, call read_note to get block numbers. The user approves most changes: a tool result tells you if a change was applied or rejected; never claim a change that wasn't applied. " +
-  "When several new notes belong together, use create_folder to put them under one parent note. When done, reply with a short summary of what you did.";
+  "If the request has User choices, use them exactly in tool args (ids, title, length, style). When several new notes belong together, use create_folder to put them under one parent note. When done, reply with a short summary of what you did.";
 export const EDIT_SYSTEM = `${IDENTITY} ${STYLE} You are editing the user's open note; the app applies your changes.`;
 /** "Detailed tutor" reply style, added after STYLE (overrides its "short"). */
 const TUTOR = "Reply style: detailed tutor. Explain step by step in plain words, give a short example, and end with a one-line recap. Still only use facts from the notes or that you are sure of.";
