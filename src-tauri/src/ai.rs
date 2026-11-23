@@ -185,6 +185,22 @@ pub async fn ai_gpus(app: AppHandle) -> Vec<Gpu> {
     tauri::async_runtime::spawn_blocking(move || list_gpus(&app)).await.unwrap_or_default()
 }
 
+/// Total RAM in MiB (0 = unknown).
+#[cfg(windows)]
+fn ram_mib() -> u64 {
+    #[repr(C)]
+    struct MemStatus { len: u32, load: u32, total: u64, rest: [u64; 6] }
+    unsafe extern "system" {
+        fn GlobalMemoryStatusEx(m: *mut MemStatus) -> i32;
+    }
+    let mut m = MemStatus { len: std::mem::size_of::<MemStatus>() as u32, load: 0, total: 0, rest: [0; 6] };
+    if unsafe { GlobalMemoryStatusEx(&mut m) } != 0 { m.total >> 20 } else { 0 }
+}
+#[cfg(not(windows))]
+fn ram_mib() -> u64 {
+    0
+}
+
 /// NVIDIA driver installed (it ships nvidia-smi).
 fn has_nvidia() -> bool {
     Path::new(r"C:\Windows\System32\nvidia-smi.exe").exists()
@@ -363,9 +379,10 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
             "auto" if cuda_exe(&app).is_some() => "cuda".to_string(),
             "auto" => gpus
                 .iter()
-                .filter(|g| !g.name.contains("Intel") || g.name.contains("Arc"))
+                // Cards under 2 GB can't hold the model plus its context: the CPU is faster than spilling.
+                .filter(|g| (!g.name.contains("Intel") || g.name.contains("Arc")) && g.mem_mib >= 2048)
                 .find(|g| g.name.contains("NVIDIA"))
-                .or(gpus.iter().find(|g| !g.name.contains("Intel") || g.name.contains("Arc")))
+                .or(gpus.iter().find(|g| (!g.name.contains("Intel") || g.name.contains("Arc")) && g.mem_mib >= 2048))
                 .map_or("cpu".into(), |g| g.id.clone()),
             "cuda" if cuda_exe(&app).is_none() => "auto".into(),
             g => g.to_string(),
@@ -379,7 +396,10 @@ pub async fn ai_start(app: AppHandle, state: State<'_, Ai>, model: String, gpu: 
         let key = uuid::Uuid::new_v4().simple().to_string();
         cmd.env("LLAMA_API_KEY", &key);
         *ENGINE_KEY.lock().unwrap() = Some((port, key));
-        cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "-c", "8192", "--jinja", "-np", "1", "--cache-reuse", "256"]);
+        // Under 8 GB of RAM a smaller context leaves room for the app and the OS (fewer crashes and swapping).
+        let ram = ram_mib();
+        let ctx = if ram > 0 && ram < 7_500 { "6144" } else { "8192" };
+        cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "-c", ctx, "--jinja", "-np", "1", "--cache-reuse", "256"]);
         let mmproj = dir(&app)?.join(VISION.file);
         let vision = vision && mmproj.exists();
         if vision {

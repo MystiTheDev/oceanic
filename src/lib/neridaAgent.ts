@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import { api, type MindmapNodeRecord } from "../data/api";
 import type { PageMeta } from "../data/workspace";
-import { docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
+import { AGENT_SYSTEM, docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
 import { scrubInjection } from "./neridaGuard";
 import { searchNotes } from "./noteIndex";
 import { gatherText, generateCards, stopGenerating, whyNoFacts, withCards } from "./neridaStudy";
@@ -436,9 +436,11 @@ const EXAMPLES =
 /* For models that can't take native tools (the provider errors) or that write the call as text.
  * Strict JSON, checked, up to 2 retries. Phase 8 swaps this for GBNF grammars + a router. */
 export const jsonFallback = {
-  system: (tools = TOOLS) =>
+  /** `grammar`: the built-in engine is held to JSON, so the final answer is {"answer": …} too. */
+  system: (tools = TOOLS, grammar = false) =>
     "To use a tool, reply with ONLY one JSON object and nothing else: {\"tool\": \"<name>\", \"args\": {...}}. " +
-    "When you are finished, or no tool is needed, reply in plain text (no JSON).\nTools:\n" +
+    (grammar ? 'When you are finished, or no tool is needed, reply {"answer": "<your reply in Markdown>"}.' : "When you are finished, or no tool is needed, reply in plain text (no JSON).") +
+    "\nTools:\n" +
     tools.map((t) => `- ${t.name}(${Object.keys(t.params).map((k) => (t.required.includes(k) ? k : k + "?")).join(", ")}): ${t.description}`).join("\n"),
   /** A call written as text: `{"tool":…}`, `{"name":…,"arguments":…}` or `<tool_call>…</tool_call>`. null = plain answer; Error = a broken attempt. */
   parse(text: string): { name: string; args: Args } | Error | null {
@@ -454,7 +456,35 @@ export const jsonFallback = {
     }
   },
   retries: 2,
+  /** JSON schema the built-in engine turns into a grammar: a valid call to one of `tools`, or (unless a tool is forced) an answer.
+   *  Small models then can't write broken JSON, unknown tools or missing arguments. */
+  schema: (tools: ToolDef[], answer: boolean) => ({
+    type: "json_schema",
+    json_schema: {
+      name: "step",
+      schema: {
+        oneOf: [
+          ...tools.map((t) => ({ type: "object", properties: { tool: { const: t.name }, args: { type: "object", properties: t.params, required: t.required } }, required: ["tool", "args"] })),
+          ...(answer ? [{ type: "object", properties: { answer: { type: "string" } }, required: ["answer"] }] : []),
+        ],
+      },
+    },
+  }),
 };
+
+/** The text so far of a streamed {"answer": "…"}, or null while it's a tool call. */
+function partialAnswer(text: string): string | null {
+  const m = text.match(/^\s*\{\s*"answer"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!m) return null;
+  for (let s = m[1]; s; s = s.slice(0, -1)) {
+    try {
+      return JSON.parse(`"${s}"`);
+    } catch {
+      /* cut mid-escape: drop a character */
+    }
+  }
+  return "";
+}
 
 /* ------------------------------------------------------------------ loop */
 export type AgentRun = {
@@ -474,13 +504,18 @@ const label = (name: string) => ({ search_notes: "Searching notes", read_note: "
 export async function runAgent({ model, messages, onText, onLog, onStep, onThink, force }: AgentRun): Promise<string> {
   stopped = false;
   const msgs = [...messages];
-  let json = false; // provider refused native tools: JSON protocol from now on
+  const small = isBuiltIn(model);
+  // Built-in engine: JSON held to a grammar from the start (no broken calls); others: native tools, JSON if refused.
+  let json = small;
   let retries = 0;
   let answer = "";
-  const small = isBuiltIn(model);
   const req = [...msgs].reverse().find((m) => m.role === "user");
   const tools = small ? pickTools(String(req?.content ?? "")) : TOOLS;
-  if (small && msgs[0]?.role === "system") msgs[0] = { ...msgs[0], content: `${msgs[0].content}\n\n${EXAMPLES}` };
+  // Examples go right after the fixed agent prompt, before the open note's details, so the engine's prompt cache covers them.
+  if (small && msgs[0]?.role === "system") {
+    const c = String(msgs[0].content);
+    msgs[0] = { ...msgs[0], content: c.startsWith(AGENT_SYSTEM) ? `${AGENT_SYSTEM}\n\n${EXAMPLES}${c.slice(AGENT_SYSTEM.length)}` : `${c}\n\n${EXAMPLES}` };
+  }
   const exec = async (name: string, args: Args): Promise<string> => {
     const bad = check(name, args);
     if (bad) {
@@ -511,12 +546,15 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
     let calls: ToolCall[] = [];
     const forced = !!force && step === 0;
     const stepTools = forced ? TOOLS.filter((t) => t.name === force) : tools;
-    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(stepTools)}` }, ...msgs.slice(1)] : msgs;
+    const grammar = small && json && !last;
+    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(stepTools, grammar)}` }, ...msgs.slice(1)] : msgs;
     try {
       calls = await engine.chat(model, send, (t) => {
         text += t;
-        if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
-      }, onThink, json || last ? undefined : openAiTools(stepTools), forced);
+        const a = grammar ? partialAnswer(text) : null;
+        if (a !== null) onText(a);
+        else if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
+      }, onThink, json || last ? undefined : openAiTools(stepTools), forced, grammar ? { response_format: jsonFallback.schema(stepTools, !forced) } : undefined);
     } catch (e) {
       // Provider or model without tool support: switch to the JSON protocol once.
       if (!json && !last && /tool|function/i.test(String(e))) {
@@ -527,6 +565,13 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
       throw e;
     }
     if (stopped) break;
+    if (grammar) {
+      const a = partialAnswer(text);
+      if (a !== null) {
+        answer = a;
+        break;
+      }
+    }
     if (!calls.length && !last) {
       const p = jsonFallback.parse(text);
       if (p instanceof Error) {

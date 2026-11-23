@@ -111,6 +111,25 @@ export function definition(s: string): { term: string; meaning: string } | null 
   return { term, meaning };
 }
 
+/* ------------------------------------------------------- card quality */
+const STOP = new Set("the a an and or of to in on at by for with from as is are was were be been it its this that these those they them their there here what which who whom whose when where why how do does did can could will would should may might not no yes".split(" "));
+const keyWords = (t: string) => new Set(t.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)?.filter((w) => !STOP.has(w)) ?? []);
+const overlap = (a: Set<string>, b: Set<string>) => [...a].filter((w) => b.has(w)).length;
+/** Weak cards: too short, an answer with no real word, or a question that only says "it"/"this" (no topic left once the answer is hidden). */
+function weakCard(q: string, a: string, s: string): boolean {
+  if (q.split(/\s+/).length < 4 || !keyWords(a).size) return true;
+  const topic = keyWords(s);
+  for (const w of keyWords(a)) topic.delete(w);
+  return overlap(keyWords(q), topic) === 0;
+}
+/** Same answer and mostly the same question words as a card already made. */
+const nearDuplicate = (f: Fact, made: Fact[]) =>
+  made.some((m) => {
+    if (norm(m.a) !== norm(f.a)) return false;
+    const x = keyWords(m.q), y = keyWords(f.q);
+    return overlap(x, y) / Math.max(1, Math.min(x.size, y.size)) > 0.6;
+  });
+
 /** One grounded question/answer from one sentence, or null if the model's answer isn't in the sentence. */
 async function factFrom(s: string, pageId: string, level: Difficulty): Promise<Fact | null> {
   // "Term – definition" / "Term: definition" lines are already a card: no model call needed.
@@ -136,6 +155,7 @@ async function factFrom(s: string, pageId: string, level: Difficulty): Promise<F
   const a = m[2].trim().replace(/[.;,]$/, "");
   // Grounding: the answer must be a real, short part of the sentence, and not given away by the question.
   if (!norm(s).includes(norm(a)) || norm(a).length > norm(s).length * 0.6 || norm(q).includes(norm(a))) return null;
+  if (weakCard(q, a, s)) return null;
   return { q, a, sentence: s, pageId };
 }
 
@@ -143,12 +163,14 @@ async function factFrom(s: string, pageId: string, level: Difficulty): Promise<F
 async function facts(src: SourceText[], want: number, level: Difficulty, onFact: (f: Fact) => void, skip = new Set<string>()) {
   stopped = false;
   let made = 0;
+  const kept: Fact[] = [];
   for (const { s, pageId } of spread(sentences(src, level))) {
     if (stopped || made >= want) break;
     lastRun.tried++;
     const f = await factFrom(s, pageId, level).catch(() => null);
-    if (!f || skip.has(f.q.toLowerCase())) continue;
+    if (!f || skip.has(f.q.toLowerCase()) || nearDuplicate(f, kept)) continue;
     skip.add(f.q.toLowerCase());
+    kept.push(f);
     made++;
     lastRun.made++;
     onFact(f);
