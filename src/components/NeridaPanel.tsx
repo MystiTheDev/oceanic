@@ -311,17 +311,18 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     if (n.why === "mention") setMentions((m) => m.filter((x) => x.id !== n.id));
     setExcluded((s) => new Set(s).add(n.id));
   };
+  const [cmd, setCmd] = useState<Cmd | null>(null);
   // Live workspace search while typing (debounced); kept after sending until the next question.
   useEffect(() => {
     const q = input.trim();
     if (!q) return;
-    if (pdf || q.length < 4 || q.startsWith("/")) return setFound([]);
+    if (pdf || q.length < 4 || q.startsWith("/") || (cmd && !cmd.note)) return setFound([]);
     const t = setTimeout(() => {
       const skip = new Set(notes.filter((n) => n.why === "current").map((n) => n.id));
-      void searchIndex(q, 3, skip).then((h) => setFound(h.map((x) => ({ id: x.id, title: x.title, icon: pages.get(x.id)?.icon ?? "", why: "found" as const })))).catch(() => {});
+      void searchIndex(q, 3, skip, true).then((h) => setFound(h.map((x) => ({ id: x.id, title: x.title, icon: pages.get(x.id)?.icon ?? "", why: "found" as const })))).catch(() => {});
     }, 350);
     return () => clearTimeout(t);
-  }, [input, pdf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input, pdf, cmd]); // eslint-disable-line react-hooks/exhaustive-deps
   // Note sizes for the picker's token estimate.
   const [, setSized] = useState(0);
   const sendKey = sendList.map((n) => n.id).join();
@@ -329,7 +330,6 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     if (sendKey) void refreshIndex(sendKey.split(",")).then(() => setSized((x) => x + 1)).catch(() => {});
   }, [sendKey]);
   const estTokens = Math.round(Math.min(sendList.reduce((s, n) => s + noteChars(n.id), 0), noteBudget(model)) / 4);
-  const [cmd, setCmd] = useState<Cmd | null>(null);
   const [pick, setPick] = useState(0);
   const slashQuery = cmd ? undefined : /^\/(\w*)$/.exec(input)?.[1];
   const slashHits = slashQuery === undefined ? [] : CMDS.filter((c) => c.k.startsWith(slashQuery.toLowerCase()));
@@ -569,7 +569,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (local) used = used.filter((n) => n.why !== "found");
       // Search every note for the exact question (the live search may lag the last keystrokes); removed notes stay out.
       if (!pdf && !files.length && !local && !isFeaturesQuestion(text)) {
-        const hits = await searchIndex(text, 3, new Set([...used.map((n) => n.id), ...excluded])).catch(() => []);
+        const hits = await searchIndex(text, 3, new Set([...used.map((n) => n.id), ...excluded]), true).catch(() => []);
         const extra = hits.map((h) => ({ id: h.id, title: h.title, icon: pages.get(h.id)?.icon ?? "", why: "found" as const }));
         if (extra.length) {
           mark(`Searching all notes: found ${extra.length}`);
