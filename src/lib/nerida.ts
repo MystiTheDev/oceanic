@@ -213,7 +213,7 @@ export const engine = {
   gpus: () => invoke<{ id: string; name: string; mem_mib: number }[]>("ai_gpus"),
   /** Streams the answer to `onToken`; Deep's thinking goes only to `onThink` (never into notes or quizzes). */
   /** With `tools` (OpenAI format), returns the tool calls the model made (empty when it just answered). */
-  async chat(ref: ModelRef, messages: ChatMessage[], onToken: (t: string) => void, onThink?: (thought: string) => void, tools?: unknown[]): Promise<ToolCall[]> {
+  async chat(ref: ModelRef, messages: ChatMessage[], onToken: (t: string) => void, onThink?: (thought: string) => void, tools?: unknown[], force = false): Promise<ToolCall[]> {
     const b = builtin(ref);
     let baseUrl: string, keyId: string | null = null, model: string;
     if (b && state.dl) throw new Error(UPGRADE_MSG);
@@ -244,7 +244,7 @@ export const engine = {
     const extra = b
       ? { chat_template_kwargs: { enable_thinking: state.thinking }, temperature: 0.2, top_p: 0.9, top_k: 20, min_p: 0.05, repeat_penalty: 1.1, max_tokens: state.thinking ? Math.max(e.maxTokens, 4096) : e.maxTokens }
       : { max_tokens: e.maxTokens };
-    if (tools?.length) Object.assign(extra, { tools, max_tokens: Math.max(extra.max_tokens, 1024) });
+    if (tools?.length) Object.assign(extra, { tools, max_tokens: Math.max(extra.max_tokens, 1024) }, force && { tool_choice: "required" });
     // Main chat prompt only (not quizzes or edits): reply style, and Fast's 1-3 sentence cap.
     if (messages[0]?.content === SYSTEM) {
       messages = [{ role: "system", content: chatSystem() }, ...messages.slice(1)];

@@ -464,12 +464,14 @@ export type AgentRun = {
   onLog: (l: AgentLog) => void;
   onStep: (label: string) => void;
   onThink?: (t: string) => void;
+  /** Tool name the first step must call ("/" Tools menu). */
+  force?: string;
 };
 
 const label = (name: string) => ({ search_notes: "Searching notes", read_note: "Reading a note", make_flashcards: "Writing flashcards" } as Record<string, string>)[name] ?? `Using ${name.replace(/_/g, " ")}`;
 
 /** Runs the tool loop; resolves the final answer text. */
-export async function runAgent({ model, messages, onText, onLog, onStep, onThink }: AgentRun): Promise<string> {
+export async function runAgent({ model, messages, onText, onLog, onStep, onThink, force }: AgentRun): Promise<string> {
   stopped = false;
   const msgs = [...messages];
   let json = false; // provider refused native tools: JSON protocol from now on
@@ -507,12 +509,14 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
     if (last) msgs.push({ role: "user", content: "(Step limit reached. Don't call more tools: tell me briefly what you did and what's left.)" });
     let text = "";
     let calls: ToolCall[] = [];
-    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(tools)}` }, ...msgs.slice(1)] : msgs;
+    const forced = !!force && step === 0;
+    const stepTools = forced ? TOOLS.filter((t) => t.name === force) : tools;
+    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(stepTools)}` }, ...msgs.slice(1)] : msgs;
     try {
       calls = await engine.chat(model, send, (t) => {
         text += t;
         if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
-      }, onThink, json || last ? undefined : openAiTools(tools));
+      }, onThink, json || last ? undefined : openAiTools(stepTools), forced);
     } catch (e) {
       // Provider or model without tool support: switch to the JSON protocol once.
       if (!json && !last && /tool|function/i.test(String(e))) {
@@ -539,9 +543,9 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
         continue;
       }
       // Small models often refuse ("I can't access your notes") on the first turn: nudge once.
-      if (small && step === 0 && tools !== TOOLS) {
+      if (step === 0 && (forced || (small && tools !== TOOLS))) {
         onText("");
-        msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${tools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
+        msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${stepTools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
         continue;
       }
     }

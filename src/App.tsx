@@ -291,6 +291,11 @@ export default function App() {
   const [importFailures, setImportFailures] = useState<{ count: number; failed: ImportFailure[] } | null>(null);
   const [prefersDark, setPrefersDark] = useState(systemDark);
   const resolvedTheme = settings.theme === "system" ? (prefersDark ? "dark" : "light") : settings.theme;
+  useEffect(() => {
+    const flip = () => changeSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" });
+    window.addEventListener("oceanic:toggle-theme", flip);
+    return () => window.removeEventListener("oceanic:toggle-theme", flip);
+  });
   const themeReady = useRef(false);
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1918,7 +1923,6 @@ export default function App() {
               onNewPage={() => createPage(null)}
               onNewMindmap={async () => navigate(mindmapEntry(await createMindmap("")))}
               onImport={() => void importNotes()}
-              onNewSketch={() => openPage(sketchEntry(newSketch(1280, 720)))}
               onOpenApp={(app) =>
                 app === "calendar" ? setView("calendar") : setActiveTabId(app === "docs" ? (lastDocsTab.current ?? DOCS_HOME_TAB) : (lastSketchTab.current ?? SKETCH_HOME_TAB))
               }
@@ -1944,6 +1948,7 @@ export default function App() {
               onOpenMindmap={(id) => navigate(mindmapEntry(id))}
               onNewMindmap={async () => navigate(mindmapEntry(await createMindmap("")))}
               onImport={() => void importNotes()}
+              onNewSketch={() => openPage(sketchEntry(newSketch(1280, 720)))}
               onChangeView={setView}
             />
             )}

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openContextMenu } from "./ContextMenu";
 import logoRaw from "../assets/logo-raw.png";
@@ -6,6 +6,7 @@ import mindmapLogo from "../assets/mindmap-logo.png";
 import docsLogo from "../assets/docs-logo.png";
 import sketchLogo from "../assets/sketch-logo.png";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isAndroid } from "../mobile/formFactor";
 import {
   ArrowLeft,
   ArrowRight,
@@ -318,7 +319,8 @@ export function WindowControls() {
   const base =
     "grid h-full w-[46px] cursor-default place-items-center text-neutral-400 transition-colors duration-100";
   return (
-    <div className="flex h-full shrink-0">
+    <div className="flex h-full shrink-0 items-center">
+      {!isAndroid && <ThemeSwitch />}
       <button type="button" title="Minimize" onClick={() => win.minimize()} className={`${base} hover:bg-white/[0.06] hover:text-neutral-100`}>
         <Minus className="size-4" strokeWidth={1.5} />
       </button>
@@ -329,5 +331,33 @@ export function WindowControls() {
         <X className="size-4" strokeWidth={1.5} />
       </button>
     </div>
+  );
+}
+
+/** Dark/light switch (after uiverse.io JustCode14 "red-dingo-61", MIT): moon + stars at night, sun + cloud by day. */
+function ThemeSwitch() {
+  const html = document.documentElement;
+  const [light, setLight] = useState(html.dataset.theme === "light");
+  // Follow theme changes from elsewhere (user menu, settings).
+  useEffect(() => {
+    const mo = new MutationObserver(() => setLight(html.dataset.theme === "light"));
+    mo.observe(html, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
+  }, []);
+  // Slide first, recolor the app after the knob lands.
+  const flip = () => {
+    setLight((v) => !v);
+    window.setTimeout(() => window.dispatchEvent(new Event("oceanic:toggle-theme")), 380);
+  };
+  return (
+    <label className="oc-theme-switch mr-2" title={light ? "Dark mode" : "Light mode"}>
+      <input type="checkbox" checked={light} onChange={flip} />
+      <span className="slider">
+        <i className="star star_1" /><i className="star star_2" /><i className="star star_3" />
+        <svg viewBox="0 0 16 16" className="cloud">
+          <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925" />
+        </svg>
+      </span>
+    </label>
   );
 }
