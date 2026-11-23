@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# QR scan crashed in release: R8 stripped CameraX / ML Kit classes.
+-keep class androidx.camera.** { *; }
+-keep class com.google.mlkit.** { *; }
