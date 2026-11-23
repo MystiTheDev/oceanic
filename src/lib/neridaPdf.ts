@@ -55,12 +55,12 @@ export async function pdfContext(docId: string, name: string, question: string, 
 /** Scanned pages (no text layer): the vision add-on reads each one once and its text is saved
  *  like a normal PDF's, so every page is covered and later questions are instant.
  *  One page per request at ~768 px: bigger or batched images take minutes before the first word. */
-export async function readScanned(docId: string, onPage: (n: number, total: number) => void): Promise<number> {
+export async function readScanned(docId: string, onPage: (n: number, total: number) => void, from = 1, to = Infinity): Promise<number> {
   const doc = await api.getPdfDoc(docId);
   if (!doc) return 0;
   const pdf = await openPdf(doc);
   const text = await api.getPdfText(docId);
-  const todo = Array.from({ length: pdf.numPages }, (_, i) => i + 1).filter((n) => (text[n - 1] ?? "").trim().length < 30);
+  const todo = Array.from({ length: pdf.numPages }, (_, i) => i + 1).filter((n) => n >= from && n <= to && (text[n - 1] ?? "").trim().length < 30);
   for (const [i, n] of todo.entries()) {
     onPage(i + 1, todo.length);
     const url = await renderPageImage(await pdf.getPage(n), 768 / Math.min(2, window.devicePixelRatio || 1));
@@ -101,7 +101,7 @@ async function ask(system: string, user: string, cap: number, onText?: (t: strin
 export async function summarizePdf(docId: string, from: number, to: number, detailed: boolean, onProgress: (label: string, text: string) => void): Promise<string> {
   let pages = await pdfPages(docId, from, to);
   // Scanned: read the pages with the vision add-on first (saved for next time).
-  if ((await engine.status()).vision && (await readScanned(docId, (n, t) => onProgress(`Reading scanned page ${n} of ${t}`, ""))))
+  if ((await engine.status()).vision && (await readScanned(docId, (n, t) => onProgress(`Reading scanned page ${n} of ${t}`, ""), from, to)))
     pages = await pdfPages(docId, from, to);
   if (!pages.length) throw new Error("No text found on those pages. Scanned PDFs (pictures of text) can't be summarized yet.");
   // Parts of ~6000 characters. Short pages share a part; a long page is split (at paragraphs) so none of it is cut off.

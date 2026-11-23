@@ -25,7 +25,7 @@ import { detectTask, type TaskDraft } from "../lib/neridaTask";
 import { AlertCircle, ArrowDown, ArrowUp, Check, ChevronDown, History, MessageSquare, Pencil, Search, Copy, Download, FileInput, FileText, Globe, Loader2, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 import { usePageDirectory } from "../editor/pageDirectory";
 import { DeepSparkles, EffortButton, ThoughtLine } from "./NeridaEffort";
-import { ASK_WHICH, editPrompt, proposalWarning, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
+import { DELETE_NOTE, ASK_WHICH, editPrompt, proposalWarning, isEditRequest, targetBlocks, markAllDone, noteBlocks, parseEdits, proposeEdits, usePending } from "../lib/neridaChatEdit";
 import { ModelMenu } from "./NeridaModelMenu";
 import { openNeridaCards } from "./NeridaCards";
 import { ATTACH_ACCEPT, attachmentsContext, extractFileText, isImageFile, MAX_IMAGES, type Attachment } from "../lib/neridaFiles";
@@ -41,7 +41,7 @@ import {
 export { NeridaMark } from "./NeridaOrb";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { NeridaBetaCard, NeridaMark } from "./NeridaOrb";
+import { NeridaMark } from "./NeridaOrb";
 import { confirmCloud } from "./NeridaDiff";
 import { AgentCards, AgentLogList } from "./NeridaAgentUI";
 import { runAgent, stopAgent, TOOLS } from "../lib/neridaAgent";
@@ -338,6 +338,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const [planning, setPlanning] = useState<string | boolean>(false);
   /** A note action was asked with Agent mode off: how to run it. */
   const [agentAsk, setAgentAsk] = useState<{ text: string; history: Msg[] } | null>(null);
+  /** "Delete this note": which note (when unclear) and an OK, then it goes to Trash. */
+  const [delAsk, setDelAsk] = useState<{ text: string; ids: string[] } | null>(null);
   const [asking, setAsking] = useState<{ plan: AskPlan; text: string; history: Msg[]; force?: string; once?: boolean } | null>(null);
   /** The wizard's result as a chat reply (a new chat if none is open). */
   const planDone = (msg: string) => {
@@ -484,6 +486,16 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   /** Questions about the open note itself ("this note", "the image", "here"). */
   const ABOUT_OPEN_NOTE = /\b(this|the|that)\s+(note|page)\b|\b(this|the|that|these)\s+(image|picture|photo|pic|screenshot|diagram|chart)s?\b|\b(above|below)\b/i;
   const send = async (text: string, history: Msg[] = chat?.messages ?? [], force?: string, choices?: string, once?: boolean | "no") => {
+    if (!text.trim() || busy) return;
+    // "/plan Maths Dec 5, Bio Friday": the wizard, with those exams filled in.
+    const planArgs = /^\/plan\b\s*([\s\S]*)$/i.exec(text.trim());
+    if (planArgs) return (setInput(""), setPlanning(planArgs[1] || true));
+    // "Delete this note": the open note, else the attached one; asks which when several, always asks to confirm.
+    if (DELETE_NOTE.test(text) && !pdf) {
+      const ids = pageId && !home ? [pageId] : sendList.map((n) => n.id);
+      if (!ids.length) return setErr("Which note? Open it, or attach it with @, then ask again.");
+      return (setInput(""), setDelAsk({ text, ids }));
+    }
     // Agent mode off but the message asks to change notes: ask how to run it (edits to the open note have their own path).
     if (once === undefined && choices === undefined && !nerida.get().agent && !force && !pdf && needsTool(text) && !(pageId && !home && isEditRequest(text))) {
       if (autoAgent()) once = true;
@@ -494,10 +506,6 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       const plan = planAsk(text, agentHost()?.pages() ?? [], pageId && !home ? pageId : null);
       if (plan) return (setInput(""), setAsking({ plan, text, history, force, once: !!once }));
     }
-    if (!text.trim() || busy) return;
-    // "/plan Maths Dec 5, Bio Friday": the wizard, with those exams filled in.
-    const planArgs = /^\/plan\b\s*([\s\S]*)$/i.exec(text.trim());
-    if (planArgs) return (setInput(""), setPlanning(planArgs[1] || true));
     if (!(await confirmCloud(model))) return;
     setErr("");
     setInput("");
@@ -511,7 +519,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     setDraft("");
     setStepsOpen(true);
     let used = sendList;
-    const mark = (label: string) => setSteps((s) => (s[s.length - 1]?.label === label ? s : [...s.map((x) => ({ ...x, done: true })), { label, done: false }]));
+    // Stuck: no step, token or thought for 30 s stops the run with an error.
+    let last = Date.now(), stalled = false, loading = false; // loading: model start can take long, not a stall
+    const bump = () => void (last = Date.now());
+    const watch = setInterval(() => { if (!loading && Date.now() - last > 30000) (stalled = true, void engine.stop()); }, 2000);
+    const mark = (label: string) => (bump(), setSteps((s) => (s[s.length - 1]?.label === label ? s : [...s.map((x) => ({ ...x, done: true })), { label, done: false }])));
     setSteps([]);
     let reply = "";
     // Deep: thinking streams to onThink; kept on the message as a collapsed "Thought for Xs".
@@ -519,6 +531,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     const t0 = Date.now();
     let thoughtSecs = 0;
     const onThink = (t: string) => {
+      bump();
       if (!thought) mark("Thinking");
       thought = t;
       thoughtSecs = Math.max(1, Math.round((Date.now() - t0) / 1000));
@@ -546,11 +559,12 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (blocks.length) {
         if (b) {
           if (status?.running !== b) mark("Starting Nerida…");
-          await engine.start(b);
+          loading = true;
+          await engine.start(b).finally(() => ((loading = false), bump()));
         }
         mark("Editing your note");
         let raw = "";
-        await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (raw += t), onThink);
+        await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (bump(), (raw += t)), onThink);
         const proposals = parseEdits(raw, blocks);
         const n = proposeEdits(proposals);
         const warn = n ? proposalWarning(proposals, blocks) : "";
@@ -593,8 +607,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         const name = pdfNames.get(pdf.id) ?? pdf.name; // the reader fills pdfNames once the PDF loads
         mark(`Reading ${name}`);
         // Scanned pages: the vision add-on reads each page once (saved), then they're normal text.
-        if (b && status?.vision) await readScanned(pdf.id, (n, total) => mark(`Reading scanned page ${n} of ${total}`));
         const range = pageRange(text);
+        if (b && status?.vision) await readScanned(pdf.id, (n, total) => mark(`Reading scanned page ${n} of ${total}`), range?.[0], range?.[1]);
         // "Summarize": every page (or the named range), in parts, then combined, so nothing is skipped.
         if (/\bsumm?ar/i.test(text)) {
           if (range) mark(`Pages ${range[0]}–${range[1]}`);
@@ -626,7 +640,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       }
       if (b) {
         if (status?.running !== b) mark("Starting Nerida…");
-        await engine.start(b);
+        loading = true;
+          await engine.start(b).finally(() => ((loading = false), bump()));
         void refresh();
       }
       if (agentOn) {
@@ -637,7 +652,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...trimHistory(history).msgs, { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`, choices, force && `Call the ${force} tool first.`].filter(Boolean).join("\n\n") }],
           force,
           allow: once && !nerida.get().agent ? AUTO_TOOLS : undefined,
-          onText: (t) => ((reply = t), setDraft(t)),
+          onText: (t) => (bump(), (reply = t), setDraft(t)),
           onLog: (l) => ((log = [...log, l]), setActions(log)),
           onStep: mark,
           onThink,
@@ -649,6 +664,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       }
       mark(b ? "Writing answer" : `Asking ${modelLabel(model)}`);
       await engine.chat(model, [{ role: "system", content: SYSTEM }, ...trimHistory(history).msgs, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context, book, tools) }], (t) => {
+        bump();
         reply += t;
         setDraft(reply);
       }, onThink);
@@ -657,6 +673,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     } catch (e) {
       if (e !== null) setErr(String(e)); // null = note edit finished early
     }
+    clearInterval(watch);
+    if (stalled) (setErr("Nerida stopped: nothing happened for 30 seconds. Try again, or turn on Agent mode for note changes."), (reply = ""));
+    engine.halted = false; // clear here, not on send: Nerida in docs, maps and PDFs shares the engine
     if (reply && garbled) reply += GARBLED_NOTE;
     if (reply) reply += book.footer(reply);
     const sources = book.refs();
@@ -730,6 +749,27 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               void send(x.text, x.history, undefined, undefined, pick === AGENT_CHOICES[3] ? "no" : pick === AGENT_CHOICES[2] ? "no" : true);
             }} />
         )}
+        {delAsk && (() => {
+          const notes = delAsk.ids.map((id) => ({ id, title: pages.get(id)?.title || "Untitled" }));
+          const one = notes.length === 1;
+          return (
+            <NeridaAskBox key={"del:" + delAsk.ids.join()} title="Delete note" onCancel={() => (setDelAsk(null), setInput(delAsk.text))}
+              questions={[{
+                id: "note", header: "Delete", other: false,
+                question: one ? `Move “${notes[0].title}” to Trash? You can restore it from Trash.` : "Which note should go to Trash? You can restore it from Trash.",
+                options: one ? [{ label: "Move to Trash", recommended: true }, { label: "Cancel" }] : [...notes.map((n) => ({ label: n.title })), { label: "Cancel" }],
+              }]}
+              onDone={(a) => {
+                const pick = a.note?.[0], d = delAsk;
+                setDelAsk(null);
+                const n = one ? (pick === "Move to Trash" ? notes[0] : null) : notes.find((x) => x.title === pick);
+                if (!n) return setInput(d.text);
+                agentHost()?.trash(n.id);
+                const base: Chat = chat ?? { id: uid(), title: d.text.slice(0, 60), messages: [], updatedAt: Date.now() };
+                nerida.upsert({ ...base, messages: [...base.messages, { role: "user", content: d.text }, { role: "assistant", content: `Moved **${n.title}** to the Trash. You can restore it from there.` }], updatedAt: Date.now() });
+              }} />
+          );
+        })()}
         {asking && <NeridaAskBox key={asking.text} title={asking.plan.title} questions={asking.plan.questions} onCancel={() => (setAsking(null), setInput(asking.text))}
           onDone={(a) => { const x = asking; setAsking(null); void send(x.text, x.history, x.force, choicesLine(x.plan, a), x.once || "no"); }} />}
         {planning && <StudyPlanWizard typed={typeof planning === "string" ? planning : ""} pages={agentHost()?.pages() ?? []} onClose={() => setPlanning(false)} onMade={planDone} />}
@@ -801,7 +841,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           <EffortButton disabled={busy} compact={!home} />
           {/* One button: the arrow morphs into a stop square while Nerida answers. */}
           <button type="button" title={busy ? "Stop" : "Send"} data-busy={busy || undefined} disabled={!busy && (!(input.trim() || cmd) || !ready)}
-            onClick={() => (busy ? (stopAgent(), void engine.stop()) : cmd ? runCmd(cmd) : void send(input))}
+            onClick={() => (busy ? (stopAgent(), (engine.halted = true), void engine.stop()) : cmd ? runCmd(cmd) : void send(input))}
             className="oc-send oc-send-morph relative grid size-7 cursor-pointer place-items-center rounded-lg bg-teal-400/90 text-neutral-950 transition-[transform,background-color] hover:bg-teal-300 active:scale-90 disabled:cursor-default disabled:bg-white/[0.08] disabled:text-neutral-500 data-[busy]:bg-white/[0.1] data-[busy]:text-neutral-200">
             <ArrowUp className="oc-send-arrow absolute size-4" />
             <Square className="oc-send-stop absolute size-3" fill="currentColor" />
@@ -818,7 +858,6 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
 
   return (
     <>
-    <NeridaBetaCard />
     {viewing && <ImageAnnotator url={viewing} name="Picture in chat" readOnly onSave={() => {}} onClose={() => setViewing(null)} />}
     <aside
       onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}

@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 
 /* Nerida's logo, rebuilt as light layered SVG so each part animates:
  * halo · glossy orb · waves · nautilus shell · glowing core · sparkles · ripple ring.
@@ -88,21 +88,3 @@ export function NeridaMark({ busy = false, size = 18 }: { busy?: boolean; size?:
 export const BetaPill = () => (
   <span className="oc-beta ml-1.5 inline-flex shrink-0 items-center rounded-full px-1.5 py-px align-middle text-[9.5px] font-bold uppercase leading-[14px] tracking-[0.08em]">Beta</span>
 );
-
-/* Beta notice: shown the first time Nerida is opened in each app launch. */
-let betaSeen = false;
-export function NeridaBetaCard() {
-  const [open, setOpen] = useState(() => !betaSeen && (betaSeen = true));
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
-      <div className="w-[380px] max-w-[92vw] rounded-xl border border-white/[0.1] bg-neutral-900 p-5 text-center shadow-2xl">
-        <div className="mb-3 flex justify-center"><NeridaMark size={36} /></div>
-        <p className="text-[16px] font-semibold text-neutral-100">Meet Nerida<BetaPill /></p>
-        <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">Your offline study assistant. Chat about your notes and PDFs, make flashcards, outlines and mindmaps, and get feedback on your writing.</p>
-        <p className="mt-2 text-[12.5px] leading-relaxed text-neutral-500">Nerida is in beta: answers can be wrong, and features you see now may change or be removed later.</p>
-        <button type="button" autoFocus className="mt-4 cursor-pointer rounded-md bg-sky-600 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-sky-500" onClick={() => setOpen(false)}>Got it</button>
-      </div>
-    </div>
-  );
-}

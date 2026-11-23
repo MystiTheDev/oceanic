@@ -271,6 +271,13 @@ function PageEditorBody({
   const hasBanner = !!useBanner(page.id);
   // Notion's "Get started with" bar shows while the body is empty.
   const [empty, setEmpty] = useState(() => isEmptyDoc(editor.document as Block[]));
+  // The body fills from the Y.Doc after mount (and on sync) without onChange: re-check then.
+  useEffect(() => {
+    const check = () => setEmpty(isEmptyDoc(editor.document as Block[]));
+    const raf = requestAnimationFrame(check);
+    ydoc.on("update", check);
+    return () => (cancelAnimationFrame(raf), ydoc.off("update", check));
+  }, [editor, ydoc]);
   const scroller = useRef<HTMLDivElement>(null);
   // The note body: the selection toolbar flips below the text instead of covering the properties above it.
   const [canvas, setCanvas] = useState<HTMLDivElement | null>(null);

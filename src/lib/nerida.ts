@@ -214,6 +214,7 @@ export const engine = {
   /** Streams the answer to `onToken`; Deep's thinking goes only to `onThink` (never into notes or quizzes). */
   /** With `tools` (OpenAI format), returns the tool calls the model made (empty when it just answered). */
   async chat(ref: ModelRef, messages: ChatMessage[], onToken: (t: string) => void, onThink?: (thought: string) => void, tools?: unknown[], force = false, more?: Record<string, unknown>): Promise<ToolCall[]> {
+    if (engine.halted) throw null; // Stop pressed: multi-step jobs end here (null = silent)
     const b = builtin(ref);
     let baseUrl: string, keyId: string | null = null, model: string;
     if (b && state.dl) throw new Error(UPGRADE_MSG);
@@ -266,6 +267,8 @@ export const engine = {
   stop: () => invoke<void>("ai_stop"),
   /** A reply is being written (background jobs like search indexing wait). */
   busy: () => active > 0,
+  /** Set by the chat's Stop button, cleared when that reply ends. */
+  halted: false,
 };
 
 /* Desktop notification when Nerida finishes while Oceanic is minimised or not focused. Multi-step jobs

@@ -6,7 +6,11 @@ import { editWarning } from "./neridaGuard";
  * note shows them highlighted until the user accepts or rejects them. */
 
 /** Typical "change my note" requests. */
+/** "Delete this note": the whole note goes to Trash, not an edit inside it. */
+export const DELETE_NOTE = /^\s*(please\s+)?(delete|remove|trash|bin)\s+(this|that|the|my)?\s*(current|open|opened)?\s*(note|page)\s*(please)?\s*[.!]*\s*$/i;
+
 export const isEditRequest = (t: string) =>
+  !DELETE_NOTE.test(t) &&
   /\b(edit|rewrite|reword|rephrase|fix|improve|add|insert|append|expand|shorten|update|change|correct|simplify|simplfy|condense|tidy|clean|polish|dumb|fill|delete|remove)\b[^.?!]*\b(note|notes|paragraph|section|heading|table|rows?|columns?|cells?|text|content|page|lines?|everything|this|it|them)\b/i.test(t) ||
   /\bmake\b[^.?!]*\b(this|it|the note|my note|them|everything)\b[^.?!]*\b(simpler|easier|shorter|longer|clearer|better|neater|less|more)\b/i.test(t) ||
   /\b(mark|check|tick|cross)\b[^.?!]*\b(done|completed?|finished|off)\b/i.test(t);
