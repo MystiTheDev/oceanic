@@ -81,6 +81,8 @@ export async function undo(logId: string) {
 
 /* ------------------------------------------------------------------ stop */
 let stopped = false;
+/** This run was started without Agent mode (see `needsTool`): every change asks, even with Auto-apply on. */
+let askAll = false;
 export function stopAgent() {
   stopped = true;
   for (const c of cards) c.resolve(false);
@@ -181,7 +183,7 @@ const fresh = (blocks: PartialBlock[]): PartialBlock[] => JSON.parse(JSON.string
 
 /** Applies an action: through an Accept card, or straight away (creating things with auto-apply on). */
 async function approve(card: Omit<AgentCard, "id">, create: boolean): Promise<boolean> {
-  if (create && nerida.get().autoApply) return true;
+  if (create && nerida.get().autoApply && !askAll) return true;
   return ask(card);
 }
 const rejected = (what: string): Out => stopped ? { result: "Stopped by the user.", log: { kind: "error", text: `Stopped before: ${what}`, state: "rejected" } } : ({ result: `The user rejected this (${what}). Nothing was changed. Don't retry unless they ask.`, log: { kind: "error", text: `Rejected: ${what}`, state: "rejected" } });
@@ -422,6 +424,12 @@ const HINTS: [RegExp, string[]][] = [
   [/\b(link|connect)\b/i, ["link_notes"]],
   [/\b(calendar|event|remind|due|schedule|meeting|on (mon|tue|wed|thu|fri|sat|sun))/i, ["add_calendar_event"]],
 ];
+/** Tools a message may use when Agent mode is off and the user said "just this once": no delete, no study or map tools. */
+export const AUTO_TOOLS = ["search_notes", "read_note", "create_note", "edit_note", "rename_note", "move_note", "tag_note", "create_folder"];
+const ACTION = /\b(make|create|write|add|new|start|edit|change|update|append|insert|rename|retitle|move|put|tag|untag|organi[sz]e|group)\b[^.?!]*\b(notes?|page|folder|tags?)\b|\bnotes? (about|on|called|titled|named)\b|^\s*(please\s+)?(move|put)\b.+\b(under|into|inside)\b|^\s*(please\s+)?(tag|rename)\b.+\b(as|to)\b/i;
+/** A message that asks Nerida to change notes (not a question about how to). Agent mode is off, so the app asks first. */
+export const needsTool = (q: string) => ACTION.test(q) && !/^\s*(how|why|what|when|where|who|which|is|are|does|do)\b/i.test(q);
+
 /** search_notes + read_note always, plus tools the request hints at; all tools if nothing matches. */
 export function pickTools(q: string): ToolDef[] {
   const want = new Set(HINTS.filter(([r]) => r.test(q)).flatMap(([, t]) => t));
@@ -498,13 +506,17 @@ export type AgentRun = {
   onThink?: (t: string) => void;
   /** Tool name the first step must call ("/" Tools menu). */
   force?: string;
+  /** Only these tools (Agent mode off, "just this once"); every change asks. */
+  allow?: string[];
 };
 
 const label = (name: string) => ({ search_notes: "Searching notes", read_note: "Reading a note", make_flashcards: "Writing flashcards" } as Record<string, string>)[name] ?? `Using ${name.replace(/_/g, " ")}`;
 
 /** Runs the tool loop; resolves the final answer text. */
-export async function runAgent({ model, messages, onText, onLog, onStep, onThink, force }: AgentRun): Promise<string> {
+export async function runAgent({ model, messages, onText, onLog, onStep, onThink, force, allow }: AgentRun): Promise<string> {
   stopped = false;
+  askAll = !!allow;
+  const ALL = allow ? TOOLS.filter((t) => allow.includes(t.name)) : TOOLS;
   const msgs = [...messages];
   const small = isBuiltIn(model);
   // Built-in engine: JSON held to a grammar from the start (no broken calls); others: native tools, JSON if refused.
@@ -512,7 +524,7 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
   let retries = 0;
   let answer = "";
   const req = [...msgs].reverse().find((m) => m.role === "user");
-  const tools = small ? pickTools(String(req?.content ?? "")) : TOOLS;
+  const tools = small ? pickTools(String(req?.content ?? "")).filter((t) => ALL.includes(t)) : ALL;
   // Examples go right after the fixed agent prompt, before the open note's details, so the engine's prompt cache covers them.
   if (small && msgs[0]?.role === "system") {
     const c = String(msgs[0].content);
@@ -590,7 +602,7 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
         continue;
       }
       // Small models often refuse ("I can't access your notes") on the first turn: nudge once.
-      if (step === 0 && (forced || (small && tools !== TOOLS))) {
+      if (step === 0 && (forced || (small && tools.length < ALL.length))) {
         onText("");
         msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${stepTools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
         continue;

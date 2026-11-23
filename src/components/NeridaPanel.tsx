@@ -13,7 +13,12 @@ import { openReview } from "../lib/srs";
 import { StudyPlanWizard } from "./StudyPlanWizard";
 import { NeridaAskBox } from "./NeridaAskBox";
 import { planAsk, choicesLine, type AskPlan } from "../lib/neridaAsk";
-import { agentHost } from "../lib/neridaAgent";
+import { agentHost, AUTO_TOOLS, needsTool } from "../lib/neridaAgent";
+
+/** "Don't ask again" for running note tools with Agent mode off. */
+const AUTO_AGENT = "oc-auto-agent";
+const autoAgent = () => { try { return localStorage.getItem(AUTO_AGENT) === "once"; } catch { return false; } };
+const AGENT_CHOICES = ["Just this once", "Just this once, don't ask again", "Turn on Agent mode", "Answer without tools"];
 import { GARBLED_NOTE, NERIDA_ASK, pageRange, pdfContext, readScanned, summarizePdf, type AskDetail } from "../lib/neridaPdf";
 import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
@@ -330,7 +335,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const slashHits = slashQuery === undefined ? [] : CMDS.filter((c) => c.k.startsWith(slashQuery.toLowerCase()));
   /** Runs `c` (now, or once a note is attached). `withNote` = a note just picked for it. */
   const [planning, setPlanning] = useState(false);
-  const [asking, setAsking] = useState<{ plan: AskPlan; text: string; history: Msg[]; force?: string } | null>(null);
+  /** A note action was asked with Agent mode off: how to run it. */
+  const [agentAsk, setAgentAsk] = useState<{ text: string; history: Msg[] } | null>(null);
+  const [asking, setAsking] = useState<{ plan: AskPlan; text: string; history: Msg[]; force?: string; once?: boolean } | null>(null);
   /** The wizard's result as a chat reply (a new chat if none is open). */
   const planDone = (msg: string) => {
     setPlanning(false);
@@ -469,10 +476,16 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   sendRef.current = (t) => void send(t);
   /** Questions about the open note itself ("this note", "the image", "here"). */
   const ABOUT_OPEN_NOTE = /\b(this|the|that)\s+(note|page)\b|\b(this|the|that|these)\s+(image|picture|photo|pic|screenshot|diagram|chart)s?\b|\b(above|below)\b/i;
-  const send = async (text: string, history: Msg[] = chat?.messages ?? [], force?: string, choices?: string) => {
-    if (choices === undefined && (nerida.get().agent || force) && !pdf) {
+  const send = async (text: string, history: Msg[] = chat?.messages ?? [], force?: string, choices?: string, once?: boolean | "no") => {
+    // Agent mode off but the message asks to change notes: ask how to run it (edits to the open note have their own path).
+    if (once === undefined && choices === undefined && !nerida.get().agent && !force && !pdf && needsTool(text) && !(pageId && !home && isEditRequest(text))) {
+      if (autoAgent()) once = true;
+      else return (setInput(""), setAgentAsk({ text, history }));
+    }
+    if (once === "no") once = undefined;
+    if (choices === undefined && (nerida.get().agent || force || once) && !pdf) {
       const plan = planAsk(text, agentHost()?.pages() ?? [], pageId && !home ? pageId : null);
-      if (plan) return (setInput(""), setAsking({ plan, text, history, force }));
+      if (plan) return (setInput(""), setAsking({ plan, text, history, force, once: !!once }));
     }
     if (!text.trim() || busy) return;
     if (!(await confirmCloud(model))) return;
@@ -505,7 +518,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     // "Edit my note": changes go into the note as highlighted suggestions, not into the chat.
     // Fast path: even in Agent mode, edits to the open note use this one-call path (the agent loop takes several model calls).
     const blocks = !pdf && pageId && !home && isEditRequest(text) ? targetBlocks(noteBlocks(), text) : [];
-    const agentOn = (nerida.get().agent || !!force) && !pdf && !blocks.length;
+    const agentOn = (nerida.get().agent || !!force || !!once) && !pdf && !blocks.length;
     let log: AgentLog[] = [];
     setActions([]);
     try {
@@ -613,6 +626,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           model,
           messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...trimHistory(history).msgs, { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`, choices, force && `Call the ${force} tool first.`].filter(Boolean).join("\n\n") }],
           force,
+          allow: once && !nerida.get().agent ? AUTO_TOOLS : undefined,
           onText: (t) => ((reply = t), setDraft(t)),
           onLog: (l) => ((log = [...log, l]), setActions(log)),
           onStep: mark,
@@ -686,8 +700,28 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         )}
         <ContextPicker notes={active} sendCount={sendList.length} tokens={estTokens} cloud={isCloud(model) ? modelLabel(model) : null}
           onPin={togglePin} onRemove={removeNote} onAdd={addMention} />
+        {agentAsk && (
+          <NeridaAskBox key={"agent:" + agentAsk.text} title="Agent mode" onCancel={() => (setAgentAsk(null), setInput(agentAsk.text))}
+            questions={[{
+              id: "how", header: "Tools", other: false, skipTo: [AGENT_CHOICES[0]],
+              question: "This needs Agent mode to change your notes. How should I do it?",
+              options: [
+                { label: AGENT_CHOICES[0], description: "Use note tools for this message only. You approve every change.", recommended: true },
+                { label: AGENT_CHOICES[1], description: "Same, and don't show this again." },
+                { label: AGENT_CHOICES[2], description: "Keep Agent mode on for later messages too." },
+                { label: AGENT_CHOICES[3], description: "Just reply in chat; nothing in your notes changes." },
+              ],
+            }]}
+            onDone={(a) => {
+              const x = agentAsk, pick = a.how?.[0] ?? AGENT_CHOICES[0];
+              setAgentAsk(null);
+              if (pick === AGENT_CHOICES[1]) try { localStorage.setItem(AUTO_AGENT, "once"); } catch { /* ignore */ }
+              if (pick === AGENT_CHOICES[2]) nerida.setAgent(true);
+              void send(x.text, x.history, undefined, undefined, pick === AGENT_CHOICES[3] ? "no" : pick === AGENT_CHOICES[2] ? "no" : true);
+            }} />
+        )}
         {asking && <NeridaAskBox key={asking.text} title={asking.plan.title} questions={asking.plan.questions} onCancel={() => (setAsking(null), setInput(asking.text))}
-          onDone={(a) => { const x = asking; setAsking(null); void send(x.text, x.history, x.force, choicesLine(x.plan, a)); }} />}
+          onDone={(a) => { const x = asking; setAsking(null); void send(x.text, x.history, x.force, choicesLine(x.plan, a), x.once || "no"); }} />}
         {planning && <StudyPlanWizard pages={agentHost()?.pages() ?? []} onClose={() => setPlanning(false)} onMade={planDone} />}
         {(mentionHits.length > 0 || slashHits.length > 0) && (
           <div className="oc-menu-pop absolute bottom-full left-0 z-20 mb-2 w-72 max-h-80 overflow-y-auto rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1 shadow-2xl shadow-black/50 backdrop-blur">
