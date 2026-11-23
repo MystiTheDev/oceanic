@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Upload, CalendarDays, Clock, Network, Plus, Sparkles, PenTool, Star, ListTodo, ArrowUp, ChevronDown, Check } from "lucide-react";
+import { Upload, CalendarDays, Clock, Network, Plus, Sparkles, PenTool, Star, ListTodo, ArrowUp, ChevronDown, Check, Layers } from "lucide-react";
+import { dueCards, openReview, useSrs } from "../lib/srs";
 import { isAndroid } from "../mobile/formFactor";
 import { nerida, useNerida, modelLabel, setDefaultModel } from "../lib/nerida";
 import { NERIDA_ASK } from "../lib/neridaPdf";
@@ -57,6 +58,7 @@ export function HomeView(props: HomeViewProps) {
   const dueToday = pending.filter((p) => p.dueDate === today);
   const glass = !isAndroid;
   const favs = pages.filter((p) => p.pinned).slice(0, 8);
+  const dueN = dueCards(useSrs().cards).length;
   const tasks = [...pending].sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")).slice(0, 6);
   return (
     <div className={`oc-page-in scrollbar-thin relative h-full overflow-y-auto ${glass ? "oc-home-glass" : ""}`}>
@@ -85,6 +87,12 @@ export function HomeView(props: HomeViewProps) {
           <div className={`${glass ? "oc-home-pane min-[900px]:order-2 min-[900px]:col-span-2" : "oc-home-hero mx-auto max-w-[760px] border border-white/[0.06]"} relative w-full overflow-hidden rounded-2xl px-5 py-4`}>
             <div className="flex items-center gap-3">
               <h2 className="min-w-0 flex-1 text-[16px] font-semibold text-neutral-100">What would you like to do today?</h2>
+              {dueN > 0 && (
+                <button type="button" onClick={() => openReview()} title="Review flashcards due today"
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-[#a78bfa]/15 px-2.5 py-1 text-[12px] font-medium text-[#c4b5fd] hover:bg-[#a78bfa]/25">
+                  <Layers className="size-3.5" /> {dueN} card{dueN === 1 ? "" : "s"} due
+                </button>
+              )}
               <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
             </div>
             <div className={`mt-3 gap-2 ${glass ? "grid grid-cols-3" : "flex flex-wrap"}`}>

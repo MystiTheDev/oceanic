@@ -28,7 +28,7 @@ import { TitleBar, type TabInfo } from "./components/TitleBar";
 import { PageHeader } from "./components/PageHeader";
 import { NeridaDownloadPill, NeridaPanel, NeridaRestartDialog } from "./components/NeridaPanel";
 import { HomeSwitch, NeridaSidebar } from "./components/NeridaHome";
-import { NeridaCardsHost } from "./components/NeridaCards";import { NeridaEditUI } from "./components/NeridaEditUI";
+import { NeridaCardsHost } from "./components/NeridaCards";import { ReviewHost } from "./components/ReviewModal";import { NeridaEditUI } from "./components/NeridaEditUI";
 import { NeridaOutlineUI } from "./components/NeridaOutlineUI";
 import { NERIDA_TASK, type TaskRequest } from "./lib/neridaTask";
 import { NERIDA_NOTE, type NoteRequest } from "./lib/neridaPdf";
@@ -2044,6 +2044,7 @@ export default function App() {
         </div>
       )}
       <NeridaCardsHost />
+      <ReviewHost pages={pages} />
       <NeridaEditUI />
       <MalwareAlert />
       <NeridaOutlineUI />

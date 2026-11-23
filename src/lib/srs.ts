@@ -21,32 +21,71 @@ export type Card = {
   ease: number;
   reps: number;
   lapses: number;
+  /** FSRS memory: days until recall drops to 90%, and how hard the card is (1-10). Missing on cards from before FSRS. */
+  stability?: number;
+  difficulty?: number;
+  /** Last review (YYYY-MM-DD). */
+  last?: string;
 };
 export type Grade = 1 | 2 | 3 | 4; // Again, Hard, Good, Easy
 export const GRADES: { g: Grade; label: string }[] = [
   { g: 1, label: "Again" }, { g: 2, label: "Hard" }, { g: 3, label: "Good" }, { g: 4, label: "Easy" },
 ];
 
-/* ------------------------------------------------------------ scheduler (SM-2 lite) */
+/* ------------------------------------------------------------ scheduler (FSRS-5) */
+/* FSRS-5 with its default weights, aiming for 90% recall: the next review falls when the card's
+ * predicted recall drops to 90%, which is `stability` days after the last one. */
+const W = [0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575, 0.1192, 1.01925, 1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655, 0.6621];
+const DECAY = -0.5, FACTOR = 19 / 81;
+const clampD = (d: number) => Math.min(10, Math.max(1, d));
+const initD = (g: Grade) => clampD(W[4] - Math.exp(W[5] * (g - 1)) + 1);
+/** Chance of recalling a card `t` days after its last review. */
+export const recall = (t: number, s: number) => Math.pow(1 + (FACTOR * t) / s, DECAY);
+const daysBetween = (a: string, b: string) => Math.round((parseIsoDate(b).getTime() - parseIsoDate(a).getTime()) / 864e5);
+
 /** `examDate` caps the interval so the card is seen again before the exam. */
 export function review(c: Card, g: Grade, examDate?: string, today = new Date()): Card {
-  let { interval, ease, reps, lapses } = c;
-  if (g === 1) {
-    reps = 0; lapses++; interval = 0; ease = Math.max(1.3, ease - 0.2);
+  const now = isoDate(today);
+  let { reps, lapses } = c;
+  let s: number, d: number;
+  const fresh = c.stability == null && !c.reps && !c.lapses;
+  if (c.stability == null || c.difficulty == null) {
+    if (!c.reps && !c.lapses) {
+      // New card: first-grade starting values.
+      s = W[g - 1];
+      d = initD(g);
+    } else {
+      // Card scheduled before FSRS: treat its interval as its stability, difficulty from its ease.
+      s = Math.max(0.5, c.interval);
+      d = clampD(11 - c.ease * 3);
+    }
   } else {
-    reps++;
-    ease = Math.max(1.3, ease + (g === 2 ? -0.15 : g === 4 ? 0.15 : 0));
-    interval = reps === 1 ? (g === 4 ? 3 : 1) : reps === 2 ? (g === 2 ? 2 : g === 4 ? 6 : 3)
-      : Math.max(interval + 1, Math.round(interval * ease * (g === 2 ? 0.8 : g === 4 ? 1.3 : 1)));
+    s = c.stability;
+    d = c.difficulty;
   }
-  if (examDate) {
-    const left = Math.round((parseIsoDate(examDate).getTime() - parseIsoDate(isoDate(today)).getTime()) / 864e5);
+  if (!fresh) {
+    const t = c.last ? Math.max(0, daysBetween(c.last, now)) : c.interval;
+    const r = recall(t, s);
+    // Difficulty moves with the grade, then back a little toward its default.
+    const d1 = d - W[6] * (g - 3) * ((10 - d) / 9);
+    d = clampD(W[7] * initD(4) + (1 - W[7]) * d1);
+    if (t < 1) s = s * Math.exp(W[17] * (g - 3 + W[18])); // seen again the same day
+    else if (g === 1) s = Math.min(s, W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp(W[14] * (1 - r)));
+    else s = s * (1 + Math.exp(W[8]) * (11 - d) * Math.pow(s, -W[9]) * (Math.exp(W[10] * (1 - r)) - 1) * (g === 2 ? W[15] : 1) * (g === 4 ? W[16] : 1));
+  }
+  s = Math.max(0.1, s);
+  if (g === 1) lapses += c.reps || c.lapses ? 1 : 0;
+  reps = g === 1 ? 0 : reps + 1;
+  // Again: back today (the review queue shows it again); otherwise when recall falls to 90% (= stability days).
+  let interval = g === 1 ? 0 : Math.max(1, Math.min(36500, Math.round(s)));
+  if (examDate && interval) {
+    const left = daysBetween(now, examDate);
     // Before the exam: at most halfway there, so there's a second look. Exam day or after: no cap.
     if (left > 0) interval = Math.min(interval, Math.max(1, Math.floor(left / 2)));
   }
-  const d = new Date(today);
-  d.setDate(d.getDate() + interval);
-  return { ...c, interval, ease, reps, lapses, due: isoDate(d) };
+  const due = new Date(today);
+  due.setDate(due.getDate() + interval);
+  return { ...c, interval, reps, lapses, stability: s, difficulty: d, last: now, ease: c.ease, due: isoDate(due) };
 }
 /** "10m", "3d", "2mo" — shown under the grade buttons. */
 export const previewLabel = (c: Card, g: Grade, examDate?: string) => {
@@ -151,6 +190,10 @@ export function syncPage(pageId: string, blocks: Block[]) {
   const before = Object.values(state.cards).filter((c) => c.pageId === pageId).length;
   if (changed || before !== found.length) set("cards", next);
 }
+
+/** Opens the flashcard review (all due cards, or one note's). App shows it. */
+export const OPEN_REVIEW = "oc-open-review";
+export const openReview = (pageId?: string) => window.dispatchEvent(new CustomEvent(OPEN_REVIEW, { detail: pageId ?? null }));
 
 export const isMarked = (blockId: string) => state.marked.includes(blockId);
 export function toggleMarked(blockId: string) {

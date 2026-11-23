@@ -9,6 +9,7 @@ import { createMindmap } from "../mindmap/MindmapGallery";
 import { MAP_FLAG } from "../mindmap/NeridaMap";
 import { OPEN_MINDMAP } from "../editor/mindmapBlock";
 import { NeridaTaskCard } from "./NeridaTaskCard";
+import { openReview } from "../lib/srs";
 import { GARBLED_NOTE, NERIDA_ASK, pageRange, pdfContext, readScanned, summarizePdf, type AskDetail } from "../lib/neridaPdf";
 import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
@@ -223,6 +224,7 @@ const CMDS: Cmd[] = [
   { k: "flashcards", label: "Make flashcards", note: true, prompt: "" },
   { k: "summarize", label: "Summarize a note", note: true, prompt: "Summarize my notes: a one-line overview, then the key points as a short list." },
   { k: "explain", label: "Explain simply", note: true, prompt: "Explain the key ideas in my notes simply, like I'm new to the topic." },
+  { k: "review", label: "Review due flashcards", note: false, prompt: "" },
   { k: "plan", label: "Plan my study week", note: false, prompt: "Help me plan my study week." },
   { k: "mindmap", label: "Make a mindmap", note: false, prompt: "" },
   // Tools group: forces that agent tool on the next send.
@@ -334,6 +336,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     if (c.note && !note) return setCmd(c); // chip waits for @note
     setCmd(null);
     if (c.k === "mindmap") return openNewMindmap();
+    if (c.k === "review") return openReview(withNote);
     if (c.k === "flashcards") return openNeridaCards({ pageId: note! });
     void send(c.prompt);
   };
