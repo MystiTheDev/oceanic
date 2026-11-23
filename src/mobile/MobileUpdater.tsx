@@ -6,9 +6,8 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { buzz } from "./mobilePrefs";
 
 const API = "https://api.github.com/repos/MystiTheDev/oceanic/releases?per_page=30";
-const LAST_CHECK = "oc-update-last-check";
 const SKIPPED = "oc-update-skipped";
-const DAY = 24 * 60 * 60 * 1000;
+const RETRY = [10_000, 30_000, 60_000, 120_000]; // failed startup check: try again after these delays
 
 type Release = { version: string; notes: string; apk: string };
 type CheckResult = "found" | "none" | "error";
@@ -64,7 +63,6 @@ export function MobileUpdater() {
 
   useEffect(() => {
     const check = async (manual: boolean): Promise<CheckResult> => {
-      store.set(LAST_CHECK, String(Date.now()));
       try {
         const [r, current] = await Promise.all([latest(), getVersion()]);
         if (!r || !newer(r.version, current)) return "none";
@@ -77,8 +75,12 @@ export function MobileUpdater() {
       }
     };
     manualCheck = () => check(true);
-    if (Date.now() - Number(store.get(LAST_CHECK) ?? 0) > DAY) void check(false);
-    return () => { manualCheck = null; };
+    let timer = 0;
+    const auto = async (n: number) => {
+      if ((await check(false)) === "error" && n < RETRY.length) timer = window.setTimeout(() => void auto(n + 1), RETRY[n]);
+    };
+    void auto(0);
+    return () => { manualCheck = null; window.clearTimeout(timer); };
   }, []);
 
   if (!release) return null;
