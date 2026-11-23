@@ -613,7 +613,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         mark(`Reading ${files.length} file${files.length > 1 ? "s" : ""}`);
         context = [context, attachmentsContext(files, book, text)].filter(Boolean).join("\n\n");
       }
-      if (online && b === "plus") {
+      if ((online && b === "plus") || /\b(search (the )?(web|internet|online)|look (it |this |that )?up|google|latest|news)\b/i.test(text)) {
         mark("Searching the web");
         try {
           const hits = await searchWeb(text);
