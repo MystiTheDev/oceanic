@@ -180,11 +180,16 @@ export async function searchChunks(q: string, limit = 20): Promise<Hit[]> {
 
 /** Notes ranked for a question: best chunk + a little for each further matching chunk.
  *  Weak matches (under 35% of the top score, or matching only one rare-ish word in a long query) are dropped. */
-export async function searchNotes(q: string, limit = 3, skip: Set<string> = new Set()): Promise<{ id: string; title: string; score: number }[]> {
+export async function searchNotes(q: string, limit = 3, skip: Set<string> = new Set(), strict = false): Promise<{ id: string; title: string; score: number }[]> {
   await refresh();
+  // strict (auto-attach while typing): keyword hit on most query words required; meaning-only matches dropped.
+  const qn = new Set(terms(q)).size;
+  const kw = strict ? new Map<string, number>() : null;
+  if (kw) for (const h of score(q)) kw.set(h.pageId, Math.max(kw.get(h.pageId) ?? 0, h.score));
   const by = new Map<string, { id: string; title: string; score: number }>();
   for (const h of await hybrid(q)) {
     if (skip.has(h.pageId)) continue;
+    if (kw && (kw.get(h.pageId) ?? 0) < Math.max(2, qn)) continue;
     const x = by.get(h.pageId);
     if (x) x.score += h.score * 0.25;
     else by.set(h.pageId, { id: h.pageId, title: h.title, score: h.score });
