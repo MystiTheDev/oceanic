@@ -63,6 +63,17 @@ const VISION: Asset = Asset {
     size: 668_227_264,
 };
 
+// Semantic search: bge-small-en-v1.5 (33M params, 384-dim). Runs on the CPU in its own small engine
+// process, so it never takes GPU memory from the chat model. Downloaded with the model.
+const EMBED: Asset = Asset {
+    id: "embed",
+    file: "nerida-embed-bge-small.gguf",
+    legacy: "",
+    url: "https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/resolve/main/bge-small-en-v1.5-q8_0.gguf",
+    sha256: "ec38e8da142596baa913124ae50550de284b6916bf59577ef2f0cb9660c2f514",
+    size: 36_806_944,
+};
+
 // Chosen by benchmark on real notes (Nov 2026): Qwen3.5 replaced Qwen2.5, which
 // copied notes back or stopped after the first section.
 // Nerida Lite (Qwen3.5-0.8B) was retired; only Nerida AI remains.
@@ -96,6 +107,8 @@ fn engine_key(base_url: &str) -> Option<String> {
 pub struct Ai {
     /// (model id, port, process)
     server: Mutex<Option<(String, u16, Child)>>,
+    /// Embedding engine (semantic search): (port, key, process).
+    embed: Mutex<Option<(u16, String, Child)>>,
     stop_chat: AtomicBool,
     stop_download: AtomicBool,
 }
@@ -212,6 +225,7 @@ fn asset(id: &str) -> Result<&'static Asset, String> {
         "cuda" => return Ok(&CUDA),
         "cudart" => return Ok(&CUDART),
         "vision" => return Ok(&VISION),
+        "embed" => return Ok(&EMBED),
         _ => {}
     }
     MODELS.iter().find(|m| m.id == id).ok_or_else(|| format!("Unknown item {id}"))
@@ -236,6 +250,8 @@ pub struct AiStatus {
     cuda: bool,
     /// Vision add-on downloaded (scanned PDFs).
     vision: bool,
+    /// Embedding model downloaded (semantic search).
+    embed: bool,
     /// Nerida Lite files were found and deleted during this call.
     lite_removed: bool,
 }
@@ -255,6 +271,7 @@ pub fn ai_status(app: AppHandle, state: State<Ai>) -> Result<AiStatus, String> {
         nvidia: has_nvidia(),
         cuda: cuda_exe(&app).is_some(),
         vision: d.join(VISION.file).exists(),
+        embed: d.join(EMBED.file).exists(),
         models: MODELS
             .iter()
             .map(|m| ModelInfo { id: m.id, size: m.size, installed: model_file(&d, m).is_some(), outdated: !d.join(m.file).exists() && d.join(m.legacy).exists() })
@@ -296,7 +313,10 @@ pub async fn ai_download(app: AppHandle, state: State<'_, Ai>, item: String, on_
     drop(file);
     // Built-in chat is locked during downloads, so stopping the engine never cuts a reply.
     // Its files are free to replace; the app restart (or next message) starts the new version.
-    shutdown(&state);
+    // The embedding model downloads quietly in the background: the chat engine keeps running.
+    if item != "embed" {
+        shutdown(&state);
+    }
     if format!("{:x}", hash.finalize()) != a.sha256 {
         let _ = std::fs::remove_file(&part);
         return Err("Download was corrupted (checksum mismatch). Please try again.".into());
@@ -314,7 +334,7 @@ pub async fn ai_download(app: AppHandle, state: State<'_, Ai>, item: String, on_
         let _ = std::fs::remove_file(&part);
     } else {
         std::fs::rename(&part, d.join(a.file)).map_err(|e| e.to_string())?;
-        if item == "vision" {
+        if item == "vision" || item == "embed" {
             return Ok(());
         }
         // Updated: drop the previous version (the engine was stopped above).
@@ -625,11 +645,90 @@ fn reaper(app: &AppHandle) {
     });
 }
 
-/// Kills the engine process (on app exit, model removal or idle).
+/// Kills the engine processes (on app exit, model removal or idle).
 pub fn shutdown(state: &Ai) {
     if let Some((_, _, mut child)) = state.server.lock().unwrap().take() {
         let _ = child.kill();
     }
+    if let Some((_, _, mut child)) = state.embed.lock().unwrap().take() {
+        let _ = child.kill();
+    }
+}
+
+/// Embeds `texts` (at most 64 per call) with the CPU embedding engine, starting it if needed.
+/// Returns one normalized 384-number vector per text.
+#[tauri::command]
+pub async fn ai_embed(app: AppHandle, state: State<'_, Ai>, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+    if texts.is_empty() {
+        return Ok(vec![]);
+    }
+    touch();
+    reaper(&app);
+    let (port, key, fresh) = {
+        let mut guard = state.embed.lock().unwrap();
+        if let Some((port, key, child)) = guard.as_mut() {
+            if child.try_wait().ok().flatten().is_none() {
+                (*port, key.clone(), false)
+            } else {
+                *guard = None;
+                return Err("Nerida's search engine stopped. Try again.".into());
+            }
+        } else {
+            let exe = server_exe(&app).ok_or("Nerida's engine isn't installed yet.")?;
+            let gguf = dir(&app)?.join(EMBED.file);
+            if !gguf.exists() {
+                return Err("The search model isn't downloaded yet.".into());
+            }
+            let port = std::net::TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).map_err(|e| e.to_string())?.port();
+            let key = uuid::Uuid::new_v4().simple().to_string();
+            let mut cmd = engine_cmd(&exe);
+            cmd.env("LLAMA_API_KEY", &key);
+            // CPU only, small batches: a 33M model is fast on any CPU and leaves the GPU to the chat model.
+            cmd.arg("-m").arg(&gguf).args(["--host", "127.0.0.1", "--port", &port.to_string(), "--embedding", "--pooling", "cls", "-ngl", "0", "-c", "4096", "-b", "4096", "-ub", "512", "-np", "4", "-t", "2"]);
+            let child = cmd.spawn().map_err(|e| format!("Couldn't start Nerida's search engine: {e}"))?;
+            *guard = Some((port, key.clone(), child));
+            (port, key, true)
+        }
+    };
+    let url = format!("http://127.0.0.1:{port}");
+    let client = reqwest::Client::new();
+    if fresh {
+        let mut up = false;
+        for _ in 0..120 {
+            if client.get(format!("{url}/health")).send().await.is_ok_and(|r| r.status().is_success()) {
+                up = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        if !up {
+            return Err("Nerida's search engine took too long to start.".into());
+        }
+    }
+    // bge reads at most 512 tokens; ~1500 characters keeps each text inside that.
+    let input: Vec<String> = texts.iter().take(64).map(|t| t.chars().take(1500).collect()).collect();
+    let res = client
+        .post(format!("{url}/v1/embeddings"))
+        .bearer_auth(&key)
+        .json(&serde_json::json!({ "input": input, "model": "embed" }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("{}: {}", res.status(), res.text().await.unwrap_or_default()));
+    }
+    let v: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let mut out = vec![Vec::new(); input.len()];
+    for d in v["data"].as_array().ok_or("Bad embedding reply")? {
+        let i = d["index"].as_u64().unwrap_or(0) as usize;
+        let mut e: Vec<f32> = d["embedding"].as_array().map(|a| a.iter().map(|x| x.as_f64().unwrap_or(0.0) as f32).collect()).unwrap_or_default();
+        let n = e.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
+        e.iter_mut().for_each(|x| *x /= n);
+        if i < out.len() {
+            out[i] = e;
+        }
+    }
+    Ok(out)
 }
 
 /// The only sites Nerida's web tools read.

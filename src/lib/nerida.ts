@@ -56,7 +56,7 @@ export type ToolCall = { id: string; type: "function"; function: { name: string;
 export type AgentLog = { id: string; kind: "read" | "create" | "edit" | "delete" | "study" | "error"; text: string; pageId?: string; state?: "applied" | "rejected" | "undone"; /** make_test: notes to open the test setup with. */ test?: string[] };
 export type Msg = { role: "user" | "assistant"; content: string; /** Small previews of pictures sent with a user message. */ images?: string[];/** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[]; /** Agent mode: what Nerida did. */ actions?: AgentLog[] };
 export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number; /** Notes pinned to this chat's context. */ pinned?: string[] };
-export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean };
+export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean; /** Search model (semantic search). */ embed: boolean };
 
 /* ------------------------------------------------------------------ store */
 export type Effort = "low" | "medium" | "high";
@@ -201,7 +201,7 @@ async function warmup() {
 /* ----------------------------------------------------------------- engine */
 export const engine = {
   status: () => invoke<AiStatus>("ai_status"),
-  download(item: "server" | "cuda" | "cudart" | "vision" | ModelId, onProgress: (got: number, total: number) => void) {
+  download(item: "server" | "cuda" | "cudart" | "vision" | "embed" | ModelId, onProgress: (got: number, total: number) => void) {
     const ch = new Channel<[number, number]>();
     ch.onmessage = ([g, t]) => onProgress(g, t);
     return invoke<void>("ai_download", { item, onProgress: ch });
@@ -264,6 +264,8 @@ export const engine = {
     return calls;
   },
   stop: () => invoke<void>("ai_stop"),
+  /** A reply is being written (background jobs like search indexing wait). */
+  busy: () => active > 0,
 };
 
 /* Desktop notification when Nerida finishes while Oceanic is minimised or not focused. Multi-step jobs
@@ -309,6 +311,8 @@ export function downloadModel(model: ModelId, needServer: boolean, engineOnly = 
   return upgrade(needServer ? "Nerida engine" : engineOnly ? "Nerida vision" : MODEL_NAMES[model], async () => {
     if (needServer) { step("Nerida engine")(0, 1); await engine.download("server", step("Nerida engine")); }
     if (!engineOnly) { step(MODEL_NAMES[model])(0, 1); await engine.download(model, step(MODEL_NAMES[model])); }
+    // Search model (semantic search), ~37 MB: ships with the chat model.
+    if (!(await engine.status()).embed) { step("Nerida search")(0, 1); await engine.download("embed", step("Nerida search")); }
     // Vision add-on: lets Nerida read scanned PDF pages.
     if (!state.noVision && !(await engine.status()).vision) { step("Nerida vision")(0, 1); await engine.download("vision", step("Nerida vision")); }
   });
