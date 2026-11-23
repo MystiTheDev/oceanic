@@ -185,6 +185,18 @@ const PAGES: Page[] = [
             ),
           },
           {
+            title: "Launch at login",
+            description: "Start Oceanic when you sign in to your computer, so study plan reminders arrive on time.",
+            keywords: "startup autostart boot windows",
+            control: () => <LaunchSwitch cmd="autostart" />,
+          },
+          {
+            title: "Start minimized",
+            description: "When launched at login, stay in the system tray instead of opening the window.",
+            keywords: "startup tray hidden background",
+            control: () => <LaunchSwitch cmd="start_minimized" />,
+          },
+          {
             title: "Close to system tray",
             description: "Clicking × hides Oceanic to the tray so it keeps running. Quit from the tray menu.",
             keywords: "background",
@@ -318,6 +330,15 @@ const PAGES: Page[] = [
   },
 ];
 const pageOf = (id: PageId) => PAGES.find((p) => p.id === id)!;
+
+/** Launch-at-login toggles (desktop only): read and set through the app's commands. */
+function LaunchSwitch({ cmd }: { cmd: "autostart" | "start_minimized" }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (isTauri()) void invoke<boolean>(`${cmd}_get`).then(setOn).catch(() => {});
+  }, [cmd]);
+  return <Switch on={on} onChange={(v) => (setOn(v), void invoke(`${cmd}_set`, { on: v }).catch(() => setOn(!v)))} />;
+}
 
 /** Notion-style settings: profile + search + grouped pages on the left, rows on the right. */
 export function SettingsModal({ settings, onChange, onClose, initialPage = "account" }: { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void; onClose: () => void; initialPage?: string }) {

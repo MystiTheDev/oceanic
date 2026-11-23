@@ -10,6 +10,10 @@ import { MAP_FLAG } from "../mindmap/NeridaMap";
 import { OPEN_MINDMAP } from "../editor/mindmapBlock";
 import { NeridaTaskCard } from "./NeridaTaskCard";
 import { openReview } from "../lib/srs";
+import { StudyPlanWizard } from "./StudyPlanWizard";
+import { NeridaAskBox } from "./NeridaAskBox";
+import { planAsk, choicesLine, type AskPlan } from "../lib/neridaAsk";
+import { agentHost } from "../lib/neridaAgent";
 import { GARBLED_NOTE, NERIDA_ASK, pageRange, pdfContext, readScanned, summarizePdf, type AskDetail } from "../lib/neridaPdf";
 import { pdfNames } from "../pdf/PdfRef";
 import { detectTask, type TaskDraft } from "../lib/neridaTask";
@@ -225,7 +229,7 @@ const CMDS: Cmd[] = [
   { k: "summarize", label: "Summarize a note", note: true, prompt: "Summarize my notes: a one-line overview, then the key points as a short list." },
   { k: "explain", label: "Explain simply", note: true, prompt: "Explain the key ideas in my notes simply, like I'm new to the topic." },
   { k: "review", label: "Review due flashcards", note: false, prompt: "" },
-  { k: "plan", label: "Plan my study week", note: false, prompt: "Help me plan my study week." },
+  { k: "plan", label: "Make a study plan", note: false, prompt: "" },
   { k: "mindmap", label: "Make a mindmap", note: false, prompt: "" },
   // Tools group: forces that agent tool on the next send.
   ...TOOLS.map((t) => ({ k: t.name, label: t.name[0].toUpperCase() + t.name.slice(1).replace(/_/g, " "), note: false, prompt: "", tool: true })),
@@ -325,6 +329,15 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const slashQuery = cmd ? undefined : /^\/(\w*)$/.exec(input)?.[1];
   const slashHits = slashQuery === undefined ? [] : CMDS.filter((c) => c.k.startsWith(slashQuery.toLowerCase()));
   /** Runs `c` (now, or once a note is attached). `withNote` = a note just picked for it. */
+  const [planning, setPlanning] = useState(false);
+  const [asking, setAsking] = useState<{ plan: AskPlan; text: string; history: Msg[]; force?: string } | null>(null);
+  /** The wizard's result as a chat reply (a new chat if none is open). */
+  const planDone = (msg: string) => {
+    setPlanning(false);
+    const base: Chat = chat ?? { id: uid(), title: "Study plan", messages: [], updatedAt: Date.now() };
+    nerida.upsert({ ...base, messages: [...base.messages, { role: "user", content: "/plan" }, { role: "assistant", content: msg }], updatedAt: Date.now() });
+    nerida.set({ activeId: base.id });
+  };
   const runCmd = (c: Cmd, withNote?: string) => {
     const note = withNote ?? sendList[0]?.id;
     setInput("");
@@ -337,6 +350,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     setCmd(null);
     if (c.k === "mindmap") return openNewMindmap();
     if (c.k === "review") return openReview(withNote);
+    if (c.k === "plan") return setPlanning(true);
     if (c.k === "flashcards") return openNeridaCards({ pageId: note! });
     void send(c.prompt);
   };
@@ -455,7 +469,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   sendRef.current = (t) => void send(t);
   /** Questions about the open note itself ("this note", "the image", "here"). */
   const ABOUT_OPEN_NOTE = /\b(this|the|that)\s+(note|page)\b|\b(this|the|that|these)\s+(image|picture|photo|pic|screenshot|diagram|chart)s?\b|\b(above|below)\b/i;
-  const send = async (text: string, history: Msg[] = chat?.messages ?? [], force?: string) => {
+  const send = async (text: string, history: Msg[] = chat?.messages ?? [], force?: string, choices?: string) => {
+    if (choices === undefined && (nerida.get().agent || force) && !pdf) {
+      const plan = planAsk(text, agentHost()?.pages() ?? [], pageId && !home ? pageId : null);
+      if (plan) return (setInput(""), setAsking({ plan, text, history, force }));
+    }
     if (!text.trim() || busy) return;
     if (!(await confirmCloud(model))) return;
     setErr("");
@@ -593,7 +611,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         const open = pageId && !home ? ` The note open next to this chat has id ${pageId}.` : "";
         reply = await runAgent({
           model,
-          messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...trimHistory(history).msgs, { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`, force && `Call the ${force} tool first.`].filter(Boolean).join("\n\n") }],
+          messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...trimHistory(history).msgs, { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`, choices, force && `Call the ${force} tool first.`].filter(Boolean).join("\n\n") }],
           force,
           onText: (t) => ((reply = t), setDraft(t)),
           onLog: (l) => ((log = [...log, l]), setActions(log)),
@@ -668,6 +686,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         )}
         <ContextPicker notes={active} sendCount={sendList.length} tokens={estTokens} cloud={isCloud(model) ? modelLabel(model) : null}
           onPin={togglePin} onRemove={removeNote} onAdd={addMention} />
+        {asking && <NeridaAskBox key={asking.text} title={asking.plan.title} questions={asking.plan.questions} onCancel={() => (setAsking(null), setInput(asking.text))}
+          onDone={(a) => { const x = asking; setAsking(null); void send(x.text, x.history, x.force, choicesLine(x.plan, a)); }} />}
+        {planning && <StudyPlanWizard pages={agentHost()?.pages() ?? []} onClose={() => setPlanning(false)} onMade={planDone} />}
         {(mentionHits.length > 0 || slashHits.length > 0) && (
           <div className="oc-menu-pop absolute bottom-full left-0 z-20 mb-2 w-72 max-h-80 overflow-y-auto rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1 shadow-2xl shadow-black/50 backdrop-blur">
             {slashHits.map((c, i) => (<Fragment key={c.k}>

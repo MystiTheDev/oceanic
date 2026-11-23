@@ -707,6 +707,27 @@ fn autostart_set(app: AppHandle, on: bool) -> Result<(), String> {
     }
 }
 
+/// Marker file: present = a login launch opens the window instead of staying in the tray.
+fn start_shown_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("start-shown"))
+}
+
+#[tauri::command]
+fn start_minimized_get(app: AppHandle) -> bool {
+    !start_shown_file(&app).is_some_and(|f| f.exists())
+}
+
+#[tauri::command]
+fn start_minimized_set(app: AppHandle, on: bool) -> Result<(), String> {
+    let f = start_shown_file(&app).ok_or("No config folder")?;
+    if on {
+        let _ = std::fs::remove_file(&f);
+        Ok(())
+    } else {
+        std::fs::create_dir_all(f.parent().unwrap()).and_then(|_| std::fs::write(&f, b"1")).map_err(|e| e.to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -789,7 +810,8 @@ pub fn run() {
             sync::start_listener(app.handle());
             sync::start_watch(app.handle());
             #[cfg(desktop)]
-            if std::env::args().any(|a| a == "--tray") {
+            // Launched at login: stay in the tray unless "Start minimized" was turned off.
+            if std::env::args().any(|a| a == "--tray") && !start_shown_file(app.handle()).is_some_and(|f| f.exists()) {
                 TRAY_START.store(true, Ordering::Relaxed);
                 if let Some(splash) = app.get_webview_window("splash") {
                     let _ = splash.close();
@@ -862,6 +884,8 @@ pub fn run() {
             sync::sync_set_hold_mb,
             autostart_get,
             autostart_set,
+            start_minimized_get,
+            start_minimized_set,
             #[cfg(desktop)]
             ai::ai_status,
             #[cfg(desktop)]

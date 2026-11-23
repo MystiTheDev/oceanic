@@ -40,6 +40,8 @@ export type AgentHost = {
 };
 let host: AgentHost | null = null;
 export const setAgentHost = (h: AgentHost | null) => void (host = h);
+/** The app's note functions, or null before App has mounted. */
+export const agentHost = () => host;
 const H = () => {
   if (!host) throw new Error("Notes aren't ready yet.");
   return host;
