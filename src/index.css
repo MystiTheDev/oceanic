@@ -302,6 +302,11 @@ html.oc-pen * {
 .oc-main-composer .oc-send:not(:disabled):hover .oc-send-arrow { transform: translateY(-2px); }
 @keyframes oc-bob { 30% { transform: translateY(-2px) rotate(-8deg); } 60% { transform: translateY(1px) rotate(6deg); } }
 @media (prefers-reduced-motion: reduce) { .oc-main-composer button, .oc-main-composer button svg { transition: none; animation: none !important; } }
+/* Nerida's question box sits inside the composer: keep its buttons flat and square (no pill, lift or glow). */
+.oc-main-composer .oc-ask-box button { border-radius: 6px !important; transform: none !important; box-shadow: none !important; transition: background-color 0.12s; }
+.oc-main-composer .oc-ask-box button:not(:disabled):hover { background: rgb(255 255 255 / 0.06); }
+.oc-main-composer .oc-ask-box button.bg-[color:var(--oc-brand)]:not(:disabled):hover { background: var(--oc-brand); filter: brightness(1.12); }
+:root[data-theme="light"] .oc-main-composer .oc-ask-box button:not(:disabled):hover { background: rgb(0 0 0 / 0.05); }
 :root[data-theme="light"] .oc-main-composer .flex.items-center.gap-1 > button:not(.oc-send), :root[data-theme="light"] .oc-main-composer .oc-agent-btn { background: rgb(255 255 255 / 0.6); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), inset 0 0 0 1px rgb(0 0 0 / 0.07); }
 :root[data-theme="light"] .oc-main-composer button:not(:disabled):hover { background: rgb(255 255 255 / 0.85); }
 

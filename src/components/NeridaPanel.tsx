@@ -334,7 +334,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const slashQuery = cmd ? undefined : /^\/(\w*)$/.exec(input)?.[1];
   const slashHits = slashQuery === undefined ? [] : CMDS.filter((c) => c.k.startsWith(slashQuery.toLowerCase()));
   /** Runs `c` (now, or once a note is attached). `withNote` = a note just picked for it. */
-  const [planning, setPlanning] = useState(false);
+  /** Study-plan wizard open; a string = exams typed after "/plan". */
+  const [planning, setPlanning] = useState<string | boolean>(false);
   /** A note action was asked with Agent mode off: how to run it. */
   const [agentAsk, setAgentAsk] = useState<{ text: string; history: Msg[] } | null>(null);
   const [asking, setAsking] = useState<{ plan: AskPlan; text: string; history: Msg[]; force?: string; once?: boolean } | null>(null);
@@ -352,6 +353,12 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (cmd !== c) return setCmd(c); // chip waits for the request text
       setCmd(null);
       return void send(input, undefined, c.k);
+    }
+    if (c.k === "plan") {
+      // Chip waits for what the plan is about ("Maths Dec 5, Bio next Friday"); Enter starts the wizard.
+      if (cmd !== c) return setCmd(c);
+      setCmd(null);
+      return setPlanning(input.trim() || true);
     }
     if (c.note && !note) return setCmd(c); // chip waits for @note
     setCmd(null);
@@ -488,6 +495,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (plan) return (setInput(""), setAsking({ plan, text, history, force, once: !!once }));
     }
     if (!text.trim() || busy) return;
+    // "/plan Maths Dec 5, Bio Friday": the wizard, with those exams filled in.
+    const planArgs = /^\/plan\b\s*([\s\S]*)$/i.exec(text.trim());
+    if (planArgs) return (setInput(""), setPlanning(planArgs[1] || true));
     if (!(await confirmCloud(model))) return;
     setErr("");
     setInput("");
@@ -722,7 +732,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         )}
         {asking && <NeridaAskBox key={asking.text} title={asking.plan.title} questions={asking.plan.questions} onCancel={() => (setAsking(null), setInput(asking.text))}
           onDone={(a) => { const x = asking; setAsking(null); void send(x.text, x.history, x.force, choicesLine(x.plan, a), x.once || "no"); }} />}
-        {planning && <StudyPlanWizard pages={agentHost()?.pages() ?? []} onClose={() => setPlanning(false)} onMade={planDone} />}
+        {planning && <StudyPlanWizard typed={typeof planning === "string" ? planning : ""} pages={agentHost()?.pages() ?? []} onClose={() => setPlanning(false)} onMade={planDone} />}
         {(mentionHits.length > 0 || slashHits.length > 0) && (
           <div className="oc-menu-pop absolute bottom-full left-0 z-20 mb-2 w-72 max-h-80 overflow-y-auto rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1 shadow-2xl shadow-black/50 backdrop-blur">
             {slashHits.map((c, i) => (<Fragment key={c.k}>
@@ -779,7 +789,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               }
             }}
             rows={Math.min(6, input.split("\n").length)}
-            placeholder={!isTauri() ? "Open the Oceanic desktop app to chat" : !ready ? "Download Nerida to start" : cmd?.tool ? "Say what it should do…" : cmd ? "Type @ to pick a note" : "Ask Nerida anything…"}
+            placeholder={!isTauri() ? "Open the Oceanic desktop app to chat" : !ready ? "Download Nerida to start" : cmd?.tool ? "Say what it should do…" : cmd?.k === "plan" ? "What should the plan cover? e.g. Maths Dec 5, Biology next Friday" : cmd ? "Type @ to pick a note" : "Ask Nerida anything…"}
             className="max-h-40 min-h-[34px] w-full resize-none bg-transparent px-1.5 pt-1 text-[13.5px] text-neutral-100 outline-none placeholder:text-neutral-500"
           />
           </div>

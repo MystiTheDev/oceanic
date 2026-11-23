@@ -5,6 +5,9 @@ import { Check, ChevronLeft, X } from "lucide-react";
  * Tab chips jump between questions; 1-9 pick an option, Enter goes on, Esc cancels.
  * Reused by the study-plan wizard and Nerida's note actions. */
 
+/** Square-ish corners. Inline, so the chat composer's pill-button rule (index.css) doesn't round them. */
+const SQ = { borderRadius: 6 } as const;
+
 export type AskOption = { label: string; description?: string; recommended?: boolean; /** Shown beside the options while this one is picked. */ preview?: ReactNode };
 export type AskQuestion = {
   id: string;
@@ -90,7 +93,7 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
               {q.options.map((o, i) => {
                 const on = (picked[q.id] ?? []).includes(o.label);
                 return (
-                  <button key={o.label} type="button" onClick={() => toggle(o.label)}
+                  <button key={o.label} type="button" style={SQ} onClick={() => toggle(o.label)}
                     className={`flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 text-left ${on ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"}`}>
                     <span className={`mt-0.5 grid size-4 shrink-0 place-items-center border ${q.multi ? "rounded" : "rounded-full"} ${on ? "border-[color:var(--oc-brand)] bg-[color:var(--oc-brand)]" : "border-white/25"}`}>
                       {on && <Check className="size-3 text-white" />}
@@ -105,7 +108,7 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
                 );
               })}
               {q.other !== false && (
-                <label className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/[0.04]">
+                <label style={SQ} className="flex items-center gap-2.5 px-2 py-1.5 hover:bg-white/[0.04]">
                   <span className="text-[13px] text-neutral-400">Other:</span>
                   <input ref={otherRef} value={other[q.id] ?? ""} placeholder={q.otherPlaceholder ?? "Type your own answer"}
                     onChange={(e) => (setOther((o) => ({ ...o, [q.id]: e.target.value })), !q.multi && e.target.value && setPicked((p) => ({ ...p, [q.id]: [] })))}
@@ -121,13 +124,13 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
       {!busy && (
         <div className="flex items-center gap-2 border-t border-white/[0.06] px-3 py-2">
           {page > 0 && (
-            <button type="button" onClick={() => setPage(page - 1)} className="flex cursor-pointer items-center gap-0.5 rounded-lg px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/[0.05] hover:text-neutral-200">
+            <button type="button" style={SQ} onClick={() => setPage(page - 1)} className="flex cursor-pointer items-center gap-0.5 rounded-lg px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/[0.05] hover:text-neutral-200">
               <ChevronLeft className="size-3.5" /> Back
             </button>
           )}
           <span className="flex-1" />
-          <button type="button" onClick={() => (setSkipped((s) => new Set(s).add(q.id)), next())} className="cursor-pointer rounded-lg px-2 py-1 text-[12px] text-neutral-500 hover:text-neutral-300">Skip</button>
-          <button type="button" disabled={!ready(q.id)} onClick={next}
+          <button type="button" style={SQ} onClick={() => (setSkipped((s) => new Set(s).add(q.id)), next())} className="cursor-pointer rounded-lg px-2 py-1 text-[12px] text-neutral-500 hover:text-neutral-300">Skip</button>
+          <button type="button" style={SQ} disabled={!ready(q.id)} onClick={next}
             className="cursor-pointer rounded-lg bg-[color:var(--oc-brand)] px-3 py-1 text-[12px] font-medium text-white disabled:cursor-default disabled:opacity-40">
             {last ? "Done" : "Next"} <span className="opacity-60">⏎</span>
           </button>

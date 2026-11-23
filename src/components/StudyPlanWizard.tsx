@@ -57,13 +57,15 @@ function typedExams(text: string): Exam[] {
     .split(/[;,\n]+/)
     .map((part) => {
       const hit = findDate(part);
-      const title = (hit ? part.replace(hit.match, "") : part).replace(/\b(on|by|due|is|exam|test)\b\s*$/i, "").replace(/\s+/g, " ").trim();
+      const title = (hit ? part.replace(new RegExp(hit.match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "") : part).replace(/\b(on|by|due|is|exam|test)\b\s*$/i, "").replace(/\s+/g, " ").trim();
       return hit && title ? { id: Math.random().toString(36).slice(2, 10), title, date: isoDate(hit.date), confidence: 3 } : null;
     })
     .filter((e): e is Exam => !!e);
 }
 
-export function StudyPlanWizard({ pages, onClose, onMade }: { pages: PageMeta[]; onClose: () => void; onMade: (msg: string) => void }) {
+export function StudyPlanWizard({ pages, typed = "", onClose, onMade }: { pages: PageMeta[]; typed?: string; onClose: () => void; onMade: (msg: string) => void }) {
+  /** Exams typed after "/plan": the exams question is skipped. */
+  const given = useMemo(() => typedExams(typed), [typed]);
   const today = isoDate(new Date());
   const upcoming = useMemo(() => pages.filter((p) => !p.trashedAt && p.dueDate && p.dueDate > today && (studyKind(p) || p.status !== "done")).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!)).slice(0, 8), [pages, today]);
   const [first, setFirst] = useState<AskAnswers | null>(null);
@@ -71,11 +73,11 @@ export function StudyPlanWizard({ pages, onClose, onMade }: { pages: PageMeta[];
   const [busy, setBusy] = useState("");
 
   const round1: AskQuestion[] = [
-    {
+    ...(given.length ? [] : [{
       id: "exams", header: "Exams", multi: true, question: "Which exams or deadlines should the plan cover?",
       options: upcoming.map((p) => ({ label: p.title || "Untitled", description: `${studyKind(p) === "exam" ? "Exam" : "Due"} ${new Date(p.dueDate! + "T00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` })),
       otherPlaceholder: "e.g. Maths Dec 5, Biology next Friday",
-    },
+    } satisfies AskQuestion]),
     { id: "hours", header: "Hours", question: "How much time can you study each day?", options: HOURS.map(([label, mins, description], i) => ({ label, description, recommended: i === 1, preview: weekPreview(mins) })), otherPlaceholder: "Hours a day, e.g. 2.5" },
     { id: "time", header: "Time", question: "When do you like to study?", options: TIMES.map(([label, , description], i) => ({ label, description, recommended: i === 2 })), other: false },
     {
@@ -97,10 +99,12 @@ export function StudyPlanWizard({ pages, onClose, onMade }: { pages: PageMeta[];
   ];
 
   const afterFirst = (a: AskAnswers) => {
+    a = { ...a, exams: a.exams ?? [] };
     const chosen = upcoming.filter((p) => a.exams.includes(p.title || "Untitled")).map((p): Exam => ({ id: p.id, title: p.title || "Untitled", date: p.dueDate!, confidence: 3, pageId: p.id }));
     const typed = a.exams.filter((x) => !upcoming.some((p) => (p.title || "Untitled") === x)).flatMap(typedExams);
-    const all = [...chosen, ...typed];
-    if (!all.length) return onMade("I need at least one exam or deadline with a date to plan for. Try /plan again and type one, like \"Maths Dec 5\".");
+    const all = [...given, ...chosen, ...typed];
+    const text = a.exams.filter((x) => !upcoming.some((p) => (p.title || "Untitled") === x)).join(", ");
+    if (!all.length) return onMade(`I need at least one exam or deadline with a date to plan for${text ? `, and I couldn't find a date in "${text}"` : ""}. Try again, like \`/plan Maths Dec 5, Biology next Friday\`.`);
     setExams(all);
     setFirst(a);
   };
