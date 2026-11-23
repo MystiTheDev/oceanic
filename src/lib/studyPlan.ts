@@ -4,6 +4,7 @@ import { api } from "../data/api";
 import { isoDate, parseIsoDate } from "./colors";
 import { engine, nerida } from "./nerida";
 import { agentHost } from "./neridaAgent";
+import { searchWeb } from "./neridaTools";
 import { dueCards, getSrs } from "./srs";
 
 /* Study plan: the app spreads study sessions over the days before each exam (exact code, so a small
@@ -11,8 +12,11 @@ import { dueCards, getSrs } from "./srs";
  * settings, as a "Study plan" note, and as one dated sub-note per study day (so days show on the Calendar).
  * Missed sessions move to the next free days; a reminder fires once a day. */
 
-export type Exam = { id: string; title: string; date: string; /** 1 = weak … 5 = strong. */ confidence: number; pageId?: string };
-export type Session = { id: string; date: string; start: string; minutes: number; examId: string; subject: string; done: boolean; review?: boolean };
+export type Exam = {
+  id: string; title: string; date: string; /** 1 = weak … 5 = strong. */ confidence: number; pageId?: string;
+  topics?: string[]; /** Topics already finished. */ done?: string[]; /** Paper format: essay, maths, mcq, short, mixed. */ format?: string; /** What's on it, in the student's words. */ details?: string;
+};
+export type Session = { id: string; date: string; start: string; minutes: number; examId: string; subject: string; done: boolean; review?: boolean; /** What to do: learn, practice, past paper… */ focus?: string };
 export type Plan = {
   exams: Exam[];
   /** Minutes a day, Sunday first. */
@@ -25,6 +29,10 @@ export type Plan = {
   notifyAt: string;
   sessions: Session[];
   tips: Record<string, string>;
+  /** Special instructions from the student. */
+  notes?: string;
+  /** Subject → short web reading lines (Markdown). */
+  reading?: Record<string, string[]>;
   noteId?: string;
   /** Study day → its dated sub-note. */
   dayNotes: Record<string, string>;
@@ -65,6 +73,23 @@ const START = { morning: 9 * 60, afternoon: 14 * 60, evening: 18 * 60 } as const
 const hhmm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 export const REVIEW_MIN = 10;
 
+/** Learn early, practise in between, past papers and weak spots near the exam, a light recap the day before. */
+const MIX: Record<string, string[]> = {
+  essay: ["Learn", "Plan an essay", "Learn", "Write a timed essay", "Review"],
+  maths: ["Learn", "Practice questions", "Practice questions", "Past paper section", "Review"],
+  mcq: ["Learn", "Quick quiz", "Learn", "Past paper section", "Review"],
+  short: ["Learn", "Practice questions", "Learn", "Past paper section", "Review"],
+};
+/** Topics rotate: learn X then practise X; reviews go over finished topics. */
+function focusFor(e: Exam, n: number, left: number) {
+  const done = e.done ?? [], todo = (e.topics ?? []).filter((t) => !done.includes(t));
+  const on = (l: string[]) => (l.length ? `: ${l[Math.floor(n / 2) % l.length]}` : "");
+  if (left <= 1) return "Final recap: key formulas and notes";
+  if (left <= 3) return n % 2 ? `Fix weak spots${on(todo.length ? todo : done)}` : "Timed past paper";
+  const k = (MIX[e.format ?? ""] ?? MIX.short)[n % 5];
+  return k === "Review" ? `Review${on(done.length ? done : todo)}` : k.includes("paper") || k.includes("timed") ? k : `${k}${on(todo.length ? todo : done)}`;
+}
+
 /** Sessions from `from` until each exam. Weak subjects and close exams get more; done sessions count as studied. */
 export function schedule(p: Omit<Plan, "sessions">, from = isoDate(new Date()), done: Session[] = []): Session[] {
   const exams = p.exams.filter((e) => e.date > from);
@@ -88,7 +113,7 @@ export function schedule(p: Omit<Plan, "sessions">, from = isoDate(new Date()), 
       const need = (e: Exam) => ((6 - e.confidence) * (1 + 5 / Math.max(1, days(d, e.date)))) / (studied.get(e.id)! + 1) * (e.id === prev && open.length > 1 ? 0.3 : 1);
       const e = open.reduce((a, b) => (need(b) > need(a) ? b : a));
       const minutes = Math.min(p.session, budget);
-      out.push({ id: uid(), date: d, start: hhmm(clock), minutes, examId: e.id, subject: e.title, done: false });
+      out.push({ id: uid(), date: d, start: hhmm(clock), minutes, examId: e.id, subject: e.title, done: false, focus: focusFor(e, studied.get(e.id)!, days(d, e.date)) });
       studied.set(e.id, studied.get(e.id)! + 1);
       prev = e.id;
       budget -= minutes + p.breakMin;
@@ -113,17 +138,21 @@ export function reschedule(p: Plan, today = isoDate(new Date())): Plan {
 const dayMd = (p: Plan, day: string) =>
   p.sessions
     .filter((s) => s.date === day)
-    .map((s) => `- [${s.done ? "x" : " "}] **${s.start}** ${s.subject} · ${s.minutes} min${!s.review && p.tips[s.subject] ? ` — ${p.tips[s.subject]}` : ""}`)
+    .map((s) => `- [${s.done ? "x" : " "}] **${s.start}** ${s.subject} · ${s.minutes} min${s.focus ? ` — ${s.focus}` : ""}`)
     .join("\n");
 const dayTitle = (d: string) => parseIsoDate(d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
 export function planMarkdown(p: Plan): string {
-  const exams = [...p.exams].sort((a, b) => a.date.localeCompare(b.date)).map((e) => `- **${e.title}**: ${dayTitle(e.date)} (confidence ${e.confidence}/5)`);
+  const exams = [...p.exams].sort((a, b) => a.date.localeCompare(b.date)).map((e) => `- **${e.title}**: ${dayTitle(e.date)} (confidence ${e.confidence}/5)${p.tips[e.title] ? `
+  - Tip: ${p.tips[e.title]}` : ""}`);
   const daysList = [...new Set(p.sessions.map((s) => s.date))].sort();
+  const reading = Object.entries(p.reading ?? {}).filter(([, l]) => l.length);
   return [
     "Made by Nerida. Missed sessions move to the next free days automatically.",
+    ...(p.notes ? [`Your instructions: ${p.notes}`] : []),
     "## Exams",
     ...exams,
+    ...(reading.length ? ["## Reading", ...reading.flatMap(([s, l]) => [`**${s}**`, l.join("\n")])] : []),
     ...daysList.flatMap((d) => [`## ${dayTitle(d)}`, dayMd(p, d)]),
   ].join("\n\n");
 }
@@ -139,21 +168,42 @@ export async function writeTips(p: Plan, onProgress?: (subject: string) => void)
       await engine.chat(
         nerida.get().model,
         [
-          { role: "system", content: "You are Nerida, a study coach. Reply with one short sentence only, no intro." },
-          { role: "user", content: `I have "${e.title}" on ${e.date}. My confidence is ${e.confidence}/5. Give one specific tip for how to study for it.` },
+          { role: "system", content: "You are Nerida, a study coach. Reply with one short, concrete sentence under 15 words, no intro." },
+          { role: "user", content: [`I have "${e.title}" on ${e.date}. My confidence is ${e.confidence}/5.`, e.format && `Paper format: ${e.format}.`, e.topics?.length && `Topics: ${e.topics.join(", ")}.`, e.done?.length && `Finished: ${e.done.join(", ")}.`, e.details && `On the exam: ${e.details.slice(0, 300)}`, p.notes && `My instructions: ${p.notes.slice(0, 300)}`, "Give one specific tip for how to study for it."].filter(Boolean).join(" ") },
         ],
         (t) => {
           out += t;
-          if (out.length > 220) void engine.stop();
+          if (out.length > 140) void engine.stop();
         },
       );
     } catch {
       /* no model: plan without tips */
     }
     const tip = out.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0];
-    if (tip) tips[e.title] = tip.slice(0, 200);
+    if (tip) tips[e.title] = tip.slice(0, 120);
   }
   return tips;
+}
+
+/** Up to 3 topics a subject (unfinished first): two sentences from the web and the source. Offline: nothing. */
+export async function fetchReading(p: Plan, onProgress?: (topic: string) => void): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  for (const e of p.exams) {
+    const done = e.done ?? [];
+    const topics = [...(e.topics ?? []).filter((t) => !done.includes(t)), ...done].slice(0, 3);
+    for (const t of topics.length ? topics : [e.title]) {
+      onProgress?.(t);
+      try {
+        const h = (await searchWeb(t === e.title ? t : `${t} ${e.title}`))[0];
+        const text = h?.text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/).slice(0, 2).join(" ");
+        const src = h?.label.match(/\(([^()]+)\)$/)?.[1];
+        if (text) (out[e.title] ??= []).push(`- **${t}**: ${text.slice(0, 320)}${src ? ` ([source](https://${src.replace(/^https?:\/\//, "")}))` : ""}`);
+      } catch {
+        /* offline */
+      }
+    }
+  }
+  return out;
 }
 
 /** Writes the plan note and one dated sub-note per study day (Calendar). Day notes are updated in place;
