@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, X } from "lucide-react";
 
 /* Nerida's question box: a glass card docked above the chat input, one question per page.
- * Tab chips jump between questions; 1-9 pick an option, Enter goes on, Esc cancels.
+ * Dots jump between questions; 1-9 pick an option, Enter goes on, Esc cancels.
  * Reused by the study-plan wizard and Nerida's note actions. */
 
 /** Square-ish corners. Inline, so the chat composer's pill-button rule (index.css) doesn't round them. */
@@ -67,26 +67,27 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
 
   const preview = q.options.find((o) => (picked[q.id] ?? []).includes(o.label) && o.preview)?.preview;
   return (
-    <div className="oc-ask-box mx-2 mb-2 overflow-hidden rounded-2xl border border-white/[0.09] bg-[rgba(24,26,32,0.72)] shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-      <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-3 py-2">
-        <span className="rounded-full bg-[color:var(--oc-brand)]/20 px-2 py-0.5 text-[11px] font-medium text-[color:var(--oc-brand-light)]">{title}</span>
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {questions.map((x, i) => (
-            <button key={x.id} type="button" onClick={() => setPage(i)}
-              className={`flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${i === page ? "bg-white/[0.1] text-neutral-100" : "text-neutral-500 hover:text-neutral-300"}`}>
-              {ready(x.id) && i !== page && <Check className="size-3" />}
-              {x.header}
-            </button>
-          ))}
-        </div>
-        <span className="shrink-0 text-[11px] text-neutral-500">{page + 1} of {questions.length}</span>
+    /* Inset glass (no own backdrop-filter: it sits inside the glass panel). Container query: side-by-side preview and key hints only when wide. */
+    <div className="oc-ask-box oc-glass-inset @container mx-2 mb-2 overflow-hidden rounded-2xl">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2">
+        <span className="min-w-0 truncate rounded-full bg-teal-400/15 px-2 py-0.5 text-[11px] font-medium text-teal-200">{title}</span>
+        <span className="flex-1" />
+        {questions.length > 1 && (
+          <span className="flex shrink-0 items-center gap-1">
+            {questions.map((x, i) => (
+              <button key={x.id} type="button" title={x.header} aria-label={x.header} onClick={() => setPage(i)}
+                className={`oc-ask-dot h-1.5 cursor-pointer rounded-full transition-all ${i === page ? "w-3.5 bg-teal-300" : ready(x.id) ? "w-1.5 bg-teal-300/50" : "w-1.5 bg-white/20 hover:bg-white/40"}`} />
+            ))}
+          </span>
+        )}
+        <span className="shrink-0 text-[11px] font-medium text-neutral-400">{q.header}</span>
         <button type="button" onClick={onCancel} title="Cancel (Esc)" className="cursor-pointer rounded p-0.5 text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
       </div>
 
       {busy ? (
         <div className="px-4 py-5 text-[13px] text-neutral-300">{busy}</div>
       ) : (
-        <div className="flex gap-3 px-3 py-3">
+        <div className="flex flex-col gap-3 px-3 py-3 @[520px]:flex-row">
           <div className="min-w-0 flex-1">
             <div className="mb-2 px-1 text-[13.5px] font-medium text-neutral-100">{q.question}{q.multi && <span className="ml-1.5 text-[11px] font-normal text-neutral-500">pick any</span>}</div>
             <div className="flex flex-col gap-0.5">
@@ -95,15 +96,15 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
                 return (
                   <button key={o.label} type="button" style={SQ} onClick={() => toggle(o.label)}
                     className={`flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 text-left ${on ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"}`}>
-                    <span className={`mt-0.5 grid size-4 shrink-0 place-items-center border ${q.multi ? "rounded" : "rounded-full"} ${on ? "border-[color:var(--oc-brand)] bg-[color:var(--oc-brand)]" : "border-white/25"}`}>
-                      {on && <Check className="size-3 text-white" />}
+                    <span className={`mt-0.5 grid size-4 shrink-0 place-items-center border ${q.multi ? "rounded" : "rounded-full"} ${on ? "border-teal-400 bg-teal-400" : "border-white/25"}`}>
+                      {on && <Check className="size-3 text-neutral-950" />}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="text-[13px] text-neutral-100">{o.label}</span>
                       {o.recommended && <span className="ml-1.5 rounded bg-emerald-400/15 px-1 py-px text-[10px] text-emerald-300">Recommended</span>}
                       {o.description && <span className="block text-[11.5px] leading-snug text-neutral-500">{o.description}</span>}
                     </span>
-                    <span className="mt-0.5 text-[10.5px] text-neutral-600">{i + 1}</span>
+                    <span className="mt-0.5 hidden text-[10.5px] text-neutral-600 @[520px]:inline">{i + 1}</span>
                   </button>
                 );
               })}
@@ -117,7 +118,7 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
               )}
             </div>
           </div>
-          {preview && <div className="hidden w-[42%] shrink-0 rounded-xl border border-white/[0.06] bg-black/20 p-2.5 text-[11.5px] text-neutral-300 min-[520px]:block">{preview}</div>}
+          {preview && <div className="shrink-0 rounded-xl border border-white/[0.06] bg-white/[0.03] p-2.5 text-[11.5px] text-neutral-300 @[520px]:w-[42%]">{preview}</div>}
         </div>
       )}
 
@@ -131,7 +132,7 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
           <span className="flex-1" />
           <button type="button" style={SQ} onClick={() => (setSkipped((s) => new Set(s).add(q.id)), next())} className="cursor-pointer rounded-lg px-2 py-1 text-[12px] text-neutral-500 hover:text-neutral-300">Skip</button>
           <button type="button" style={SQ} disabled={!ready(q.id)} onClick={next}
-            className="cursor-pointer rounded-lg bg-[color:var(--oc-brand)] px-3 py-1 text-[12px] font-medium text-white disabled:cursor-default disabled:opacity-40">
+            className="cursor-pointer rounded-lg bg-teal-400/90 px-3 py-1 text-[12px] font-medium text-neutral-950 hover:bg-teal-300 disabled:cursor-default disabled:opacity-40">
             {last ? "Done" : "Next"} <span className="opacity-60">⏎</span>
           </button>
         </div>
