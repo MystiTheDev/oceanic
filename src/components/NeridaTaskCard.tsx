@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CalendarPlus } from "lucide-react";
 import { api } from "../data/api";
 import { NERIDA_TASK, prettyDate, type TaskDraft, type TaskRequest } from "../lib/neridaTask";
+import { SlidePill } from "./SlidePill";
 
 /** Confirm card in Nerida's chat: edit title, date, tag and where it goes, then Add. */
 export function NeridaTaskCard({ draft, pageId, pageTitle, onDone }: { draft: TaskDraft; pageId: string | null; pageTitle: string | null; onDone: (summary: string | null) => void }) {
@@ -25,8 +26,9 @@ export function NeridaTaskCard({ draft, pageId, pageTitle, onDone }: { draft: Ta
       <div className="mb-2 flex items-center gap-2 text-[12.5px] text-neutral-400"><CalendarPlus className="size-4 text-sky-300" /> Add to calendar?</div>
       {pageId && (
         <div className="mb-2 flex gap-1 rounded-lg bg-white/[0.04] p-0.5 text-[12px]">
+          <SlidePill />
           {(["new", "current"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setTarget(t)} className={`flex-1 cursor-pointer truncate rounded-md px-2 py-1 ${target === t ? "bg-white/[0.1] text-neutral-100" : "text-neutral-400 hover:text-neutral-200"}`}>
+            <button key={t} type="button" aria-pressed={target === t} onClick={() => setTarget(t)} className={`flex-1 cursor-pointer truncate rounded-md px-2 py-1 ${target === t ? "text-neutral-100" : "text-neutral-400 hover:text-neutral-200"}`}>
               {t === "new" ? "New note" : `This note${pageTitle ? `: ${pageTitle}` : ""}`}
             </button>
           ))}

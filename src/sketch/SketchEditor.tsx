@@ -4,18 +4,20 @@ import {
   House,
   ArrowRight, Brush, Circle, ClipboardPaste, Copy, Crop, Droplet, Eraser, Eye, EyeOff, FlipHorizontal, FlipVertical, Hand, Highlighter,
   Layers, Minus, MousePointer2, PaintBucket, Pencil, Pipette, Plus, Redo2, RotateCcw, RotateCw, Save, Scaling, Scissors, Slash, Square, SprayCan,
-  Trash2, Triangle, Type, Undo2, ArrowUp, ArrowDown, Merge, CopyPlus,
+  LassoSelect, Trash2, Triangle, Type, Undo2, ArrowUp, ArrowDown, Merge, CopyPlus,
 } from "lucide-react";
 import { WindowControls } from "../components/TitleBar";
 import { Modal, ModalButton } from "../components/Modal";
 import { SketchDoc, ctx2d, drawShape, floodFill, makeCanvas, rgbToHex, type Rect, type ShapeKind } from "./engine";
+import { drawSegment, drawStroke, fitStroke, strokesBounds, strokesInLasso, type Stroke } from "./ink";
 import { NewCanvasDialog } from "./SketchHome";
+import { SlidePill } from "../components/SlidePill";
 import {
   forgetSketch, isUnsavedSketch, markSketchDirty, pickImage, pickSketchSavePath, readImageFile, refreshSketches, sketchTitle, touchRecentSketch,
   untitledSketch, useSketch, writeImageFile,
 } from "./store";
 
-type Tool = "select" | "pencil" | "brush" | "marker" | "airbrush" | "eraser" | "fill" | "picker" | "text" | "hand" | ShapeKind;
+type Tool = "select" | "lasso" | "pencil" | "brush" | "marker" | "airbrush" | "eraser" | "fill" | "picker" | "text" | "hand" | ShapeKind;
 type Pt = { x: number; y: number };
 type Floating = { canvas: HTMLCanvasElement; x: number; y: number };
 
@@ -32,7 +34,7 @@ const SHAPES: { kind: ShapeKind; icon: ReactNode; label: string }[] = [
   { kind: "arrow", icon: <ArrowRight />, label: "Arrow" },
 ];
 const SHAPE_KINDS = SHAPES.map((s) => s.kind) as string[];
-const TOOL_KEYS: Record<string, Tool> = { s: "select", p: "pencil", b: "brush", e: "eraser", g: "fill", i: "picker", t: "text", h: "hand", l: "line", u: "rect" };
+const TOOL_KEYS: Record<string, Tool> = { s: "select", q: "lasso", p: "pencil", b: "brush", e: "eraser", g: "fill", i: "picker", t: "text", h: "hand", l: "line", u: "rect" };
 
 type Status = "loading" | "saved" | "saving" | "unsaved" | "error";
 
@@ -43,7 +45,8 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const [, force] = useState(0);
   const rerender = () => force((n) => n + 1);
   const [status, setStatus] = useState<Status>("loading");
-  const [tool, setToolState] = useState<Tool>("brush");
+  const [toolNow, setToolState] = useState<Tool>("brush");
+  const tool = toolNow;
   const [size, setSize] = useState(6);
   const [color1, setColor1] = useState("#000000");
   const [color2, setColor2] = useState("#ffffff");
@@ -53,6 +56,11 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [selection, setSelection] = useState<Rect | null>(null);
   const [floating, setFloating] = useState<Floating | null>(null);
+  // Lasso picks vector strokes (by index) on one layer.
+  const [lassoState, setLassoSel] = useState<{ layer: string; idx: number[]; box: Rect } | null>(null);
+  const lassoSel = lassoState && docRef.current?.layer.id === lassoState.layer ? lassoState : null;
+  // Palm rejection: while a pen is down, touches are ignored.
+  const penId = useRef<number | null>(null);
   const [text, setText] = useState<{ at: Pt; value: string } | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   // Focus the new text box once it's in the page (autoFocus loses to the canvas click).
@@ -204,6 +212,14 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     edit((d) => clearRect(d, selection!));
   };
   const deleteSel = () => {
+    const d = docRef.current;
+    if (d && lassoSel) {
+      d.checkpoint(true);
+      d.layer.strokes = d.layer.strokes.filter((_, i) => !lassoSel.idx.includes(i));
+      d.redrawInk();
+      setLassoSel(null);
+      return changed();
+    }
     if (floating) return setFloating(null), setSelection(null), changed();
     if (selection) edit((d) => clearRect(d, selection));
   };
@@ -236,6 +252,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     commitFloating();
     commitText();
     if (t !== "select") setSelection(null);
+    if (t !== "lasso") setLassoSel(null);
     if (t !== "picker") prevTool.current = t;
     setToolState(t);
   };
@@ -255,7 +272,21 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   };
 
   /* ------------------------------------------------------------ pointer */
-  const drag = useRef<{ start: Pt; last: Pt; button: number; color: string; moveSel?: Pt; resize?: boolean; pan?: Pt; spray?: number } | null>(null);
+  const drag = useRef<{
+    start: Pt; last: Pt; button: number; color: string; moveSel?: Pt; resize?: boolean; pan?: Pt; spray?: number;
+    id?: number; tool?: Tool; ink?: Stroke; loop?: Pt[]; lassoMove?: { from: Rect; orig: Stroke[]; scale: boolean };
+  } | null>(null);
+  /** Brush-size ring (black with a white edge, visible on any background) for painting tools. */
+  const ringCursor = () => {
+    const w = { pencil: Math.max(1, Math.round(size / 3)), brush: size, marker: size, airbrush: size * 2, eraser: size * 2 }[tool as string];
+    if (!w) return undefined;
+    const d = Math.round(Math.min(120, Math.max(8, w * zoom + 4)));
+    const c = d / 2;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}"><circle cx="${c}" cy="${c}" r="${c - 1.5}" fill="none" stroke="white" stroke-width="3"/><circle cx="${c}" cy="${c}" r="${c - 1.5}" fill="none" stroke="black" stroke-width="1"/></svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${c} ${c}, crosshair`;
+  };
+  /** Pen pressure 0..1 (mouse and touch draw at full width). */
+  const pressure = (e: React.PointerEvent) => (e.pointerType === "pen" ? Math.max(0.05, e.pressure || 0.5) : 1);
   const toCanvas = (e: { clientX: number; clientY: number }): Pt => {
     const r = stackRef.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
@@ -286,7 +317,12 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
 
   const onDown = (e: React.PointerEvent) => {
     const d = docRef.current;
-    if (!d || (e.button !== 0 && e.button !== 2 && e.button !== 1)) return;
+    if (e.pointerType === "touch" && penId.current !== null) return;
+    // Pen side button or eraser end: button 5 / buttons bit 32; PC tablet drivers send the side button as right-click.
+    const penErase = e.pointerType === "pen" && (e.button === 5 || e.button === 2 || (e.buttons & 34) !== 0);
+    if (!d || (e.button !== 0 && e.button !== 2 && e.button !== 1 && !penErase) || drag.current) return;
+    if (e.pointerType === "pen") penId.current = e.pointerId;
+    const tool: Tool = penErase ? "eraser" : toolNow;
     const p = toCanvas(e);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     // Middle button or hand tool pans.
@@ -310,6 +346,21 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       if (text) return commitText();
       return setText({ at: p, value: "" });
     }
+    if (tool === "lasso") {
+      if (lassoSel) {
+        const b = lassoSel.box;
+        const h = 14 / zoom;
+        const scale = Math.abs(p.x - (b.x + b.w)) < h && Math.abs(p.y - (b.y + b.h)) < h;
+        if (scale || inRect(p, b)) {
+          d.checkpoint(true);
+          drag.current = { start: p, last: p, button: 0, color, id: e.pointerId, tool, lassoMove: { from: b, orig: lassoSel.idx.map((i) => d.layer.strokes[i]), scale } };
+          return;
+        }
+      }
+      setLassoSel(null);
+      drag.current = { start: p, last: p, button: 0, color, id: e.pointerId, tool, loop: [p] };
+      return;
+    }
     if (tool === "select") {
       if (floating && inRect(p, { x: floating.x, y: floating.y, w: floating.canvas.width, h: floating.canvas.height })) {
         drag.current = { start: p, last: p, button: 0, color, moveSel: { x: floating.x, y: floating.y } };
@@ -329,19 +380,21 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       drag.current = { start: p, last: p, button: 0, color };
       return;
     }
-    d.checkpoint();
-    drag.current = { start: p, last: p, button: e.button, color };
-    if (tool === "airbrush") {
+    const isInk = tool === "pencil" || tool === "brush";
+    d.checkpoint(isInk);
+    drag.current = { start: p, last: p, button: e.button, color, id: e.pointerId, tool };
+    if (isInk) {
+      d.beginInk();
+      const pencil = tool === "pencil";
+      const ink: Stroke = { pts: [{ ...p, p: pressure(e) }], color, width: pencil ? Math.max(1, Math.round(size / 3)) : size, cap: pencil ? "square" : "round" };
+      drag.current.ink = ink;
+      drawStroke(d.ctx, ink);
+    } else if (tool === "airbrush") {
       spray(p, color);
       drag.current.spray = window.setInterval(() => drag.current && spray(drag.current.last, color), 30);
-    } else if (["pencil", "brush", "eraser"].includes(tool)) dot(p, color);
+    } else if (tool === "eraser") erase(p, p);
     else if (tool === "marker") stroke(p, p, color, ctx2d(overlay.current));
     rerender();
-  };
-  const dot = (p: Pt, color: string) => {
-    const d = docRef.current!;
-    if (tool === "eraser") return erase(p, p);
-    stroke(p, p, color, d.ctx);
   };
   /** Eraser: paints colour 2 on the background, clears to transparent on layers above. */
   const erase = (a: Pt, b: Pt) => {
@@ -364,7 +417,8 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     setCursor({ x: Math.floor(p.x), y: Math.floor(p.y) });
     const st = drag.current;
     const d = docRef.current;
-    if (!st || !d) return;
+    if (!st || !d || (st.id !== undefined && st.id !== e.pointerId)) return;
+    const tool = st.tool ?? toolNow;
     if (st.pan) {
       viewRef.current!.scrollBy(st.pan.x - e.clientX, st.pan.y - e.clientY);
       st.pan = { x: e.clientX, y: e.clientY };
@@ -384,6 +438,36 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       return;
     }
     const og = ctx2d(overlay.current);
+    if (st.loop) {
+      st.loop.push(p);
+      og.clearRect(0, 0, d.w, d.h);
+      og.save();
+      og.setLineDash([5 / zoom, 4 / zoom]);
+      og.lineWidth = 1.5 / zoom;
+      og.strokeStyle = "#e8603c";
+      og.beginPath();
+      st.loop.forEach((q, i) => (i ? og.lineTo(q.x, q.y) : og.moveTo(q.x, q.y)));
+      og.stroke();
+      og.restore();
+      return;
+    }
+    if (st.lassoMove && lassoSel) {
+      const { from, orig, scale } = st.lassoMove;
+      const to = scale
+        ? { x: from.x, y: from.y, w: Math.max(4, p.x - from.x), h: Math.max(4, p.y - from.y) }
+        : { ...from, x: from.x + p.x - st.start.x, y: from.y + p.y - st.start.y };
+      lassoSel.idx.forEach((i, k) => (d.layer.strokes[i] = fitStroke(orig[k], from, to)));
+      d.redrawInk();
+      setLassoSel({ ...lassoSel, box: to });
+      return;
+    }
+    if (st.ink) {
+      const q = { ...p, p: pressure(e) };
+      drawSegment(d.ctx, st.ink, st.ink.pts[st.ink.pts.length - 1], q);
+      st.ink.pts.push(q);
+      st.last = p;
+      return;
+    }
     if (SHAPE_KINDS.includes(tool)) {
       og.clearRect(0, 0, d.w, d.h);
       let end = p;
@@ -410,11 +494,22 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     st.last = p;
   };
 
-  const onUp = () => {
+  const onUp = (e: React.PointerEvent) => {
+    if (e.pointerId === penId.current) penId.current = null;
     const st = drag.current;
     const d = docRef.current;
+    if (st?.id !== undefined && st.id !== e.pointerId) return;
     drag.current = null;
     if (!st || !d) return;
+    const tool = st.tool ?? toolNow;
+    if (st.ink) return d.layer.strokes.push(st.ink), changed();
+    if (st.loop) {
+      ctx2d(overlay.current).clearRect(0, 0, d.w, d.h);
+      const idx = strokesInLasso(d.layer.strokes, st.loop);
+      const box = strokesBounds(idx.map((i) => d.layer.strokes[i]));
+      return setLassoSel(box ? { layer: d.layer.id, idx, box } : null);
+    }
+    if (st.lassoMove) return changed();
     if (st.spray) window.clearInterval(st.spray);
     if (st.pan) return;
     if (st.resize && selection) {
@@ -446,8 +541,8 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       const d = docRef.current;
       if (!d) return;
       const handled = () => (e.preventDefault(), e.stopPropagation());
-      if (mod && k === "z") return handled(), commitFloating(), d.undo(), changed();
-      if (mod && k === "y") return handled(), d.redo(), changed();
+      if (mod && k === "z") return handled(), commitFloating(), setLassoSel(null), d.undo(), changed();
+      if (mod && k === "y") return handled(), setLassoSel(null), d.redo(), changed();
       if (mod && k === "s") return handled(), void save();
       if (mod && k === "n") return handled(), setDialog("new");
       if (mod && k === "o") return handled(), void pickImage().then((p) => p && onOpen(p));
@@ -458,7 +553,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       if (mod && k === "-") return handled(), setZoom((z) => Math.max(0.05, z / 1.25));
       if (mod && k === "0") return handled(), fitZoom();
       if (k === "delete") return handled(), deleteSel();
-      if (k === "escape") return commitFloating(), setSelection(null), setText(null);
+      if (k === "escape") return commitFloating(), setSelection(null), setLassoSel(null), setText(null);
       if (k === "enter" && floating) return commitFloating();
       if (!mod && !e.altKey && TOOL_KEYS[k]) return setTool(TOOL_KEYS[k]);
       if (!mod && (k === "[" || k === "]")) return setSize((s) => Math.max(1, Math.min(100, s + (k === "]" ? 2 : -2))));
@@ -492,6 +587,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const drawTools = (
     <>
       <T t="select" icon={<MousePointer2 />} label="Select" keyHint="S" />
+      <T t="lasso" icon={<LassoSelect />} label="Lasso ink strokes" keyHint="Q" />
       <T t="pencil" icon={<Pencil />} label="Pencil" keyHint="P" />
       <T t="brush" icon={<Brush />} label="Brush" keyHint="B" />
       <T t="marker" icon={<Highlighter />} label="Marker" />
@@ -633,10 +729,11 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
           <div
             ref={stackRef}
             className={`oc-checker absolute inset-0 touch-none ${tool === "hand" ? "cursor-grab" : tool === "text" ? "cursor-text" : tool === "select" ? "cursor-default" : "cursor-crosshair"}`}
-            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto" }}
+            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto", cursor: ringCursor() }}
             onPointerDown={onDown}
             onPointerMove={onMove}
             onPointerUp={onUp}
+            onPointerCancel={onUp}
             onPointerLeave={() => setCursor(null)}
             onContextMenu={(e) => e.preventDefault()}
           />
@@ -654,6 +751,11 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
               className="oc-marquee pointer-events-none absolute"
               style={{ left: floating.x * zoom, top: floating.y * zoom, width: floating.canvas.width * zoom, height: floating.canvas.height * zoom }}
             />
+          )}
+          {lassoSel && (
+            <div className="oc-marquee pointer-events-none absolute" style={{ left: lassoSel.box.x * zoom, top: lassoSel.box.y * zoom, width: lassoSel.box.w * zoom, height: lassoSel.box.h * zoom }}>
+              <span className="absolute -bottom-1.5 -right-1.5 size-3 rounded-sm border border-neutral-400 bg-white" />
+            </div>
           )}
           {selection && !floating && (
             <div className="oc-marquee pointer-events-none absolute" style={{ left: selection.x * zoom, top: selection.y * zoom, width: selection.w * zoom, height: selection.h * zoom }} />
@@ -784,8 +886,9 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
     <div className="flex rounded-md border border-white/[0.08] p-0.5">
+      <SlidePill className="rounded !bg-[color:var(--oc-sketch)]/20" />
       {options.map(([v, l]) => (
-        <button key={v} type="button" onClick={() => onChange(v)} className={`h-6 cursor-pointer rounded px-2 text-[11.5px] ${value === v ? "bg-[color:var(--oc-sketch)]/20 text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
+        <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)} className={`h-6 cursor-pointer rounded px-2 text-[11.5px] ${value === v ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
           {l}
         </button>
       ))}

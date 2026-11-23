@@ -49,13 +49,13 @@ export function ContextPicker({ notes, sendCount, tokens, cloud, onPin, onRemove
   return (
     <div ref={box} className="relative mb-1 flex flex-wrap items-center gap-1">
       <button type="button" onClick={() => setOpen((o) => !o)} title="Choose which notes Nerida reads"
-        className={`flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px] transition-colors ${open ? "border-teal-300/40 bg-teal-300/[0.08] text-teal-100" : "border-white/[0.1] text-neutral-400 hover:text-neutral-200"}`}>
+        className={`oc-nl-chip flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px] transition-colors ${open ? "border-teal-300/40 bg-teal-300/[0.08] text-teal-100" : "border-white/[0.1] text-neutral-400 hover:text-neutral-200"}`}>
         {cloud ? <Cloud className="size-3 text-amber-300" /> : <Layers className="size-3" />}
         {sent.length ? `${sent.length} note${sent.length > 1 ? "s" : ""} · ~${tokens.toLocaleString()} tokens` : "Add notes"}
       </button>
       {sent.map((n) => (
         <span key={n.id} title={`${WHY[n.why]}${n.pinned ? " · pinned" : ""}`}
-          className={`oc-chip-in flex max-w-[160px] items-center gap-1 rounded-full border bg-white/[0.03] px-2 py-0.5 text-[11.5px] text-neutral-300 ${n.why === "found" && !n.pinned ? "border-dashed border-sky-300/30" : n.pinned ? "border-teal-300/30" : "border-white/[0.1]"}`}>
+          className={`oc-nl-chip oc-chip-in flex max-w-[160px] items-center gap-1 rounded-full border bg-white/[0.03] px-2 py-0.5 text-[11.5px] text-neutral-300 ${n.why === "found" && !n.pinned ? "border-dashed border-sky-300/30" : n.pinned ? "border-teal-300/30" : "border-white/[0.1]"}`}>
           {n.pinned ? <Pin className="size-2.5 shrink-0 text-teal-300" /> : n.why === "found" ? <Search className="size-2.5 shrink-0 text-sky-300" /> : <span>{n.icon}</span>}
           <span className="truncate">{n.title}</span>
           <button type="button" title="Don't send this note" className="cursor-pointer text-neutral-500 hover:text-neutral-200" onClick={() => onRemove(n)}><X className="size-3" /></button>

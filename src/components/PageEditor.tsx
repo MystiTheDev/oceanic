@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageAnnotator } from "./ImageAnnotator";
 import { copyImageToClipboard } from "../lib/clipboard";
-import { Check, CheckSquare, ChevronLeft, ChevronRight, Eye, Layers, Network, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Eye, Layers, X } from "lucide-react";
 import { ReviewModal } from "./ReviewModal";
 import { blockText, dueCards, useSrs } from "../lib/srs";
-import { api } from "../data/api";
 import { headingsOf, PageOutline } from "./PageOutline";
 import { HEADINGS_TO_ATLAS, PromoteDialog, type PromoteItem } from "./PromoteDialog";
 import { importAudioFile, insertTimestamp, isAudioFile, uploadFile } from "../editor/audio";
@@ -42,10 +41,13 @@ import { fontStack } from "../lib/fonts";
 import { BlockHandleMenu } from "./BlockHandleMenu";
 import { getSeedBlocks, type PageMeta } from "../data/workspace";
 import { editorExtensions, getPageLinkItems, getSlashItems, mobileEditorExtensions, schema } from "../editor/schema";
-import { isMobile } from "../mobile/MobileShell";
+import { isAndroid, usePhoneUI, useSoftKeyboard } from "../mobile/formFactor";
 import { MobileSelectionPopup, MobileToolbar } from "../mobile/MobileEditorKit";
 import { editorContextMenu } from "../editor/editorMenu";
 import { openContextMenu } from "./ContextMenu";
+import type * as Y from "yjs";
+import { withCollaboration } from "@blocknote/core/yjs";
+import { FRAGMENT, liveDocs, loadDoc, RESTORE_VERSION, type RestoreDetail } from "../lib/ydoc";
 
 type PageEditorProps = {
   page: PageMeta;
@@ -95,8 +97,8 @@ function SelectionToolbar() {
       <FontButton key="font" />
       <ColorStyleButton key="color" />
       <span key="d4" className="oc-toolbar-divider" />
-      <EditWithNerida key="nerida-edit" />
-      <CardsFromSelection key="nerida" />
+      {!isAndroid && <EditWithNerida key="nerida-edit" />}
+      {!isAndroid && <CardsFromSelection key="nerida" />}
       <ToolbarOverflow key="more" />
     </FormattingToolbar>
   );
@@ -204,29 +206,68 @@ export function withMath(blocks: MdBlock[]): MdBlock[] {
   });
 }
 
-export function PageEditor({
+/** Loads the page's Yjs doc (LAN sync 7c), then mounts the editor on it. */
+export function PageEditor(props: PageEditorProps) {
+  const [y, setY] = useState<{ doc: Y.Doc; stale: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadDoc(props.page.id, (props.doc ?? getSeedBlocks(props.page.id)) as PartialBlock[]).then((r) => live && setY(r));
+    return () => void (live = false);
+  }, [props.page.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  return y ? <PageEditorBody {...props} ydoc={y.doc} stale={y.stale} /> : null;
+}
+
+function PageEditorBody({
   page,
   doc,
   onTitleChange,
-  onDocChange,
+  onDocChange: onDocChangeRaw,
   onIconChange,
   linksVersion,
   properties,
   font,
-}: PageEditorProps) {
+  ydoc,
+  stale,
+}: PageEditorProps & { ydoc: Y.Doc; stale: boolean }) {
+  const isMobile = usePhoneUI();
+  const keyboard = useSoftKeyboard();
   // One editor per open page — remounted (keyed) whenever the active tab changes.
-  const editor = useCreateBlockNote({
-    schema,
-    initialContent: (doc ?? getSeedBlocks(page.id)) as never,
-    dictionary,
-    extensions: isMobile ? mobileEditorExtensions : editorExtensions,
-    uploadFile,
-  });
+  // The body is the page's Yjs doc, so edits from another device merge in.
+  const editor = useCreateBlockNote(
+    withCollaboration({
+      schema,
+      dictionary,
+      extensions: isMobile ? mobileEditorExtensions : editorExtensions,
+      uploadFile,
+      collaboration: { fragment: ydoc.getXmlFragment(FRAGMENT), user: { name: "", color: "transparent" } },
+    }),
+  );
+  // Saves carry the Yjs doc while the saved body is the one the editor made.
+  const onDocChange = (id: string, blocks: Block[]) => {
+    liveDocs.set(id, { doc: ydoc, json: JSON.stringify(blocks), mounted: true });
+    onDocChangeRaw(id, blocks);
+  };
+  useEffect(() => {
+    liveDocs.set(page.id, { doc: ydoc, json: "", mounted: true });
+    // The body changed outside the editor (another device's old-style edit, a restore): replay it.
+    if (stale && doc) editor.replaceBlocks(editor.document, doc as never);
+    lastDoc.current = JSON.stringify(editor.document);
+    const onRestore = (e: Event) => {
+      const d = (e as CustomEvent<RestoreDetail>).detail;
+      if (d.pageId !== page.id) return;
+      d.handled = true;
+      editor.replaceBlocks(editor.document, d.blocks as never);
+    };
+    window.addEventListener(RESTORE_VERSION, onRestore);
+    return () => {
+      window.removeEventListener(RESTORE_VERSION, onRestore);
+      const live = liveDocs.get(page.id);
+      if (live?.doc === ydoc) live.mounted = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [iconAnchor, setIconAnchor] = useState<HTMLElement | null>(null);
   const hasBanner = !!useBanner(page.id);
-  // Notion's "Get started with" bar shows while the body is empty.
-  const [empty, setEmpty] = useState(() => isEmptyDoc(editor.document as Block[]));
   const scroller = useRef<HTMLDivElement>(null);
   // The note body: the selection toolbar flips below the text instead of covering the properties above it.
   const [canvas, setCanvas] = useState<HTMLDivElement | null>(null);
@@ -622,7 +663,6 @@ export function PageEditor({
             if (json === lastDoc.current) return;
             lastDoc.current = json;
             onDocChange(page.id, savedDoc());
-            setEmpty(isEmptyDoc(editor.document as Block[]));
           }}
           formattingToolbar={false}
           slashMenu={false}
@@ -637,7 +677,7 @@ export function PageEditor({
           {!isMobile && (
             <SuggestionMenuController
               triggerCharacter="/"
-              getItems={async (query) => getSlashItems(editor, query)}
+              getItems={async (query) => getSlashItems(editor, query).filter((i) => !isAndroid || i.group !== "Nerida")}
             />
           )}
           {/* Link to page: `[[` (wiki-style) and `@` (Notion's mention) */}
@@ -655,7 +695,7 @@ export function PageEditor({
           />
 
         </BlockNoteView>
-        {isMobile && <MobileToolbar editor={editor as never} blocks={() => getSlashItems(editor, "").filter((i) => i.group !== "Nerida" && i.title !== "Image" && i.title !== "File")} links={(q) => getPageLinkItems(editor, q, page.id)} />}
+        {(isMobile || keyboard) && <MobileToolbar editor={editor as never} blocks={() => getSlashItems(editor, "").filter((i) => i.group !== "Nerida" && i.title !== "Image" && i.title !== "File")} links={(q) => getPageLinkItems(editor, q, page.id)} />}
         </div>
       </div>
       </div>
@@ -692,53 +732,10 @@ export function PageEditor({
         onSave={(url) => editor.updateBlock(annotating.id, { props: { url } } as never)}
       />
     )}
-    {empty && (
-      <div className="oc-fade-in pointer-events-none absolute inset-x-0 bottom-8 z-10 flex justify-center px-6">
-        <div className="pointer-events-auto w-full max-w-[720px]">
-          <p className="mb-2 text-[12px] text-neutral-500">Get started with</p>
-          <div className="flex flex-wrap gap-2">
-            <StartPill
-              icon={<CheckSquare className="size-4" />}
-              label="To-do list"
-              onClick={() => {
-                editor.replaceBlocks([editor.document[0]], [{ type: "checkListItem" }] as never);
-                editor.focus();
-              }}
-            />
-            <StartPill
-              icon={<Network className="size-4" />}
-              label="Mindmap"
-              onClick={async () => {
-                const m = await api.createMindmap("", "");
-                const first = editor.document[0];
-                editor.replaceBlocks([first], [{ type: "mindmapEmbed", props: { mindmapId: m.id } } as never, { type: "paragraph" }]);
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    )}
     </div>
   );
 }
 
-/** Only empty paragraphs (what a new page starts with). */
-function isEmptyDoc(doc: Block[]) {
-  return doc.every((b) => b.type === "paragraph" && !(b.content as unknown[])?.length && !b.children.length);
-}
-
-function StartPill({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-[14px] font-medium text-neutral-200 transition-colors hover:bg-white/[0.1]"
-    >
-      <span className="text-neutral-400">{icon}</span>
-      {label}
-    </button>
-  );
-}
 
 /** Block to jump to once its page's editor mounts (set before App switches tabs). */
 /** Headings as "Send to Atlas" items: each nests under the nearest higher-level heading above it. */

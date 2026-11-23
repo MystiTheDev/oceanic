@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FONT_IDS, FONTS, type FontId } from "../lib/fonts";
 import { createPortal } from "react-dom";
 import { NeridaMark } from "./NeridaOrb";
-import { Copy, Download, Lightbulb, PenLine, Star, Trash2 } from "lucide-react";
+import { Copy, Download, History, Lightbulb, PenLine, Star, Trash2 } from "lucide-react";
 
-export type PageMenuAction = "favorite" | "rename" | "duplicate" | "export" | "flashcards" | "test" | "mindmap" | "atlas" | "trash";
+export type PageMenuAction = "favorite" | "rename" | "duplicate" | "export" | "flashcards" | "test" | "mindmap" | "atlas" | "history" | "trash";
 
 type PageMenuProps = {
   /** Button the menu hangs from. */
@@ -61,6 +61,7 @@ export function PageMenu({
           { id: "atlas" as const, label: "Send headings to Atlas…", icon: <Lightbulb className="size-4" /> },
         ]
       : []),
+    { id: "history", label: "Version history", icon: <History className="size-4" /> },
     { id: "trash", label: "Move to Trash", icon: <Trash2 className="size-4" />, danger: true },
   ];
   const q = query.trim().toLowerCase();

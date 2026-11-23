@@ -107,7 +107,13 @@ export async function startUpdates(stored: Record<string, string>) {
     if (pending && pending.version === (await getVersion())) set({ whatsNew: pending });
     if (pending) api.setSetting("pendingWhatsNew", "").catch(() => {});
   } catch {}
-  window.setTimeout(() => void checkForUpdates(), 8000);
+  // A cold-start check often fails before the network is up: retry it a few times.
+  const retry = [10_000, 30_000, 60_000, 120_000];
+  const auto = async (n: number) => {
+    await checkForUpdates();
+    if (state.phase === "idle" && n < retry.length) window.setTimeout(() => void auto(n + 1), retry[n]);
+  };
+  window.setTimeout(() => void auto(0), 8000);
   window.setInterval(() => void checkForUpdates(), 4 * 60 * 60 * 1000);
 }
 

@@ -136,10 +136,30 @@ This affects the desktop app too, so it's planned with its own questions and ses
   - Settings → Sync shows the last sync time, the paired device, the network, and what changed (pages added, edited or deleted);
   - errors in plain language.
 
-**Open questions for later**
-- The listening port, and whether the Windows Firewall prompt needs an installer rule.
-- Whether to keep version history on both devices or only on the laptop.
-- How sync interacts with Trash: a page deleted on one device while it was edited on the other.
+**Decisions (settled 2026-11-21)**
+- **Branch:** `sync`, cut from `main` after 2.0.9.
+- **Port:** fixed TCP 47823. The NSIS installer adds a Windows Firewall rule limited to Private networks, the Oceanic exe and that port, and removes it on uninstall. This is safer than the Windows prompt, where users can tick "Public" by mistake, and safer than a random port, which needs an all-ports rule.
+- **Version history:** kept on both devices.
+- **Trash vs edit:** trash wins. The page stays in Trash on both devices, with the other device's edits kept inside it, so it can still be restored.
+- **Crates:** `spake2` turns the 6-digit code into a key. `snow` (Noise `NNpsk0`, ChaCha20-Poly1305) encrypts the channel with the paired key. `mdns-sd` handles discovery. Yjs uses `yrs`.
+- **Content storage:** each page gets a Yjs document BLOB, migrated lazily the first time the page is edited or synced. The `content` JSON column stays as the readable copy for search and export.
+- **First sync:** union of both devices. Pages are matched by ID, and pages with different IDs are both kept. If the same page was edited on both, it is merged and the older side is saved to version history.
+- **Finding the laptop:** nobody types an IP. While the pairing screen is open (2 minutes), the laptop announces itself over mDNS, and the phone lists the laptops it finds. The user taps one and types the 6-digit code. Fallback: an "Enter address manually" link, with the laptop's IP shown on its pairing screen. QR scanning comes later.
+
+**Sub-phases (each tested by the user before the next)**
+- **7a, pairing only.** Settings → Sync on both devices. The desktop's "Pair a phone" shows the code and IP and announces over mDNS. On the phone, the user picks the laptop and enters the code. SPAKE2 then derives a key, and both devices store it with the peer's ID, name and last address. Both show the paired device. "Test connection" does an encrypted Noise ping and pong and reports "Connected" or a plain-language error. "Unpair" removes the peer locally. No notes move yet.
+- **7b, metadata sync.** "Sync now" on both devices, with hybrid-logical-clock last-write-wins per field: title, icon, parent, tags, status, dates, pin, sort, trash. Trash-wins rule. New pages are copied with their content as a whole. Change queue. Sync log, last sync time and status dot.
+- **7c, content merge.** Yjs via `yrs`, with lazy migration of existing notes. Edits on both devices merge at the text level. Version history on both devices, with a restore button, keeping the last N versions or 30 days.
+- **7d, background.** mDNS on trusted networks, with the trusted-network prompt and list. Desktop: tray listening, "Start in tray with Windows", sync on wake. Android: wake on network join with a foreground "Syncing notes…" job, plus the battery-saver prompt. Installer firewall rule.
+- **7e, files and safety.** Attachments in numbered, acknowledged, resumable chunks, with an option to hold large files on a hotspot. Unpair with key rotation. QR pairing. USB and Bluetooth tethering how-to.
+
+**7e decisions (settled 2026-11-22)**
+- **Attachments:** files in `app_data/assets` (images, PDFs, sketches, audio) sync after the text, in the same sync session. Each side lists its files with sizes; the other side asks for the ones it is missing. Files go in 256 KB chunks, each numbered and acknowledged. A partial file is kept as `<name>.part`, and the next sync resumes from its size. The file is renamed into place only when complete.
+- **Hotspot limit:** on by default. Files over 10 MB wait while either device is on a hotspot (the phone's gateway address or an Android metered network). The size is editable in Sync settings.
+- **Unpair:** deletes the peer's key locally at once. If the peer is reachable, it is told to forget this device too. If it is offline, nothing is queued: its old key is unknown here, so its next connection is rejected. Pairing again makes a fresh key (this is the key rotation).
+- **QR pairing:** the desktop pairing screen shows a QR code next to the 6-digit code. It holds `oceanic://pair?a=<ip>:47823&c=<code>` and expires with the code after 2 minutes. The phone scans it with `tauri-plugin-barcode-scanner` and runs the same SPAKE2 join. The desktop draws it with the Rust `qrcode` crate as SVG.
+- **Tethering how-to:** a collapsible "Can't find the laptop?" section on the Sync screen on both devices.
+- **Testing:** C: has too little space for an Android build, so 7e is tested on the desktop side only. The phone side is type-checked but not run.
 
 ## Later phase: Quick actions row (from the Evernote Home study)
 - A row of square buttons on Home: Camera, Scan, Files, Audio, each adding to a new page.
@@ -151,3 +171,21 @@ Wait for the user's go-ahead. Plan with questions first.
 - Page outline: a jump-to-heading sheet.
 - Page icon and banner: an emoji icon and a cover image.
 - Trash: a screen to restore or empty deleted pages.
+
+## Phone: Trash and Workspaces rework (agreed 2026-11-22)
+**Trash**
+- Full screen, like Pages. A header shows the count, with Restore all and Empty trash buttons.
+- Rows:
+  - show when each page was deleted;
+  - swipe right to restore, swipe left to delete forever;
+  - long-press starts select mode, with Restore and Delete for the selected pages;
+  - trashed subpages are grouped under their parent.
+- Empty trash and delete-forever use a confirm sheet: "Delete N pages forever? This can't be undone." with a red button.
+- Auto-empty follows the existing desktop "Deleting" setting.
+
+**Workspaces** (in the existing Workspaces sheet)
+- **New workspace:** a "+ New workspace" row. It asks for a name plus an icon or colour, then switches to the new workspace.
+- **Delete:** an Edit button shows a delete icon on each row. Deleting removes all of that workspace's pages forever, and you type the workspace's name to confirm.
+- **Guards:**
+  - the last workspace can't be deleted;
+  - deleting the current workspace switches to another one first.

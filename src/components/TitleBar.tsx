@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openContextMenu } from "./ContextMenu";
 import logoRaw from "../assets/logo-raw.png";
@@ -6,6 +6,8 @@ import mindmapLogo from "../assets/mindmap-logo.png";
 import docsLogo from "../assets/docs-logo.png";
 import sketchLogo from "../assets/sketch-logo.png";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isAndroid } from "../mobile/formFactor";
+import { SlidePill } from "./SlidePill";
 import {
   ArrowLeft,
   ArrowRight,
@@ -179,6 +181,7 @@ export function TitleBar({
         data-tauri-drag-region
         className="flex h-full min-w-0 flex-1 [scrollbar-width:none] items-end overflow-x-auto"
       >
+        <SlidePill className="oc-tab-active rounded-t-lg" />
         {tabs.map((tab, i) => {
           const active = tab.tabId === activeTabId;
           // Hairline between two inactive neighbours, like browser tabs.
@@ -188,10 +191,11 @@ export function TitleBar({
               <div
                 key={tab.tabId}
                 data-tab-id={tab.tabId}
+                aria-selected={active}
                 title={tab.title}
                 onClick={() => onSelectTab(tab.tabId)}
                 className={`relative grid h-[34px] w-11 shrink-0 cursor-default place-items-center rounded-t-lg transition-colors duration-100 ${
-                  active ? "oc-tab-active z-10 bg-neutral-900" : "hover:bg-white/[0.06]"
+                  active ? "z-10" : "hover:bg-white/[0.06]"
                 }`}
               >
                 <img
@@ -207,6 +211,7 @@ export function TitleBar({
             <div
               key={tab.tabId}
               data-tab-id={tab.tabId}
+              aria-selected={active}
               title={tab.title}
               onClick={() => onSelectTab(tab.tabId)}
               onPointerDown={(e) => startDrag(e, tab.tabId)}
@@ -240,7 +245,7 @@ export function TitleBar({
               }
               className={`oc-tab-in group relative mx-px flex h-[34px] min-w-[72px] max-w-[200px] flex-[0_1_200px] cursor-default items-center gap-2 rounded-t-lg pl-3 pr-1.5 text-[13px] transition-colors duration-100 ${
                 active
-                  ? "oc-tab-active z-10 bg-neutral-900 text-neutral-100 shadow-[0_-1px_0_rgba(255,255,255,0.06)]"
+                  ? "z-10 text-neutral-100"
                   : "text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200"
               } ${dragId === tab.tabId ? "oc-tab-dragging z-20 bg-neutral-800" : ""}`}
             >
@@ -318,7 +323,8 @@ export function WindowControls() {
   const base =
     "grid h-full w-[46px] cursor-default place-items-center text-neutral-400 transition-colors duration-100";
   return (
-    <div className="flex h-full shrink-0">
+    <div className="flex h-full shrink-0 items-center">
+      {!isAndroid && <ThemeSwitch />}
       <button type="button" title="Minimize" onClick={() => win.minimize()} className={`${base} hover:bg-white/[0.06] hover:text-neutral-100`}>
         <Minus className="size-4" strokeWidth={1.5} />
       </button>
@@ -329,5 +335,33 @@ export function WindowControls() {
         <X className="size-4" strokeWidth={1.5} />
       </button>
     </div>
+  );
+}
+
+/** Dark/light switch (after uiverse.io JustCode14 "red-dingo-61", MIT): moon + stars at night, sun + cloud by day. */
+function ThemeSwitch() {
+  const html = document.documentElement;
+  const [light, setLight] = useState(html.dataset.theme === "light");
+  // Follow theme changes from elsewhere (user menu, settings).
+  useEffect(() => {
+    const mo = new MutationObserver(() => setLight(html.dataset.theme === "light"));
+    mo.observe(html, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
+  }, []);
+  // Slide first, recolor the app after the knob lands.
+  const flip = () => {
+    setLight((v) => !v);
+    window.setTimeout(() => window.dispatchEvent(new Event("oceanic:toggle-theme")), 150);
+  };
+  return (
+    <label className="oc-theme-switch mr-2" title={light ? "Dark mode" : "Light mode"}>
+      <input type="checkbox" checked={light} onChange={flip} />
+      <span className="slider">
+        <i className="star star_1" /><i className="star star_2" /><i className="star star_3" />
+        <svg viewBox="0 0 16 16" className="cloud">
+          <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925" />
+        </svg>
+      </span>
+    </label>
   );
 }

@@ -1,8 +1,13 @@
 /** Oceanic Sketch's drawing model: a stack of layer canvases plus undo history. */
+import { drawStroke, type Stroke } from "./ink";
 
-export type Layer = { id: string; name: string; visible: boolean; opacity: number; canvas: HTMLCanvasElement };
+/**
+ * `canvas` always shows everything. While a layer has live vector `strokes`,
+ * `base` holds its pixels without them; any pixel edit bakes the strokes in.
+ */
+export type Layer = { id: string; name: string; visible: boolean; opacity: number; canvas: HTMLCanvasElement; strokes: Stroke[]; base: HTMLCanvasElement | null };
 export type Rect = { x: number; y: number; w: number; h: number };
-type Snapshot = { w: number; h: number; active: number; layers: { id: string; name: string; visible: boolean; opacity: number; data: ImageData }[] };
+type Snapshot = { w: number; h: number; active: number; layers: { id: string; name: string; visible: boolean; opacity: number; data: ImageData; strokes: Stroke[]; base: ImageData | null }[] };
 
 let nextId = 1;
 const lid = () => `l${nextId++}`;
@@ -41,7 +46,7 @@ export class SketchDoc {
   }
 
   addLayer(name = `Layer ${this.layers.length}`, at = this.layers.length) {
-    const layer: Layer = { id: lid(), name, visible: true, opacity: 1, canvas: makeCanvas(this.w, this.h) };
+    const layer: Layer = { id: lid(), name, visible: true, opacity: 1, canvas: makeCanvas(this.w, this.h), strokes: [], base: null };
     this.layers.splice(at, 0, layer);
     this.active = at;
     return layer;
@@ -53,7 +58,7 @@ export class SketchDoc {
       w: this.w,
       h: this.h,
       active: this.active,
-      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, data: ctx2d(l.canvas).getImageData(0, 0, this.w, this.h) })),
+      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, data: ctx2d(l.canvas).getImageData(0, 0, this.w, this.h), strokes: l.strokes.slice(), base: l.base && ctx2d(l.base).getImageData(0, 0, this.w, this.h) })),
     };
   }
   private restore(s: Snapshot) {
@@ -62,13 +67,16 @@ export class SketchDoc {
     this.layers = s.layers.map((l) => {
       const canvas = makeCanvas(s.w, s.h);
       ctx2d(canvas).putImageData(l.data, 0, 0);
-      return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, canvas };
+      let base: HTMLCanvasElement | null = null;
+      if (l.base) ctx2d((base = makeCanvas(s.w, s.h))).putImageData(l.base, 0, 0);
+      return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, canvas, strokes: l.strokes, base };
     });
     this.active = Math.min(s.active, this.layers.length - 1);
     this.onChange();
   }
-  /** Call before any change; keeps the last 30 states. */
-  checkpoint() {
+  /** Call before any change; keeps the last 30 states. Bakes vector ink to pixels unless `keepInk`. */
+  checkpoint(keepInk = false) {
+    if (!keepInk) for (const l of this.layers) (l.strokes = []), (l.base = null);
     this.undoStack.push(this.snap());
     if (this.undoStack.length > 30) this.undoStack.shift();
     this.redoStack = [];
@@ -90,6 +98,24 @@ export class SketchDoc {
   }
   get canRedo() {
     return this.redoStack.length > 0;
+  }
+
+  /* ---------------------------------------------------------------- vector ink */
+  /** Start keeping vector strokes on the active layer (saves its pixels as `base`). */
+  beginInk() {
+    const l = this.layer;
+    if (l.base) return;
+    l.base = makeCanvas(this.w, this.h);
+    ctx2d(l.base).drawImage(l.canvas, 0, 0);
+  }
+  /** Repaint the active layer from `base` + its strokes. */
+  redrawInk() {
+    const l = this.layer;
+    if (!l.base) return;
+    const g = ctx2d(l.canvas);
+    g.clearRect(0, 0, this.w, this.h);
+    g.drawImage(l.base, 0, 0);
+    for (const s of l.strokes) drawStroke(g, s);
   }
 
   /* ---------------------------------------------------------------- whole image */

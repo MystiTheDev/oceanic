@@ -1,6 +1,6 @@
 [package]
 name = "oceanic"
-version = "2.0.9"
+version = "3.0.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
@@ -39,6 +39,15 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "linux-
 sha2 = "0.10"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 tokio = { version = "1", features = ["time"] }
+spake2 = "0.4.0"
+snow = "0.10.0"
+mdns-sd = "0.22.0"
+rand = "0.8"
+yrs = "0.28.2"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -52,6 +61,7 @@ strip = true
 # trash has no Android/iOS backend; docs_trash only calls it on desktop.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 trash = "5"
+tauri-plugin-autostart = "2"
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Antimalware", "Win32_Storage_FileSystem"] }

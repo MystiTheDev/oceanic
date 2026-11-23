@@ -189,3 +189,200 @@
 body { -webkit-user-select: none; user-select: none; }
 :is(input, textarea, [contenteditable="true"], .ProseMirror, .oc-selectable, .textLayer),
 :is(input, textarea, [contenteditable="true"], .ProseMirror, .oc-selectable, .textLayer) * { -webkit-user-select: text; user-select: text; }
+
+/* Pen hover cursor: black dot with a white edge, visible on light and dark. Inline cursors (Sketch's brush ring) still win. */
+html.oc-pen,
+html.oc-pen * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Ccircle cx='5' cy='5' r='3.5' fill='black' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 5 5, auto;
+}
+
+/* Liquid glass (pure CSS): fallback first, glass where backdrop-filter works.
+   Never nest backdrop-filter: menus inside .oc-glass use .oc-glass-menu (no filter). */
+.oc-glass, .oc-glass-pop {
+  background: rgb(23 23 23 / 0.92);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15), inset 0 0 0 1px rgb(255 255 255 / 0.03);
+}
+.oc-glass { transition: box-shadow 0.2s; }
+.oc-glass[data-scrolled] { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15), inset 0 0 0 1px rgb(255 255 255 / 0.03), 0 8px 20px -10px rgb(0 0 0 / 0.55); }
+.oc-glass-pop { border: 1px solid rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 10px 30px -14px rgb(0 0 0 / 0.5); }
+.oc-glass-menu {
+  background: rgb(23 23 23 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 16px 40px -12px rgb(0 0 0 / 0.6);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .oc-glass-pop { background: rgb(255 255 255 / 0.08); -webkit-backdrop-filter: blur(26px) saturate(185%); backdrop-filter: blur(26px) saturate(185%); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .oc-glass, .oc-glass-pop { background: rgb(23 23 23 / 0.97); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Nerida floating glass panel. Children must not use backdrop-filter (no nesting):
+   the header (.oc-glass) is a tint strip; menus/buttons use .oc-glass-menu. */
+.oc-glass-panel {
+  background: radial-gradient(120% 40% at 50% 0%, rgb(45 212 191 / 0.07), transparent 70%), rgb(23 23 23 / 0.95);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15), 0 20px 50px -20px rgb(0 0 0 / 0.6);
+}
+.oc-glass-panel::before { /* Apple-style rim: bright at the top, fading down */
+  content: ""; position: absolute; inset: 0; z-index: 30; pointer-events: none; border-radius: inherit; padding: 1px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0.04));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.oc-glass-panel .oc-glass { background: rgb(23 23 23 / 0.9); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .oc-glass-panel {
+    background: radial-gradient(120% 40% at 50% 0%, rgb(45 212 191 / 0.07), transparent 70%), rgb(23 23 23 / 0.6);
+    -webkit-backdrop-filter: blur(34px) saturate(190%); backdrop-filter: blur(34px) saturate(190%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .oc-glass-panel { background: rgb(23 23 23 / 0.97); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Light theme: white frost (thinner tint, more saturate, dark hairline rim since white rims vanish on white). */
+:root[data-theme="light"] .oc-glass-panel {
+  background: radial-gradient(120% 40% at 50% 0%, rgb(13 148 136 / 0.06), transparent 70%), rgb(255 255 255 / 0.96);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), 0 20px 50px -20px rgb(0 0 0 / 0.18);
+  /* deeper teal so accents read on white */
+  --color-teal-100: #0f766e; --color-teal-200: #0f766e; --color-teal-300: #0d9488; --color-teal-400: #0d9488; --color-sky-200: #0369a1;
+}
+:root[data-theme="light"] .oc-glass-panel::before { background: linear-gradient(180deg, rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.06)); }
+:root[data-theme="light"] .oc-glass-panel .oc-glass,
+:root[data-theme="light"] .oc-glass-panel .oc-glass-menu { background: rgb(255 255 255 / 0.9); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55); }
+:root[data-theme="light"] .oc-glass-panel .oc-glass[data-scrolled] { box-shadow: 0 8px 20px -12px rgb(0 0 0 / 0.15); }
+:root[data-theme="light"] .oc-glass-panel .oc-glass-menu { background: rgb(255 255 255 / 0.96); border-color: rgb(0 0 0 / 0.08); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.2); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root[data-theme="light"] .oc-glass-panel {
+    background: radial-gradient(120% 40% at 50% 0%, rgb(13 148 136 / 0.06), transparent 70%), rgb(255 255 255 / 0.7);
+    -webkit-backdrop-filter: blur(30px) saturate(210%); backdrop-filter: blur(30px) saturate(210%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme="light"] .oc-glass-panel { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Nerida main (Home) chat: aura behind, glass composer, inset rows (no nested filter). */
+.oc-main-aura { background: radial-gradient(60% 45% at 50% 18%, rgb(45 212 191 / 0.12), transparent 70%), radial-gradient(50% 40% at 80% 100%, rgb(56 189 248 / 0.08), transparent 70%); }
+.oc-main-composer .oc-menu-pop { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.oc-glass-inset { background: rgb(255 255 255 / 0.035); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.05); transition: background-color 0.15s, box-shadow 0.15s; }
+.oc-glass-inset:hover { background: rgb(255 255 255 / 0.06); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), inset 0 0 0 1px rgb(45 212 191 / 0.2); }
+:root[data-theme="light"] .oc-main-aura { background: radial-gradient(60% 45% at 50% 18%, rgb(45 212 191 / 0.1), transparent 70%); }
+:root[data-theme="light"] .oc-main-composer { background: rgb(255 255 255 / 0.55); border-color: rgb(0 0 0 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), 0 10px 30px -14px rgb(0 0 0 / 0.2); }
+:root[data-theme="light"] .oc-glass-inset { background: rgb(255 255 255 / 0.5); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.06); }
+.oc-main-composer { transition: border-color 0.3s; }
+.oc-main-composer:focus-within { border-color: rgb(45 212 191 / 0.35); }
+.oc-main-composer .rounded-\[14px\] { border-color: transparent !important; background: none; box-shadow: none !important; }
+:root[data-theme="light"] .oc-glass-inset:hover { color: rgb(15 118 110); }
+
+/* Light theme polish inside the Nerida panel. */
+:root[data-theme="light"] .oc-glass-panel .oc-glass { background: rgb(255 255 255 / 0.9); box-shadow: none; }
+:root[data-theme="light"] .oc-glass-panel .oc-glass[data-scrolled] { box-shadow: 0 1px 0 rgb(0 0 0 / 0.06); }
+:root[data-theme="light"] .oc-nl-card { background: #fff; border-color: rgb(0 0 0 / 0.08); box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
+:root[data-theme="light"] .oc-nl-card:hover { background: rgb(13 148 136 / 0.05); border-color: rgb(13 148 136 / 0.3); }
+:root[data-theme="light"] .oc-nl-composer { background: #fff; border-color: rgb(0 0 0 / 0.09); box-shadow: 0 4px 16px -8px rgb(0 0 0 / 0.12); }
+:root[data-theme="light"] .oc-nl-composer:focus-within { border-color: rgb(13 148 136 / 0.45); box-shadow: 0 0 0 3px rgb(13 148 136 / 0.1), 0 4px 16px -8px rgb(0 0 0 / 0.12); }
+:root[data-theme="light"] .oc-nl-chip { background: #fff; }
+:root[data-theme="light"] .oc-nl-chip:not([class*="teal"]):not([class*="sky"]) { border-color: rgb(0 0 0 / 0.1); }
+:root[data-theme="light"] .oc-nl-hint { color: rgb(55 53 47 / 0.6); }
+/* Main composer polish: taller input, glass tool pills, bigger send, per-icon hover motion. */
+.oc-main-composer textarea { font-size: 14.5px; min-height: 44px; padding: 8px 8px 4px; }
+.oc-main-composer button:not(.oc-send):not(.oc-chip-in button) { border-radius: 9999px; transition: transform 0.18s cubic-bezier(.3,1.6,.5,1), background-color 0.15s, box-shadow 0.15s; }
+.oc-main-composer .flex.items-center.gap-1 > button:not(.oc-send), .oc-main-composer .oc-agent-btn {
+  background: rgb(255 255 255 / 0.04); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.05);
+}
+.oc-main-composer button:not(:disabled):hover { transform: translateY(-1px); background: rgb(255 255 255 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 6px 14px -8px rgb(45 212 191 / 0.5); }
+.oc-main-composer button:not(:disabled):active { transform: scale(0.94); }
+.oc-main-composer button svg { transition: transform 0.3s cubic-bezier(.3,1.6,.5,1); }
+.oc-main-composer button[title^="Attach"]:hover svg { transform: rotate(-18deg); }
+.oc-main-composer button[title*="web" i]:hover svg { transform: rotate(180deg); transition-duration: 0.6s; }
+.oc-main-composer .oc-agent-btn:hover svg { animation: oc-bob 0.5s ease-in-out; }
+.oc-main-composer .oc-send { width: 34px; height: 34px; border-radius: 9999px; }
+.oc-main-composer .oc-send:not(:disabled):not([data-busy]) { box-shadow: 0 0 16px -2px rgb(45 212 191 / 0.6); }
+.oc-main-composer .oc-send:not(:disabled):hover .oc-send-arrow { transform: translateY(-2px); }
+@keyframes oc-bob { 30% { transform: translateY(-2px) rotate(-8deg); } 60% { transform: translateY(1px) rotate(6deg); } }
+@media (prefers-reduced-motion: reduce) { .oc-main-composer button, .oc-main-composer button svg { transition: none; animation: none !important; } }
+/* Nerida's question box sits inside the composer: keep its buttons flat and square (no pill, lift or glow). */
+.oc-main-composer .oc-ask-box button { border-radius: 6px !important; transform: none !important; box-shadow: none !important; transition: background-color 0.12s; }
+.oc-main-composer .oc-ask-box button:not(:disabled):not(.oc-ask-dot):hover { background: rgb(255 255 255 / 0.06); }
+.oc-main-composer .oc-ask-box button.bg-teal-400\/90:not(:disabled):hover { background: var(--color-teal-300); }
+/* Home view is outside .oc-glass-panel: same deeper teal on white. */
+:root[data-theme="light"] .oc-ask-box { --color-teal-200: #0f766e; --color-teal-300: #0d9488; --color-teal-400: #0d9488; }
+:root[data-theme="light"] .oc-main-composer .oc-ask-box button:not(:disabled):not(.oc-ask-dot):hover { background: rgb(0 0 0 / 0.05); }
+:root[data-theme="light"] .oc-main-composer .flex.items-center.gap-1 > button:not(.oc-send), :root[data-theme="light"] .oc-main-composer .oc-agent-btn { background: rgb(255 255 255 / 0.6); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), inset 0 0 0 1px rgb(0 0 0 / 0.07); }
+:root[data-theme="light"] .oc-main-composer button:not(:disabled):hover { background: rgb(255 255 255 / 0.85); }
+
+/* Home liquid glass (desktop only): accent blobs behind clear Apple-style glass. */
+.oc-home-glass { overflow-x: hidden; }
+.oc-home-glass > :not(.oc-home-aura) { position: relative; z-index: 1; }
+.oc-home-aura { position: sticky; top: 0; height: 0; z-index: 0; pointer-events: none; }
+.oc-home-aura i { position: absolute; width: 300px; height: 300px; border-radius: 50%; filter: blur(60px); opacity: 0.14; animation: oc-blob 42s ease-in-out infinite alternate; }
+.oc-home-aura i:nth-child(1) { left: -4%; top: 22vh; background: var(--oc-brand); }
+.oc-home-aura i:nth-child(2) { right: -4%; top: 6vh; background: var(--oc-brand-light); opacity: 0.11; animation-duration: 50s; animation-delay: -10s; }
+.oc-home-aura i:nth-child(3) { left: 46%; top: 88vh; background: color-mix(in srgb, var(--oc-brand) 60%, #a855f7); opacity: 0.11; animation-duration: 60s; animation-delay: -20s; }
+@keyframes oc-blob { to { transform: translate(40px, -30px) scale(1.05); } }
+:root[data-theme="light"] .oc-home-aura i { opacity: 0.09; }
+
+/* Clear glass panes: light frost, bright rim, soft inner glow. Solid fallback first. */
+.oc-home-pane, .oc-home-glass .oc-home-card.oc-glass { background: rgb(38 38 42 / 0.92); border: 1px solid rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 12px 32px -16px rgb(0 0 0 / 0.6); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .oc-home-pane, .oc-home-glass .oc-home-card.oc-glass {
+    background: linear-gradient(160deg, rgb(40 40 46 / 0.55), rgb(24 24 28 / 0.6) 60%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
+    border-color: rgb(255 255 255 / 0.12);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), inset 0 0 24px rgb(255 255 255 / 0.03), 0 12px 32px -16px rgb(0 0 0 / 0.5);
+  }
+  :root[data-theme="light"] .oc-home-pane, :root[data-theme="light"] .oc-home-glass .oc-home-card.oc-glass {
+    background: linear-gradient(160deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.45) 60%);
+    -webkit-backdrop-filter: blur(30px) saturate(210%); backdrop-filter: blur(30px) saturate(210%);
+    border-color: rgb(0 0 0 / 0.07);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 10px 28px -16px rgb(0 0 0 / 0.2);
+  }
+}
+:root[data-theme="light"] .oc-home-pane { background-color: rgb(255 255 255 / 0.95); border-color: rgb(0 0 0 / 0.07); }
+.oc-home-pane .oc-action-tile { justify-content: flex-start; }
+.oc-home-model { background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.1); }
+:root[data-theme="light"] .oc-home-model { background: rgb(0 0 0 / 0.04); border-color: rgb(0 0 0 / 0.08); }
+@media (prefers-reduced-motion: reduce) { .oc-home-aura i { animation: none; } }
+@media (prefers-reduced-transparency: reduce) {
+  .oc-home-aura { display: none; }
+  .oc-home-pane, .oc-home-glass .oc-home-card.oc-glass { background: rgb(38 38 42); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :root[data-theme="light"] .oc-home-pane, :root[data-theme="light"] .oc-home-glass .oc-home-card.oc-glass { background: #fff; }
+}
+/* Home text over glass: brighter headings and muted text (dark theme). */
+:root:not([data-theme="light"]) .oc-home-glass .text-neutral-500 { color: rgb(190 190 196); }
+:root:not([data-theme="light"]) .oc-home-glass h2.text-neutral-500 { color: rgb(225 225 230); }
+/* Home light mode: clean white frost, pastel covers, light empty states, light model menu. */
+:root[data-theme="light"] .oc-home-glass .oc-glass:not(.oc-home-card) { background: rgb(255 255 255 / 0.6); border-color: rgb(0 0 0 / 0.1); box-shadow: none; }
+:root[data-theme="light"] .oc-home-glass .oc-home-card.oc-glass:hover { box-shadow: inset 0 1px 0 #fff, 0 14px 32px -16px rgb(0 0 0 / 0.25); }
+:root[data-theme="light"] .oc-home-cover { filter: saturate(0.85) brightness(1.12); }
+:root[data-theme="light"] .oc-home-pane .oc-glass-inset { background: rgb(255 255 255 / 0.7); }
+:root[data-theme="light"] .oc-home-pane .oc-glass-menu button:hover { background: rgb(0 0 0 / 0.05); }
+:root[data-theme="light"] .oc-home-pane .oc-glass-menu button { color: rgb(38 38 38); }
+:root[data-theme="light"] .oc-home-pane .oc-glass-menu { background: rgb(255 255 255 / 0.97); border-color: rgb(0 0 0 / 0.08); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.2); }
+/* Home | Nerida switch in light mode: gray track, white raised pill (iOS segmented). */
+:root[data-theme="light"] :has(> .oc-switch-pill) { background: rgb(0 0 0 / 0.06); border-color: rgb(0 0 0 / 0.06); }
+:root[data-theme="light"] .oc-switch-pill { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.06); }
+:root[data-theme="light"] .oc-switch-pill.oc-switch-nerida { background: linear-gradient(90deg, rgb(56 189 248 / 0.4), rgb(139 92 246 / 0.45)); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 0 12px -2px rgb(139 92 246 / 0.5); }
+:root[data-theme="light"] :has(> .oc-switch-pill) > button.text-neutral-100 { color: rgb(17 17 17); font-weight: 600; }
+/* Floating glass for portaled menus (not inside another backdrop-filter): model picker. */
+.oc-glass-float { background: rgb(28 28 30 / 0.95); border: 1px solid rgb(255 255 255 / 0.09); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), 0 24px 60px -20px rgb(0 0 0 / 0.7), 0 0 40px -20px rgb(45 212 191 / 0.25); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .oc-glass-float { background: radial-gradient(120% 50% at 50% 0%, rgb(45 212 191 / 0.06), transparent 70%), rgb(28 28 30 / 0.72); -webkit-backdrop-filter: blur(34px) saturate(190%); backdrop-filter: blur(34px) saturate(190%); }
+}
+@media (prefers-reduced-transparency: reduce) { .oc-glass-float { background: rgb(28 28 30 / 0.98); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.oc-glass-menu { border-radius: 16px; }
+.oc-menu-row { transition: background-color 0.15s, box-shadow 0.15s; }
+.oc-menu-row:hover, .oc-menu-row:focus-visible { background: rgb(255 255 255 / 0.06); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08); }
+:root[data-theme="light"] .oc-glass-float { background: rgb(255 255 255 / 0.78); border-color: rgb(0 0 0 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 24px 60px -24px rgb(0 0 0 / 0.25); }
+:root[data-theme="light"] .oc-menu-row:hover, :root[data-theme="light"] .oc-menu-row:focus-visible { background: rgb(0 0 0 / 0.04); }
+
+/* Sliding selection pill for segmented controls and titlebar tabs (SlidePill.tsx). */
+:has(> .oc-seg-pill) { position: relative; }
+:has(> .oc-seg-pill) > :not(.oc-seg-pill) { position: relative; transition-property: color, opacity, background-color; transition-duration: 200ms; }
+.oc-seg-pill { position: absolute; pointer-events: none; background: rgb(255 255 255 / 0.12); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: left 200ms cubic-bezier(.2,0,0,1), top 200ms cubic-bezier(.2,0,0,1), width 200ms cubic-bezier(.2,0,0,1), height 200ms cubic-bezier(.2,0,0,1), opacity 150ms; }
+.oc-seg-pill.oc-tab-active { background: var(--color-neutral-900, #171717); box-shadow: 0 -1px 0 rgb(255 255 255 / 0.06); }
+:root[data-theme="light"] .oc-seg-pill:not(.oc-tab-active) { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.06); }
+.oc-view-pill { transition-duration: 200ms; transition-timing-function: cubic-bezier(.2,0,0,1); }
+@media (prefers-reduced-motion: reduce) { .oc-seg-pill, :has(> .oc-seg-pill) > * { transition: none !important; } }

@@ -34,7 +34,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
   const active = workspaces.find((w) => w.id === activeWorkspaceId);
 
   return (
-    <div className="oc-sidebar-foot m-2 mt-1 flex flex-col gap-px rounded-xl border border-white/[0.07] bg-white/[0.03] p-1">
+    <div className="oc-sidebar-foot m-2 mt-1 flex flex-col gap-px rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
       <button
         ref={wsRef}
         type="button"
@@ -60,15 +60,6 @@ export function SidebarFooter(props: SidebarFooterProps) {
         >
           <Avatar name={userName} avatar={avatar} />
           <span className="truncate">{userName || "You"}</span>
-        </button>
-        <button
-          type="button"
-          title="Settings"
-          aria-label="Settings"
-          onClick={() => props.onOpenSettings()}
-          className="oc-rail-hide grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-neutral-500 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-200"
-        >
-          <Settings className="size-4" />
         </button>
       </div>
 

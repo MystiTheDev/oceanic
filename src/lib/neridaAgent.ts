@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import { api, type MindmapNodeRecord } from "../data/api";
 import type { PageMeta } from "../data/workspace";
-import { docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
+import { AGENT_SYSTEM, docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
 import { scrubInjection } from "./neridaGuard";
 import { searchNotes } from "./noteIndex";
 import { gatherText, generateCards, stopGenerating, whyNoFacts, withCards } from "./neridaStudy";
@@ -40,6 +40,8 @@ export type AgentHost = {
 };
 let host: AgentHost | null = null;
 export const setAgentHost = (h: AgentHost | null) => void (host = h);
+/** The app's note functions, or null before App has mounted. */
+export const agentHost = () => host;
 const H = () => {
   if (!host) throw new Error("Notes aren't ready yet.");
   return host;
@@ -79,6 +81,8 @@ export async function undo(logId: string) {
 
 /* ------------------------------------------------------------------ stop */
 let stopped = false;
+/** This run was started without Agent mode (see `needsTool`): every change asks, even with Auto-apply on. */
+let askAll = false;
 export function stopAgent() {
   stopped = true;
   for (const c of cards) c.resolve(false);
@@ -179,7 +183,7 @@ const fresh = (blocks: PartialBlock[]): PartialBlock[] => JSON.parse(JSON.string
 
 /** Applies an action: through an Accept card, or straight away (creating things with auto-apply on). */
 async function approve(card: Omit<AgentCard, "id">, create: boolean): Promise<boolean> {
-  if (create && nerida.get().autoApply) return true;
+  if (create && nerida.get().autoApply && !askAll) return true;
   return ask(card);
 }
 const rejected = (what: string): Out => stopped ? { result: "Stopped by the user.", log: { kind: "error", text: `Stopped before: ${what}`, state: "rejected" } } : ({ result: `The user rejected this (${what}). Nothing was changed. Don't retry unless they ask.`, log: { kind: "error", text: `Rejected: ${what}`, state: "rejected" } });
@@ -420,6 +424,12 @@ const HINTS: [RegExp, string[]][] = [
   [/\b(link|connect)\b/i, ["link_notes"]],
   [/\b(calendar|event|remind|due|schedule|meeting|on (mon|tue|wed|thu|fri|sat|sun))/i, ["add_calendar_event"]],
 ];
+/** Tools a message may use when Agent mode is off and the user said "just this once": no delete, no study or map tools. */
+export const AUTO_TOOLS = ["search_notes", "read_note", "create_note", "edit_note", "rename_note", "move_note", "tag_note", "create_folder"];
+const ACTION = /\b(make|create|write|add|new|start|edit|change|update|append|insert|rename|retitle|move|put|tag|untag|organi[sz]e|group)\b[^.?!]*\b(notes?|page|folder|tags?)\b|\bnotes? (about|on|called|titled|named)\b|^\s*(please\s+)?(move|put)\b.+\b(under|into|inside)\b|^\s*(please\s+)?(tag|rename)\b.+\b(as|to)\b/i;
+/** A message that asks Nerida to change notes (not a question about how to). Agent mode is off, so the app asks first. */
+export const needsTool = (q: string) => ACTION.test(q) && !/^\s*(how|why|what|when|where|who|which|is|are|does|do)\b/i.test(q);
+
 /** search_notes + read_note always, plus tools the request hints at; all tools if nothing matches. */
 export function pickTools(q: string): ToolDef[] {
   const want = new Set(HINTS.filter(([r]) => r.test(q)).flatMap(([, t]) => t));
@@ -436,9 +446,11 @@ const EXAMPLES =
 /* For models that can't take native tools (the provider errors) or that write the call as text.
  * Strict JSON, checked, up to 2 retries. Phase 8 swaps this for GBNF grammars + a router. */
 export const jsonFallback = {
-  system: (tools = TOOLS) =>
+  /** `grammar`: the built-in engine is held to JSON, so the final answer is {"answer": …} too. */
+  system: (tools = TOOLS, grammar = false) =>
     "To use a tool, reply with ONLY one JSON object and nothing else: {\"tool\": \"<name>\", \"args\": {...}}. " +
-    "When you are finished, or no tool is needed, reply in plain text (no JSON).\nTools:\n" +
+    (grammar ? 'When you are finished, or no tool is needed, reply {"answer": "<your reply in Markdown>"}.' : "When you are finished, or no tool is needed, reply in plain text (no JSON).") +
+    "\nTools:\n" +
     tools.map((t) => `- ${t.name}(${Object.keys(t.params).map((k) => (t.required.includes(k) ? k : k + "?")).join(", ")}): ${t.description}`).join("\n"),
   /** A call written as text: `{"tool":…}`, `{"name":…,"arguments":…}` or `<tool_call>…</tool_call>`. null = plain answer; Error = a broken attempt. */
   parse(text: string): { name: string; args: Args } | Error | null {
@@ -454,7 +466,35 @@ export const jsonFallback = {
     }
   },
   retries: 2,
+  /** JSON schema the built-in engine turns into a grammar: a valid call to one of `tools`, or (unless a tool is forced) an answer.
+   *  Small models then can't write broken JSON, unknown tools or missing arguments. */
+  schema: (tools: ToolDef[], answer: boolean) => ({
+    type: "json_schema",
+    json_schema: {
+      name: "step",
+      schema: {
+        oneOf: [
+          ...tools.map((t) => ({ type: "object", properties: { tool: { const: t.name }, args: { type: "object", properties: t.params, required: t.required } }, required: ["tool", "args"] })),
+          ...(answer ? [{ type: "object", properties: { answer: { type: "string" } }, required: ["answer"] }] : []),
+        ],
+      },
+    },
+  }),
 };
+
+/** The text so far of a streamed {"answer": "…"}, or null while it's a tool call. */
+function partialAnswer(text: string): string | null {
+  const m = text.match(/^\s*\{\s*"answer"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!m) return null;
+  for (let s = m[1]; s; s = s.slice(0, -1)) {
+    try {
+      return JSON.parse(`"${s}"`);
+    } catch {
+      /* cut mid-escape: drop a character */
+    }
+  }
+  return "";
+}
 
 /* ------------------------------------------------------------------ loop */
 export type AgentRun = {
@@ -464,21 +504,32 @@ export type AgentRun = {
   onLog: (l: AgentLog) => void;
   onStep: (label: string) => void;
   onThink?: (t: string) => void;
+  /** Tool name the first step must call ("/" Tools menu). */
+  force?: string;
+  /** Only these tools (Agent mode off, "just this once"); every change asks. */
+  allow?: string[];
 };
 
 const label = (name: string) => ({ search_notes: "Searching notes", read_note: "Reading a note", make_flashcards: "Writing flashcards" } as Record<string, string>)[name] ?? `Using ${name.replace(/_/g, " ")}`;
 
 /** Runs the tool loop; resolves the final answer text. */
-export async function runAgent({ model, messages, onText, onLog, onStep, onThink }: AgentRun): Promise<string> {
+export async function runAgent({ model, messages, onText, onLog, onStep, onThink, force, allow }: AgentRun): Promise<string> {
   stopped = false;
+  askAll = !!allow;
+  const ALL = allow ? TOOLS.filter((t) => allow.includes(t.name)) : TOOLS;
   const msgs = [...messages];
-  let json = false; // provider refused native tools: JSON protocol from now on
+  const small = isBuiltIn(model);
+  // Built-in engine: JSON held to a grammar from the start (no broken calls); others: native tools, JSON if refused.
+  let json = small;
   let retries = 0;
   let answer = "";
-  const small = isBuiltIn(model);
   const req = [...msgs].reverse().find((m) => m.role === "user");
-  const tools = small ? pickTools(String(req?.content ?? "")) : TOOLS;
-  if (small && msgs[0]?.role === "system") msgs[0] = { ...msgs[0], content: `${msgs[0].content}\n\n${EXAMPLES}` };
+  const tools = small ? pickTools(String(req?.content ?? "")).filter((t) => ALL.includes(t)) : ALL;
+  // Examples go right after the fixed agent prompt, before the open note's details, so the engine's prompt cache covers them.
+  if (small && msgs[0]?.role === "system") {
+    const c = String(msgs[0].content);
+    msgs[0] = { ...msgs[0], content: c.startsWith(AGENT_SYSTEM) ? `${AGENT_SYSTEM}\n\n${EXAMPLES}${c.slice(AGENT_SYSTEM.length)}` : `${c}\n\n${EXAMPLES}` };
+  }
   const exec = async (name: string, args: Args): Promise<string> => {
     const bad = check(name, args);
     if (bad) {
@@ -507,12 +558,17 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
     if (last) msgs.push({ role: "user", content: "(Step limit reached. Don't call more tools: tell me briefly what you did and what's left.)" });
     let text = "";
     let calls: ToolCall[] = [];
-    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(tools)}` }, ...msgs.slice(1)] : msgs;
+    const forced = !!force && step === 0;
+    const stepTools = forced ? TOOLS.filter((t) => t.name === force) : tools;
+    const grammar = small && json && !last;
+    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(stepTools, grammar)}` }, ...msgs.slice(1)] : msgs;
     try {
       calls = await engine.chat(model, send, (t) => {
         text += t;
-        if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
-      }, onThink, json || last ? undefined : openAiTools(tools));
+        const a = grammar ? partialAnswer(text) : null;
+        if (a !== null) onText(a);
+        else if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
+      }, onThink, json || last ? undefined : openAiTools(stepTools), forced, grammar ? { response_format: jsonFallback.schema(stepTools, !forced) } : undefined);
     } catch (e) {
       // Provider or model without tool support: switch to the JSON protocol once.
       if (!json && !last && /tool|function/i.test(String(e))) {
@@ -523,6 +579,13 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
       throw e;
     }
     if (stopped) break;
+    if (grammar) {
+      const a = partialAnswer(text);
+      if (a !== null) {
+        answer = a;
+        break;
+      }
+    }
     if (!calls.length && !last) {
       const p = jsonFallback.parse(text);
       if (p instanceof Error) {
@@ -539,9 +602,9 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
         continue;
       }
       // Small models often refuse ("I can't access your notes") on the first turn: nudge once.
-      if (small && step === 0 && tools !== TOOLS) {
+      if (step === 0 && (forced || (small && tools.length < ALL.length))) {
         onText("");
-        msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${tools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
+        msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${stepTools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
         continue;
       }
     }

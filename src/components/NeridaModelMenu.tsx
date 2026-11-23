@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
-import { Check, ChevronDown, Cloud, Cpu, KeyRound, Plus, Server, Settings2 } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronRight, Cloud, Cpu, Server, Settings2 } from "lucide-react";
 import {
-  engine, isCloud, listModels, MODEL_NAMES, modelLabel, OLLAMA_URL, openNeridaSettings, setDefaultModel, useNerida,
+  engine, nerida, isCloud, listModels, MODEL_NAMES, modelLabel, OLLAMA_URL, openNeridaSettings, setDefaultModel, useNerida,
   type AiStatus, type ModelId, type ModelRef,
 } from "../lib/nerida";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
@@ -12,17 +12,18 @@ const ABOUT: Record<ModelId, string> = { plus: "Smart · runs on this PC" };
 
 type Badge = { text: string; tone: "green" | "gray" | "amber" | "sky" };
 const TONE: Record<Badge["tone"], string> = {
-  green: "bg-teal-400/15 text-teal-200",
-  gray: "bg-white/[0.06] text-neutral-400",
-  amber: "bg-amber-400/15 text-amber-200",
-  sky: "bg-sky-400/15 text-sky-200",
+  green: "bg-teal-300 shadow-[0_0_6px_rgba(94,234,212,0.7)]",
+  gray: "bg-neutral-500",
+  amber: "bg-amber-300",
+  sky: "bg-sky-300",
 };
 
 /** Model picker for the chat bar: grouped rows with status badges, keyboard nav.
  *  Rendered in a portal so no parent can clip or cover it.
  *  `inSettings`: bordered field that opens downward; gray rows do nothing. */
-export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSettings?: boolean }) {
-  const { model, providers } = useNerida();
+/** `agent`: show the agent mode switch at the bottom (hidden for PDFs). */
+export function ModelMenu({ disabled, inSettings, agent: showAgent }: { disabled?: boolean; inSettings?: boolean; agent?: boolean }) {
+  const { model, providers, agent } = useNerida();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [ollama, setOllama] = useState<string[]>([]);
@@ -69,22 +70,22 @@ export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSett
     const sel = refId === model && !gray;
     return (
       <button type="button" data-sel={sel || undefined} onClick={() => (gray ? !inSettings && goSettings(null) : choose(refId))}
-        className={`group flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.08] ${sel ? "bg-teal-400/[0.07]" : ""}`}>
-        <span className={`grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] ${gray ? "opacity-50" : ""}`}>{icon}</span>
+        className={`oc-menu-row group flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2 py-2 text-left outline-none ${sel ? "oc-glass-inset" : ""}`}>
+        <span className={`oc-glass-inset grid size-8 shrink-0 place-items-center rounded-[9px] ${gray ? "opacity-50" : ""}`}>{icon}</span>
         <span className="min-w-0 flex-1">
-          <span className={`block truncate text-[13px] ${gray ? "text-neutral-400" : "text-neutral-100"}`}>{name}</span>
-          <span className={`mt-0.5 inline-block rounded-full px-1.5 py-px text-[10.5px] font-medium ${TONE[badge.tone]}`}>{badge.text}</span>
+          <span className={`block truncate text-[13px] font-medium ${gray ? "text-neutral-400" : "text-neutral-100"}`}>{name}</span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-neutral-500"><i className={`size-1.5 rounded-full ${TONE[badge.tone]}`} />{badge.text}</span>
         </span>
         {sel && <Check className="size-4 shrink-0 text-teal-300" />}
       </button>
     );
   };
   const Group = ({ label, extra }: { label: string; extra?: ReactNode }) => (
-    <p className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">{label}{extra}</p>
+    <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5 text-[11.5px] font-medium text-neutral-500">{label}{extra}</p>
   );
   const Action = ({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) => (
-    <button type="button" onClick={onClick} className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] text-neutral-300 outline-none hover:bg-white/[0.06] focus-visible:bg-white/[0.08]">
-      <span className="grid w-8 shrink-0 place-items-center text-neutral-500">{icon}</span>{label}
+    <button type="button" onClick={onClick} className="oc-menu-row flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left text-[12.5px] text-neutral-300 outline-none hover:text-neutral-100">
+      <span className="grid w-8 shrink-0 place-items-center text-neutral-500">{icon}</span><span className="flex-1">{label}</span><ChevronRight className="size-3.5 text-neutral-600" />
     </button>
   );
 
@@ -93,12 +94,13 @@ export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSett
       <button ref={btn} type="button" disabled={disabled} onClick={() => setOpen((o) => !o)} title="Choose model" aria-haspopup="menu" aria-expanded={open}
         onKeyDown={(e) => e.key === "ArrowUp" || e.key === "ArrowDown" ? (e.preventDefault(), setOpen(true)) : undefined}
         className={inSettings ? "flex h-8 min-w-[150px] cursor-pointer items-center justify-between gap-2 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 text-[13px] text-neutral-100 hover:bg-white/[0.07]" : `flex h-7 max-w-[170px] cursor-pointer items-center gap-1 rounded-lg px-2 text-[12px] transition-colors hover:bg-white/[0.06] hover:text-neutral-200 disabled:cursor-default disabled:opacity-50 ${open ? "bg-white/[0.06] text-neutral-200" : "text-neutral-400"}`}>
+        {showAgent && agent && <Bot className="size-3.5 shrink-0 text-teal-300" aria-label="Agent mode on" />}
         <span className="truncate">{modelLabel(model) || "Choose model"}</span>
         <ChevronDown className={`size-3.5 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && createPortal(
         <div ref={menu} role="menu" onKeyDown={onKey} style={{ position: "fixed", ...pos }}
-          className="oc-pop-in z-[1000] max-h-[60vh] w-[288px] overflow-y-auto rounded-xl border border-white/[0.1] bg-neutral-800/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl scrollbar-thin">
+          className="oc-pop-in oc-glass-float z-[1000] max-h-[60vh] w-[288px] overflow-y-auto rounded-2xl p-1.5 scrollbar-thin">
           <Group label="Nerida" extra={<BetaPill />} />
           {(["plus"] as ModelId[]).map((m) => {
             const installed = !!status?.server && !!status.models.find((x) => x.id === m)?.installed;
@@ -123,9 +125,20 @@ export function ModelMenu({ disabled, inSettings }: { disabled?: boolean; inSett
           ))}
 
           {!inSettings && <>
-            <div className="my-1.5 border-t border-white/[0.06]" />
-            {ollama.length === 0 && <Action icon={<Plus className="size-4" />} label="Add Ollama local model" onClick={() => goSettings("ollama")} />}
-            <Action icon={<KeyRound className="size-4" />} label="Add OpenAI API key" onClick={() => goSettings("openai")} />
+            <div className="mx-2 my-1.5 h-px bg-gradient-to-r from-transparent via-white/[0.1] to-transparent" />
+            {showAgent && (
+              <button type="button" role="menuitemcheckbox" aria-checked={agent} onClick={() => nerida.setAgent(!agent)}
+                className="oc-menu-row flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left outline-none">
+                <span className={`grid w-8 shrink-0 place-items-center ${agent ? "text-teal-300" : "text-neutral-500"}`}><Bot className="size-4" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12.5px] text-neutral-200">Agent mode</span>
+                  <span className="block text-[11px] text-neutral-500">Create and edit notes. You approve changes.</span>
+                </span>
+                <span className={`relative h-3.5 w-6 shrink-0 rounded-full transition-colors duration-200 ${agent ? "bg-teal-400/80 shadow-[0_0_8px_rgba(45,212,191,0.5)]" : "bg-white/[0.12]"}`}>
+                  <span className={`absolute top-0.5 size-2.5 rounded-full bg-white shadow transition-[left] duration-200 ${agent ? "left-3" : "left-0.5"}`} />
+                </span>
+              </button>
+            )}
             <Action icon={<Settings2 className="size-4" />} label="Manage models" onClick={() => goSettings(null)} />
           </>}
         </div>,

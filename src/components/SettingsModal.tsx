@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "../lib/dialog";
 import {
-  AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smile, Trash2, Upload, User, X,
+  AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smartphone, Smile, Trash2, Upload, User, X,
 } from "lucide-react";
 import { api } from "../data/api";
 import { resetAtlasGuide } from "./AtlasGuide";
@@ -23,6 +23,7 @@ import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { Modal, ModalButton } from "./Modal";
 import { EmojiPicker } from "./EmojiPicker";
 import { useEscape } from "../lib/overlay";
+import { SyncSettings } from "./SyncSettings";
 import logo from "../assets/logo-raw.png";
 
 export const ACCENTS = ["#2383e2", "#0ea5e9", "#14b8a6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#d946ef"];
@@ -67,14 +68,14 @@ export const sidebarPalette = (s: AppSettings): Record<string, string> | null =>
 type Ctx = { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void };
 type Row = { title: string; description?: ReactNode; keywords?: string; control: (c: Ctx) => ReactNode; wide?: boolean };
 type Group = { heading?: string; rows: Row[] };
-type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling" | "nerida";
+type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling" | "nerida" | "sync";
 type Page = { id: PageId; label: string; icon: ReactNode; groups?: Group[]; custom?: (c: Ctx) => ReactNode };
 
 const NAV: { heading: string; pages: PageId[] }[] = [
   { heading: "Account", pages: ["account", "preferences"] },
   { heading: "App", pages: ["general", "spelling", "shortcuts"] },
   { heading: "AI", pages: ["nerida"] },
-  { heading: "Data", pages: ["storage", "deleting"] },
+  { heading: "Data", pages: ["sync", "storage", "deleting"] },
   { heading: "Apps", pages: ["docs", "sketch", "mindmap", "study"] },
   { heading: "Help", pages: ["about"] },
 ];
@@ -184,6 +185,18 @@ const PAGES: Page[] = [
             ),
           },
           {
+            title: "Launch at login",
+            description: "Start Oceanic when you sign in to your computer, so study plan reminders arrive on time.",
+            keywords: "startup autostart boot windows",
+            control: () => <LaunchSwitch cmd="autostart" />,
+          },
+          {
+            title: "Start minimized",
+            description: "When launched at login, stay in the system tray instead of opening the window.",
+            keywords: "startup tray hidden background",
+            control: () => <LaunchSwitch cmd="start_minimized" />,
+          },
+          {
             title: "Close to system tray",
             description: "Clicking × hides Oceanic to the tray so it keeps running. Quit from the tray menu.",
             keywords: "background",
@@ -252,6 +265,7 @@ const PAGES: Page[] = [
       { heading: "Oceanic Mindmap", rows: [sc("Add child topic", "Tab"), sc("Add sibling topic", "Enter"), sc("Edit topic", "F2"), sc("Delete topic", "Del")] },
     ],
   },
+  { id: "sync", label: "Sync", icon: <Smartphone />, custom: () => <SyncSettings /> },
   { id: "spelling", label: "Spelling", icon: <SpellCheck />, custom: () => <SpellingPage /> },
   { id: "nerida", label: "Nerida AI", icon: <NeridaMark size={16} />, custom: () => <NeridaSettings /> },
   { id: "about", label: "About", icon: <Info />, custom: () => <AboutPage /> },
@@ -316,6 +330,15 @@ const PAGES: Page[] = [
   },
 ];
 const pageOf = (id: PageId) => PAGES.find((p) => p.id === id)!;
+
+/** Launch-at-login toggles (desktop only): read and set through the app's commands. */
+function LaunchSwitch({ cmd }: { cmd: "autostart" | "start_minimized" }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (isTauri()) void invoke<boolean>(`${cmd}_get`).then(setOn).catch(() => {});
+  }, [cmd]);
+  return <Switch on={on} onChange={(v) => (setOn(v), void invoke(`${cmd}_set`, { on: v }).catch(() => setOn(!v)))} />;
+}
 
 /** Notion-style settings: profile + search + grouped pages on the left, rows on the right. */
 export function SettingsModal({ settings, onChange, onClose, initialPage = "account" }: { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void; onClose: () => void; initialPage?: string }) {

@@ -6,6 +6,7 @@ import type { PageMeta } from "../data/workspace";
 import { COLORS, isoDate, STATUSES, tagColor } from "../lib/colors";
 import { flashLanded, setDragGhost } from "../lib/dragGhost";
 import { openContextMenu } from "./ContextMenu";
+import { SlidePill } from "./SlidePill";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 type Mode = "month" | "week" | "workweek" | "day" | "agenda";
@@ -412,13 +413,15 @@ function MiniMonth({ cursor, today, marked, onPick }: { cursor: Date; today: str
 function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
   return (
     <div className="flex rounded-md bg-white/[0.05] p-0.5">
+      <SlidePill className="rounded" />
       {options.map(([v, label]) => (
         <button
           key={v}
           type="button"
+          aria-pressed={value === v}
           onClick={() => onChange(v)}
           className={`h-6 cursor-pointer rounded px-2.5 text-[12px] transition-colors ${
-            value === v ? "bg-white/[0.12] text-neutral-100 shadow-sm" : "text-neutral-400 hover:text-neutral-200"
+            value === v ? "text-neutral-100" : "text-neutral-400 hover:text-neutral-200"
           }`}
         >
           {label}

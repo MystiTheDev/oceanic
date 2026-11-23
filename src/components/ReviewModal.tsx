@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import katex from "katex";
 import type { PageMeta } from "../data/workspace";
 import { clock, EXAM } from "../lib/study";
-import { dueCards, getSrs, grade, GRADES, previewLabel, type Grade } from "../lib/srs";
+import { dueCards, getSrs, grade, GRADES, OPEN_REVIEW, previewLabel, type Grade } from "../lib/srs";
 import { Modal } from "./Modal";
 
 const TONES = ["#f87171", "#fbbf24", "#34d399", "#60a5fa"]; // Again, Hard, Good, Easy
@@ -21,6 +21,17 @@ function Rich({ text }: { text: string }) {
       )}
     </>
   );
+}
+
+/** Shows the review when Home, Nerida's /review or a note asks (`openReview`). */
+export function ReviewHost({ pages }: { pages: PageMeta[] }) {
+  const [open, setOpen] = useState<{ pageId?: string } | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setOpen({ pageId: (e as CustomEvent<string | null>).detail ?? undefined });
+    window.addEventListener(OPEN_REVIEW, on);
+    return () => window.removeEventListener(OPEN_REVIEW, on);
+  }, []);
+  return open ? <ReviewModal pages={pages} pageId={open.pageId} onClose={() => setOpen(null)} /> : null;
 }
 
 /** Flashcard review: question → Space flips to the answer → 1–4 grades it. */

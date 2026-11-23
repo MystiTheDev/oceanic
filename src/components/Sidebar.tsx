@@ -21,6 +21,7 @@ import {
 import { buildPageTree, subtreeIds, type PageMeta, type PageNode } from "../data/workspace";
 import { SearchModal } from "./SearchModal";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
+import { VersionHistory } from "./VersionHistory";
 import { TrashPopover } from "./TrashPopover";
 import { ViewSwitcher, type AppView } from "./ViewSwitcher";
 import type { WorkspaceRecord } from "../data/api";
@@ -67,7 +68,7 @@ type DropTarget = { targetId: string | null; zone: DropZone };
 
 /** Fired on window to open the search palette from elsewhere (e.g. right-click menu). */
 /** Notion's sidebar bounds. */
-/** On-screen width; contents render at 90% (zoom) so everything is a touch smaller. */
+/** Sidebar width (px), real size. */
 const SIDEBAR_WIDTH = 264;
 
 export const OPEN_SEARCH_EVENT = "oceanic:open-search";
@@ -200,6 +201,7 @@ export function Sidebar({
     endDrag();
   };
 
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const runMenuAction = (action: PageMenuAction) => {
     if (!menu) return;
     const id = menu.pageId;
@@ -207,6 +209,7 @@ export function Sidebar({
     else if (action === "rename") setRenamingKey(menu.anchor.dataset.rowKey ?? id);
     else if (action === "duplicate") onDuplicatePage(id);
     else if (action === "trash") onTrashPage(id);
+    else if (action === "history") setHistoryId(id);
   };
 
   const rowProps = {
@@ -277,7 +280,7 @@ export function Sidebar({
 
   return (
     <aside
-      style={{ width: SIDEBAR_WIDTH / 0.9, zoom: 0.9 }}
+      style={{ width: SIDEBAR_WIDTH }}
       onDragOver={(e) => e.dataTransfer.types.includes("Files") && (e.preventDefault(), setFileOver(true))}
       onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setFileOver(false)}
       onDrop={(e) => {
@@ -292,90 +295,38 @@ export function Sidebar({
         if (rest.length) onImport(rest);
       }}
       data-tour="sidebar"
-      className="oc-sidebar relative z-10 my-2 ml-2 flex h-[calc(100%-16px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[var(--oc-sidebar)] backdrop-blur"
+      className="oc-sidebar relative z-10 my-2 ml-2 flex h-[calc(100%-16px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.1] bg-[var(--oc-sidebar)] backdrop-blur"
     >
       {fileOver && (
-        <div className="oc-fade-in pointer-events-none absolute inset-2 z-30 grid place-items-center rounded-xl border-2 border-dashed border-sky-400/70 bg-sky-500/10 text-[13px] font-medium text-sky-300">
+        <div className="oc-fade-in pointer-events-none absolute inset-2 z-30 grid place-items-center rounded-xl border-2 border-dashed border-sky-400/70 bg-sky-500/10 text-[13px] font-medium text-[var(--oc-brand-light)]">
           Drop to import notes
         </div>
       )}
       {/* ---- Workspace header ---- */}
-      <div className="flex h-16 items-center gap-2.5 px-3 pt-2">
-        <img src={logoRaw} alt="Oceanic logo" className="oc-brand-logo size-10 shrink-0 rounded-lg object-contain" />
+      <div className="flex h-14 items-center gap-2.5 px-3 pt-1.5">
+        <img src={logoRaw} alt="Oceanic logo" className="oc-brand-logo size-9 shrink-0 rounded-lg object-contain" />
         <div className="oc-brand-word flex-1 truncate text-[20px] font-extrabold tracking-[-0.02em]">Oceanic</div>
       </div>
 
-      {/* ---- Search: Notion's bordered box with the shortcut badge ---- */}
-      <div className="px-2.5 pb-2">
+      {/* ---- Search field ---- */}
+      <div className="px-2 pb-2 pt-1">
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
           title="Search (Ctrl+K)"
-          className="oc-search flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 text-[14px] text-neutral-500 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-400"
+          className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border border-white/[0.1] bg-white/[0.03] px-2.5 text-[13.5px] text-neutral-500 transition-[border-color,box-shadow,background-color] duration-150 hover:border-white/[0.16] hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--oc-brand-light)]/40"
         >
           <SearchIcon className="size-4 shrink-0 oc-ic-search" />
-          <span className="flex-1 text-left">Search</span>
-          <kbd className="shrink-0 rounded bg-white/[0.08] px-1.5 py-0.5 font-sans text-[11px] leading-none text-neutral-400">Ctrl+K</kbd>
+          <span className="flex-1 truncate text-left">Search or jump to…</span>
+          <kbd className="oc-keep shrink-0 rounded border border-white/[0.1] px-1.5 py-px font-sans text-[10.5px] leading-4 text-neutral-500">Ctrl K</kbd>
         </button>
       </div>
 
-      {/* ---- Home + Tags ---- */}
+      {/* ---- Top nav ---- */}
       <div className="flex flex-col gap-px px-2 pb-1">
-        <button
-          type="button"
-          onClick={onHome}
-          className={`flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
-            homeActive ? "oc-nav-active text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
-          }`}
-        >
-          <HomeIcon className="size-4 shrink-0 text-neutral-500 oc-ic-home" />
-          <span className="flex-1 text-left">Home</span>
-        </button>
-        <button
-          type="button"
-          onClick={onLibrary}
-          className={`flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
-            libraryActive ? "oc-nav-active text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
-          }`}
-        >
-          <LibraryIcon className="size-4 shrink-0 text-neutral-500 oc-ic-library" />
-          <span className="flex-1 text-left">Library</span>
-        </button>
-        <button
-          type="button"
-          onClick={onOpenTags}
-          className="flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
-        >
-          <TagsIcon className="size-4 shrink-0 text-neutral-500 oc-ic-tags" />
-          <span className="flex-1 text-left">Tags &amp; status</span>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            const el = e.currentTarget;
-            setTrashAnchor((a) => (a ? null : el));
-          }}
-          className={`relative flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] transition-colors duration-100 ${
-            trashAnchor
-              ? "bg-white/[0.07] text-neutral-200"
-              : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
-          }`}
-        >
-          <TrashIcon className="size-4 text-neutral-500 oc-ic-trash" />
-          <span className="flex-1 text-left">Trash</span>
-          {trashedPages.length > 0 && (
-            <span className="oc-keep oc-badge text-[11px] text-neutral-500">{trashedPages.length}</span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => onImport()}
-          title="Markdown, Word, text, HTML or a Notion export (.zip). You can also drop files on the sidebar."
-          className="flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300"
-        >
-          <ImportIcon className="size-4 text-neutral-500 oc-ic-import" />
-          <span className="flex-1 text-left">Import</span>
-        </button>
+        <NavRow icon={<HomeIcon className="size-4 oc-ic-home" />} label="Home" active={homeActive} onClick={onHome} />
+        <NavRow icon={<LibraryIcon className="size-4 oc-ic-library" />} label="Library" active={libraryActive} onClick={onLibrary} />
+        <NavRow icon={<TagsIcon className="size-4 oc-ic-tags" />} label="Tags & status" onClick={onOpenTags} />
       </div>
 
       <div className="oc-rail-hide">
@@ -384,7 +335,7 @@ export function Sidebar({
 
       {/* ---- Scrollable body: Favorites + Private page tree ---- */}
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
-        <>
+        {pinned.length > 0 && <>
             <SectionHeader
               label="Favorites"
               count={pinned.length}
@@ -392,11 +343,6 @@ export function Sidebar({
               onToggle={() => setFavoritesOpen((v) => !v)}
             />
             <Collapse open={favoritesOpen}>
-              {pinned.length === 0 && (
-                <p className="px-2 py-1 text-[12px] leading-snug text-neutral-600">
-                  No favorites yet. Use ⋯ → Add to Favorites to pin a page here.
-                </p>
-              )}
               {pinned.map((page) => (
                 <PageTreeRow
                   key={`fav-${page.id}`}
@@ -406,7 +352,7 @@ export function Sidebar({
                 />
               ))}
             </Collapse>
-        </>
+        </>}
 
         <SectionHeader
           label="Pages"
@@ -433,8 +379,25 @@ export function Sidebar({
         </Collapse>
       </div>
 
-      {/* ---- Bottom: Trash + New page ---- */}
-      <div className="flex flex-col gap-px p-2">
+      {/* ---- Bottom: Trash + Import, like Notion ---- */}
+      <div className="flex flex-col gap-px px-2 pt-1">
+        <NavRow
+          icon={<TrashIcon className="size-4 oc-ic-trash" />}
+          label="Trash"
+          open={!!trashAnchor}
+          onClick={(e) => {
+            const el = e.currentTarget as HTMLElement;
+            setTrashAnchor((a) => (a ? null : el));
+          }}
+        >
+          {trashedPages.length > 0 && <span className="oc-keep oc-badge text-[11px] text-neutral-500">{trashedPages.length}</span>}
+        </NavRow>
+        <NavRow
+          icon={<ImportIcon className="size-4 oc-ic-import" />}
+          label="Import"
+          title="Markdown, Word, text, HTML or a Notion export (.zip). You can also drop files on the sidebar."
+          onClick={() => onImport()}
+        />
       </div>
 
       {footer}
@@ -448,6 +411,7 @@ export function Sidebar({
           onClose={() => setSearchOpen(false)}
         />
       )}
+      {historyId && <VersionHistory pageId={historyId} onClose={() => setHistoryId(null)} />}
       {menu && menuPage && (
         <PageMenu
           anchor={menu.anchor}
@@ -515,14 +479,14 @@ function SectionHeader({
         e.preventDefault();
         onDrop?.();
       }}
-      className={`group mt-4 flex h-[30px] items-center rounded-lg px-2 transition-colors duration-100 ${
+      className={`group mt-3 flex h-7 items-center rounded-md px-2 transition-colors duration-100 ${
         dropActive ? "bg-sky-500/15 ring-1 ring-inset ring-sky-500/60" : "hover:bg-white/5"
       }`}
     >
       <button
         type="button"
         onClick={onToggle}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-500 transition-colors duration-100 group-hover:text-neutral-400"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-[12px] font-medium text-neutral-500 transition-colors duration-100 group-hover:text-neutral-400"
       >
         {label}
         {count !== undefined && (
@@ -630,7 +594,7 @@ function PageTreeRow(props: PageTreeRowProps) {
         }}
         onDragEnd={onDragEndRow}
         onContextMenu={(e) => !renaming && onRowContextMenu(e, page, expandKey)}
-        className={`oc-row group relative flex h-[34px] cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[14px] transition-colors duration-100 ${
+        className={`oc-row group relative flex h-7 pointer-coarse:h-[34px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[14px] transition-colors duration-100 ${
           dropZone === "inside"
             ? "bg-sky-500/15 text-neutral-100 ring-1 ring-inset ring-sky-500/60"
             : active
@@ -688,14 +652,6 @@ function PageTreeRow(props: PageTreeRowProps) {
             {page.title || "Untitled"}
           </span>
         )}
-        {/* The same note is also under Favorites: a small star says so. */}
-        {!renaming && !isFav && page.pinned && (
-          <Star aria-label="In Favorites" className="size-3 shrink-0 fill-current text-amber-400/70 group-hover:opacity-0" />
-        )}
-        {/* Collapsed parents show how many sub-pages they hold (hidden while hovering). */}
-        {!renaming && hasChildren && !isOpen && (
-          <span className="shrink-0 pr-1 text-[11px] tabular-nums text-neutral-600 group-hover:opacity-0">{children.length}</span>
-        )}
 
         {/* Hover actions, pinned to the row's right edge */}
         {!renaming && (
@@ -731,7 +687,7 @@ function PageTreeRow(props: PageTreeRowProps) {
       {/* Sub-tree: indented one step, hairline guide under the icon, animated open */}
       {hasChildren && (
         <Collapse open={isOpen}>
-          <div className="ml-[17px] border-l border-white/[0.07] pl-1">
+          <div className="ml-[17px] border-l border-white/[0.1] pl-1">
             {children.map((child) => (
               <PageTreeRow
                 key={child.page.id}
@@ -784,7 +740,7 @@ function RenameInput({
         if (e.key === "Enter") finish(true);
         else if (e.key === "Escape") finish(false);
       }}
-      className="oc-fade-in h-[22px] min-w-0 flex-1 rounded border border-sky-500/60 bg-neutral-800 px-1.5 text-[14px] text-neutral-100 outline-none"
+      className="oc-fade-in h-[22px] min-w-0 flex-1 rounded border border-sky-500/60 bg-[var(--oc-sidebar)] px-1.5 text-[14px] text-neutral-100 outline-none"
     />
   );
 }
@@ -809,6 +765,27 @@ function HoverAction({
       data-row-key={rowKey}
       className="grid size-5 cursor-pointer place-items-center rounded text-neutral-500 transition-colors duration-100 hover:bg-white/10 hover:text-neutral-200"
     >
+      {children}
+    </button>
+  );
+}
+
+/** Notion-style nav row: mono icon, 28px (34px on touch), gray hover. */
+function NavRow({ icon, label, title, active, open, onClick, children }: {
+  icon: ReactNode; label: string; title?: string; active?: boolean; open?: boolean;
+  onClick: (e: MouseEvent) => void; children?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`group relative flex h-7 pointer-coarse:h-[34px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 ${
+        active ? "oc-nav-active font-medium text-neutral-100" : open ? "bg-white/[0.07] text-neutral-200" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
+      }`}
+    >
+      <span className="grid size-5 shrink-0 place-items-center text-neutral-500">{icon}</span>
+      <span className="flex-1 truncate text-left">{label}</span>
       {children}
     </button>
   );

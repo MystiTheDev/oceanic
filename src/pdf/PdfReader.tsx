@@ -855,9 +855,13 @@ export function PdfReader({ docId, onBack }: { docId: string; onBack: () => void
             const text = (window.getSelection()?.toString() ?? "").replace(/-\n(?=[a-z])/g, "").replace(/\s*\n\s*/g, " ").trim();
             if (!text) return;
             setSelBar(null);
-            const quote = `"${text.slice(0, 3000)}"`;
+            // Page of the selection, so Nerida's answer can say where it came from.
+            const at = window.getSelection()?.anchorNode;
+            const pg = (at instanceof Element ? at : at?.parentElement)?.closest<HTMLElement>("[data-page]")?.dataset.page;
+            const quote = `"${text.slice(0, 3000)}"${pg ? ` (page ${pg} of ${doc?.name ?? "the PDF"})` : ""}`;
             if (action === "cards") openNeridaCards({ pageId: "", selection: text, pdf: { docId, name: doc?.name ?? "PDF" } });
             else if (action === "explain") askNerida({ text: `Explain this simply: ${quote}`, send: true });
+            else if (action === "quiz") askNerida({ text: `Quiz me on this passage: ask 3 short questions, numbered, without the answers: ${quote}`, send: true });
             else if (action === "summarize") askNerida({ text: `Summarize this in a few bullet points: ${quote}`, send: true });
             else askNerida({ text: `About ${quote}: `, send: false });
           }} />

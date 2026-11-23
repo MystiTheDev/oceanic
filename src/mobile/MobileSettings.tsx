@@ -4,7 +4,7 @@
  * gesture steps back one screen at a time.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronLeft, ChevronRight, Database, GripVertical, Info, Palette, PenLine, CalendarDays, Trash2, Vibrate } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Database, GripVertical, Info, Palette, PenLine, CalendarDays, RefreshCw, Trash2, Vibrate } from "lucide-react";
 import { Reorder, useDragControls } from "motion/react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -13,9 +13,10 @@ import { AvatarCropper, AvatarViewer } from "../components/AvatarCropper";
 import { setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
 import { HOME_SECTIONS, buzz, setMobilePref, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 import { checkForUpdates } from "./MobileUpdater";
+import { PairScreen, SyncScreen } from "./MobileSync";
 import "./mobile-settings.css";
 
-type Screen = "main" | "profile" | "appearance" | "editor" | "calendar" | "data" | "deleting" | "about";
+type Screen = "main" | "profile" | "appearance" | "editor" | "calendar" | "data" | "deleting" | "about" | "sync" | "pair";
 type Choice = { title: string; value: string; options: [string, string][]; pick: (v: string) => void };
 
 type Props = {
@@ -28,7 +29,7 @@ type Props = {
 };
 
 
-function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+export function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button role="switch" aria-checked={on} className={`ocs-switch ${on ? "on" : ""}`} onClick={() => (buzz(), onChange(!on))}>
       <span />
@@ -51,7 +52,7 @@ function HomeRow({ id, hidden }: { id: HomeSection; hidden: HomeSection[] }) {
   );
 }
 
-function Row({ icon, title, value, onClick, children }: { icon?: ReactNode; title: string; value?: string; onClick?: () => void; children?: ReactNode }) {
+export function Row({ icon, title, value, onClick, children }: { icon?: ReactNode; title: string; value?: string; onClick?: () => void; children?: ReactNode }) {
   const body = (
     <>
       {icon && <span className="ocs-icon">{icon}</span>}
@@ -117,7 +118,7 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
 
   const titles: Record<Screen, string> = {
     main: "Settings", profile: "Profile", appearance: "Appearance", editor: "Editor", calendar: "Calendar",
-    data: "Data & backup", deleting: "Deleting", about: "About",
+    data: "Data & backup", deleting: "Deleting", about: "About", sync: "Sync", pair: "Pair with a laptop",
   };
 
   const [crop, setCrop] = useState<File | null>(null);
@@ -142,6 +143,7 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
           <Row icon={<CalendarDays size={19} />} title="Calendar" onClick={() => open("calendar")} />
         </section>
         <section className="ocs-group">
+          <Row icon={<RefreshCw size={19} />} title="Sync" onClick={() => open("sync")} />
           <Row icon={<Database size={19} />} title="Data & backup" onClick={() => open("data")} />
           <Row icon={<Trash2 size={19} />} title="Deleting" onClick={() => open("deleting")} />
           <Row icon={<Info size={19} />} title="About" value={version && `v${version}`} onClick={() => open("about")} />
@@ -242,6 +244,10 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
         <p className="ocs-note">Uninstalling Oceanic deletes its notes. Export the ones you want to keep first.</p>
       </>
     );
+  } else if (screen === "sync") {
+    body = <SyncScreen onPair={() => open("pair")} />;
+  } else if (screen === "pair") {
+    body = <PairScreen onDone={back} />;
   } else if (screen === "deleting") {
     body = (
       <>
@@ -316,3 +322,4 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
     </div>
   );
 }
+
