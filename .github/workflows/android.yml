@@ -11,6 +11,7 @@ on:
     tags:
       - "v*"
       - "android-v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
