@@ -3,6 +3,7 @@
  * pages. Swipe to change month/week; the selected day's pages list below.
  * Week start follows the shared "Start week on" setting.
  */
+import { isTablet } from "./formFactor";
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Plus } from "lucide-react";
@@ -104,6 +105,7 @@ export function MobileCalendar(p: Props) {
                 <button key={id} className={`ocm-cal-day${id === p.day ? " sel" : ""}${id === todayIso ? " today" : ""}${out ? " out" : ""}`} onClick={() => pick(d)}>
                   {d.getDate()}
                   <i className={dotClass(due[id], id)} />
+                  {isTablet && due[id]?.[0] && <small className="ocm-cal-task">{due[id][0].title || "Untitled"}</small>}
                 </button>
               );
             })}

@@ -100,7 +100,7 @@ import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell } from "./mobile/MobileShell";
-import { isAndroid, isTablet, usePhoneUI } from "./mobile/formFactor";
+import { isAndroid, isTablet, useLandscape, usePhoneUI } from "./mobile/formFactor";
 import { SyncTrustBanner } from "./components/SyncBackground";
 import { MobilePropChips } from "./mobile/MobileProps";
 import { attachBlocks, pickFiles, titleFor } from "./mobile/attach";
@@ -1508,6 +1508,9 @@ export default function App() {
   // Tablets swap phone UI (portrait) and desktop UI (landscape) on rotation.
   // The open page lives in App state; keep its editor scroll position across the swap.
   const phoneUI = usePhoneUI();
+  const landscape = useLandscape();
+  // Android Sketch: null = Notes, "" = Sketch Home, else the open image's path.
+  const [mobileSketch, setMobileSketch] = useState<string | null>(null);
   const editorScroll = useRef(0);
   const editorScroller = () => {
     let el = appRoot.current?.querySelector(".bn-editor")?.parentElement ?? null;
@@ -1593,8 +1596,35 @@ export default function App() {
         const el = e.target as HTMLElement;
         if (el.querySelector(".bn-editor") && el.scrollHeight > el.clientHeight) editorScroll.current = el.scrollTop / (el.scrollHeight - el.clientHeight);
       } : undefined}>
-      {phoneUI ? (
+      {phoneUI && mobileSketch !== null ? (
+        <>
+        {/* Phones: Sketch is landscape-only; the hint covers it so nothing is lost on rotate. */}
+        {!isTablet && !landscape && (
+          <div className="oc-rotate-hint">
+            <p className="text-[17px] font-semibold">Rotate your phone</p>
+            <p className="text-[14px] opacity-70">Oceanic Sketch works only in landscape.</p>
+            <button type="button" className="ocm-liquid oc-sketch-back mx-auto" style={{ position: "static" }} onClick={() => setMobileSketch(null)}>Back to Notes</button>
+          </div>
+        )}
+        {mobileSketch ? (
+          <SketchEditor
+            key={mobileSketch}
+            path={mobileSketch}
+            onOpen={setMobileSketch}
+            onSavedAs={setMobileSketch}
+            onHome={() => setMobileSketch("")}
+            onClose={() => setMobileSketch("")}
+          />
+        ) : (
+          <div className="relative h-full overflow-y-auto">
+            <button type="button" className="ocm-liquid oc-sketch-back" onClick={() => setMobileSketch(null)}>‹ Notes</button>
+            <SketchHome onOpen={setMobileSketch} openNow={[]} onFocusTab={() => {}} onCloseTab={() => {}} />
+          </div>
+        )}
+        </>
+      ) : phoneUI ? (
         <MobileShell
+          onSketch={() => setMobileSketch("")}
           userName={settings.userName}
           avatar={settings.avatar}
           theme={resolvedTheme === "light" ? "light" : "dark"}

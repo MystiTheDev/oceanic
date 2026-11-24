@@ -9,11 +9,21 @@ export const isTablet = isAndroid && Math.min(fake ? innerWidth : screen.width, 
 
 const landscape = matchMedia("(orientation: landscape)");
 const sub = (cb: () => void) => (landscape.addEventListener("change", cb), () => landscape.removeEventListener("change", cb));
-/** Phone UI: phones, and tablets held upright. Landscape tablets get the desktop UI. */
-export const phoneUINow = () => isAndroid && !(isTablet && landscape.matches);
+/** Phone UI: all Android, tablets in both orientations (styled by `.tablet` CSS). */
+export const phoneUINow = () => isAndroid;
 export const usePhoneUI = () => useSyncExternalStore(sub, phoneUINow);
+export const useLandscape = () => useSyncExternalStore(sub, () => landscape.matches);
 
-if (isTablet) document.documentElement.classList.add("tablet");
+if (isTablet) {
+  const html = document.documentElement;
+  html.classList.add("tablet");
+  // Rotation: crossfade the app into the new layout.
+  landscape.addEventListener("change", () => {
+    html.classList.remove("oc-rotate");
+    void html.offsetWidth;
+    html.classList.add("oc-rotate");
+  });
+}
 
 const vv = window.visualViewport;
 const subKb = (cb: () => void) => (vv?.addEventListener("resize", cb), () => vv?.removeEventListener("resize", cb));
