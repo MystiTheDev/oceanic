@@ -4,7 +4,7 @@
 import type { MindmapNodeRecord } from "../data/api";
 
 /** `logo` is only used on the root topic: the map's emoji logo. */
-export type NodeStyle = { color?: string; shape?: "pill" | "rounded" | "rect"; arrow?: boolean; collapsed?: boolean; logo?: string };
+export type NodeStyle = { note?: string; color?: string; shape?: "pill" | "rounded" | "rect"; arrow?: boolean; collapsed?: boolean; logo?: string };
 
 export type MNode = {
   id: string;
@@ -106,6 +106,7 @@ export const SUBJECTS: { id: string; label: string; icon: string; branches: stri
   { id: "", label: "Blank", icon: "🧠", branches: [] },
   { id: "physics", label: "Physics", icon: "⚛️", branches: ["Mechanics", "Waves & Optics", "Electricity & Magnetism", "Thermodynamics", "Modern Physics"] },
   { id: "chemistry", label: "Chemistry", icon: "🧪", branches: ["Physical", "Organic", "Inorganic", "Reactions", "Lab work"] },
+  { id: "biology", label: "Biology", icon: "🧬", branches: ["Cells", "Genetics", "Evolution", "Ecology", "Human Body", "Plants"] },
   { id: "maths", label: "Maths", icon: "📐", branches: ["Algebra", "Calculus", "Geometry", "Trigonometry", "Statistics"] },
   { id: "cs", label: "Computer Science", icon: "💻", branches: ["Programming", "Data Structures", "Algorithms", "Databases", "Networks"] },
   { id: "literature", label: "Literature", icon: "📚", branches: ["Themes", "Characters", "Plot", "Setting", "Quotes"] },
@@ -129,4 +130,21 @@ export function toMermaid(nodes: MNode[]): string {
   };
   walk(ROOT, 1);
   return lines.join("\n");
+}
+
+/** Indented Markdown outline (topic notes become quoted lines under them). */
+export function toOutline(nodes: MNode[]): string {
+  const root = nodes.find((n) => n.id === ROOT);
+  const lines = [`# ${root?.label || "Untitled"}`, ""];
+  if (root?.style.note) lines.push(`> ${root.style.note.replace(/\n/g, "\n> ")}`, "");
+  const walk = (id: string, depth: number) => {
+    for (const k of childrenOf(nodes, id).sort((a, b) => a.y - b.y)) {
+      const pad = "  ".repeat(depth);
+      lines.push(`${pad}- ${k.label || "Untitled"}`);
+      if (k.style.note) lines.push(...k.style.note.split("\n").map((l) => `${pad}  > ${l}`));
+      walk(k.id, depth + 1);
+    }
+  };
+  walk(ROOT, 0);
+  return lines.join("\n") + "\n";
 }

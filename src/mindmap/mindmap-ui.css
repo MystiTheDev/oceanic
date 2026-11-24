@@ -49,3 +49,4 @@
 .oc-mm-search-pop button { display: flex; width: 100%; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; font-size: 13px; text-align: left; color: var(--color-neutral-300); cursor: pointer; }
 .oc-mm-search-pop button:hover, .oc-mm-search-pop button.is-on { background: var(--oc-raised-hover, rgb(255 255 255 / 0.07)); color: var(--color-neutral-100); }
 .oc-mm-float:empty { display: none; }
+.oc-mindmap .react-flow__node.oc-mm-dim { opacity: 0.18; transition: opacity 200ms; }

@@ -5,9 +5,10 @@ import { drawStroke, type Stroke } from "./ink";
  * `canvas` always shows everything. While a layer has live vector `strokes`,
  * `base` holds its pixels without them; any pixel edit bakes the strokes in.
  */
-export type Layer = { id: string; name: string; visible: boolean; opacity: number; canvas: HTMLCanvasElement; strokes: Stroke[]; base: HTMLCanvasElement | null };
+export type Blend = "source-over" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "difference" | "color-dodge" | "color-burn";
+export type Layer = { id: string; name: string; visible: boolean; opacity: number; blend: Blend; canvas: HTMLCanvasElement; strokes: Stroke[]; base: HTMLCanvasElement | null };
 export type Rect = { x: number; y: number; w: number; h: number };
-type Snapshot = { w: number; h: number; active: number; layers: { id: string; name: string; visible: boolean; opacity: number; data: ImageData; strokes: Stroke[]; base: ImageData | null }[] };
+type Snapshot = { w: number; h: number; active: number; layers: { id: string; name: string; visible: boolean; opacity: number; blend: Blend; data: ImageData; strokes: Stroke[]; base: ImageData | null }[] };
 
 let nextId = 1;
 const lid = () => `l${nextId++}`;
@@ -46,7 +47,7 @@ export class SketchDoc {
   }
 
   addLayer(name = `Layer ${this.layers.length}`, at = this.layers.length) {
-    const layer: Layer = { id: lid(), name, visible: true, opacity: 1, canvas: makeCanvas(this.w, this.h), strokes: [], base: null };
+    const layer: Layer = { id: lid(), name, visible: true, opacity: 1, blend: "source-over", canvas: makeCanvas(this.w, this.h), strokes: [], base: null };
     this.layers.splice(at, 0, layer);
     this.active = at;
     return layer;
@@ -58,7 +59,7 @@ export class SketchDoc {
       w: this.w,
       h: this.h,
       active: this.active,
-      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, data: ctx2d(l.canvas).getImageData(0, 0, this.w, this.h), strokes: l.strokes.slice(), base: l.base && ctx2d(l.base).getImageData(0, 0, this.w, this.h) })),
+      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, blend: l.blend, data: ctx2d(l.canvas).getImageData(0, 0, this.w, this.h), strokes: l.strokes.slice(), base: l.base && ctx2d(l.base).getImageData(0, 0, this.w, this.h) })),
     };
   }
   private restore(s: Snapshot) {
@@ -69,7 +70,7 @@ export class SketchDoc {
       ctx2d(canvas).putImageData(l.data, 0, 0);
       let base: HTMLCanvasElement | null = null;
       if (l.base) ctx2d((base = makeCanvas(s.w, s.h))).putImageData(l.base, 0, 0);
-      return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, canvas, strokes: l.strokes, base };
+      return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, blend: l.blend, canvas, strokes: l.strokes, base };
     });
     this.active = Math.min(s.active, this.layers.length - 1);
     this.onChange();
@@ -176,6 +177,7 @@ export class SketchDoc {
     for (const l of this.layers) {
       if (!l.visible) continue;
       g.globalAlpha = l.opacity;
+      g.globalCompositeOperation = l.blend;
       g.drawImage(l.canvas, 0, 0);
     }
     return c;
@@ -187,6 +189,7 @@ export class SketchDoc {
     const l = this.addLayer(`${src.name} copy`, this.active + 1);
     ctx2d(l.canvas).drawImage(src.canvas, 0, 0);
     l.opacity = src.opacity;
+    l.blend = src.blend;
   }
   deleteLayer() {
     if (this.layers.length < 2) return;
@@ -205,8 +208,10 @@ export class SketchDoc {
     const below = this.layers[this.active - 1];
     const g = ctx2d(below.canvas);
     g.globalAlpha = top.opacity;
+    g.globalCompositeOperation = top.blend;
     g.drawImage(top.canvas, 0, 0);
     g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
     this.deleteLayer();
   }
 }
@@ -292,10 +297,11 @@ export function drawShape(
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
       const len = Math.max(10, opts.width * 4);
       g.beginPath();
-      g.moveTo(b.x, b.y);
-      g.lineTo(b.x - len * Math.cos(ang - 0.45), b.y - len * Math.sin(ang - 0.45));
-      g.moveTo(b.x, b.y);
+      g.moveTo(b.x - len * Math.cos(ang - 0.45), b.y - len * Math.sin(ang - 0.45));
+      g.lineTo(b.x, b.y);
       g.lineTo(b.x - len * Math.cos(ang + 0.45), b.y - len * Math.sin(ang + 0.45));
+      // Fill / Both modes give a solid head.
+      if (opts.mode !== "outline") (g.closePath(), (g.fillStyle = opts.stroke), g.fill());
       g.stroke();
     }
     g.restore();

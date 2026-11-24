@@ -58,6 +58,14 @@ export function AppSwitcher({ current, onSwitch }: { current: AppId; onSwitch: (
 
 export const APP_LOADER_MS = 3000;
 
+/** One random tip per switch, per app. */
+const TIPS: Record<AppId, string[]> = {
+  notes: ["Ctrl+K opens quick search from anywhere.", "Type / in a page for blocks.", "Drag a page in the sidebar to nest it."],
+  mindmap: ["Tab adds a child, Enter adds a sibling.", "Arrow keys move between topics.", "Ctrl+F finds a topic; F focuses its branch.", "N adds a note to the selected topic."],
+  docs: ["Ctrl+S saves the Word file in place.", "Paste images straight into a document.", "Headings build the outline on the left."],
+  sketch: ["S select, Q lasso, B brush, E eraser, T text.", "Hold Space to pan, Ctrl+wheel to zoom.", "Text stays editable: click it with the Text tool.", "Ctrl+D duplicates a selection."],
+};
+
 /** Full-window splash while switching apps: the target's logo lifts in, its name and a progress bar fill. */
 /** `onLeave` fires as the fade-out starts, so whatever is underneath can start its intro then. */
 export function AppLoader({ app, onLeave, onDone }: { app: AppId; onLeave?: () => void; onDone: () => void }) {
@@ -68,13 +76,20 @@ export function AppLoader({ app, onLeave, onDone }: { app: AppId; onLeave?: () =
     return () => (window.clearTimeout(out), window.clearTimeout(done));
   }, [app]);
   const a = APPS[app];
+  const [tip] = useState(() => TIPS[app][Math.floor(Math.random() * TIPS[app].length)]);
   return (
     <div
       data-app-loader
-      className={`fixed inset-0 z-[90] grid place-items-center transition-[opacity,transform,filter] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${leaving ? "pointer-events-none scale-[1.04] opacity-0 blur-[6px]" : "oc-fade-in opacity-100"}`}
+      className={`fixed inset-0 z-[90] grid place-items-center overflow-hidden transition-[opacity,transform,filter] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${leaving ? "pointer-events-none scale-[1.04] opacity-0 blur-[6px]" : "oc-fade-in opacity-100"}`}
       style={{ "--tone": a.tone, background: `radial-gradient(ellipse at 50% 40%, color-mix(in srgb, ${a.tone} 18%, transparent), transparent 60%), var(--color-neutral-900)` } as React.CSSProperties}
     >
-      <div className="flex flex-col items-center gap-4">
+      <svg className="oc-loader-waves pointer-events-none absolute bottom-0 left-0 h-[38%] w-[200%]" viewBox="0 0 2400 300" preserveAspectRatio="none" aria-hidden>
+        {[0.22, 0.13, 0.07].map((o, i) => {
+          const y = 120 + i * 45;
+          return <path key={i} style={{ animationDuration: `${8 + i * 4}s` }} fill={a.tone} fillOpacity={o} d={`M0 ${y} Q150 ${y - 50 + i * 15} 300 ${y} T600 ${y} T900 ${y} T1200 ${y} T1500 ${y} T1800 ${y} T2100 ${y} T2400 ${y} V300 H0Z`} />;
+        })}
+      </svg>
+      <div className="relative flex flex-col items-center gap-4">
         <img src={a.logo} alt="" className="oc-loader-logo size-24 object-contain" />
         <div className="oc-loader-text text-center">
           <p className="text-[26px] font-extrabold tracking-[-0.02em] text-neutral-100">{a.name}</p>
@@ -83,6 +98,10 @@ export function AppLoader({ app, onLeave, onDone }: { app: AppId; onLeave?: () =
         <div className="mt-3 h-1 w-48 overflow-hidden rounded-full bg-white/[0.08]">
           <div className="oc-loader-bar h-full rounded-full" style={{ background: a.tone, animationDuration: `${APP_LOADER_MS - 400}ms` }} />
         </div>
+        <p className="oc-loader-text mt-4 max-w-xs rounded-full border border-white/[0.08] bg-white/[0.04] px-4 py-1.5 text-center text-[12.5px] text-neutral-300 backdrop-blur-md" style={{ animationDelay: "500ms" }}>
+          <span className="mr-1.5 font-semibold" style={{ color: a.tone }}>Tip</span>
+          {tip}
+        </p>
       </div>
     </div>
   );
