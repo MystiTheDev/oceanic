@@ -1354,12 +1354,12 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     const group = (id: "draw" | "pick" | "shape", tools: Tool[], fallback: ReactNode, items: ReactNode) =>
       pop1(id, <IBtn tip="" on={tools.includes(tool)} onClick={() => setPop(pop === id ? null : id)}>{tools.includes(tool) ? toolIcon[tool] : fallback}</IBtn>, <div className="flex items-center gap-1" onClick={() => setPop(null)}>{items}</div>);
     return (
-      <div className="oc-sketch relative h-full" onMouseDown={(e) => text && !(e.target as HTMLElement).closest("textarea") && !stackRef.current?.contains(e.target as Node) && commitText()}>
+      <div className="oc-sketch relative h-full" onMouseDown={(e) => editing && !(e.target as HTMLElement).closest("textarea") && !stackRef.current?.contains(e.target as Node) && commitText()}>
         <div className="flex h-full">
           {canvasArea}
           {showLayers && !drawing && <aside className="oc-dock-layers scrollbar-thin">{layersPanel}</aside>}
         </div>
-        <div className={`oc-dock ocm-liquid${drawing || text ? " hide" : ""}`}>
+        <div className={`oc-dock ocm-liquid${drawing || editing ? " hide" : ""}`}>
           <IBtn tip="Sketch Home" onClick={onHome}><House /></IBtn>
           <IBtn tip="Undo" disabled={!doc.canUndo} onClick={() => (commitFloating(), doc.undo(), changed())}><Undo2 /></IBtn>
           <IBtn tip="Redo" disabled={!doc.canRedo} onClick={() => (doc.redo(), changed())}><Redo2 /></IBtn>

@@ -7,7 +7,18 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Create the draft once, so the 3 desktop jobs and android.yml all fill the same release.
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --title "Oceanic $GITHUB_REF_NAME" --notes ""
+
   release:
+    needs: draft
     permissions:
       contents: write
     strategy:
