@@ -1,3 +1,23 @@
+# 🌊 Oceanic v3.1.0: Polish everywhere
+
+## 🖥️ Desktop
+
+- 🧭 New setup wizard: a glass split-panel with a live preview, theme cards and Enter to continue. Skip it any time and rerun it from Help & About.
+- 🌊 New app-switch animation: the app's icon flies to the centre, plays a short themed animation, then ripples into the app.
+- ✨ Smoother sidebar: a sliding highlight, springy folders, new pages pop in, and icons animate on hover and click. Trash and Import moved above More apps.
+- ⚙️ Polished Settings.
+- 🎨 Sketch revamp: Paint-style tabs, better text boxes, select and lasso with handles, custom colours, brush opacity and hardness, stickers.
+- 🧬 New Biology template in Mindmap.
+- 🛟 The installer asks you to close Oceanic before updating.
+- 🔄 Fixed sync showing an error after a successful sync.
+
+## 📱 Android
+
+- 🎨 Oceanic Sketch comes to Android, with a touch-friendly dock.
+- 📱 Tablets get a reworked layout in both portrait and landscape.
+- 👤 Your profile moved to a "You" tab in the bottom dock.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v3.0.0: Sync between your devices
 
 ## 🖥️ Desktop
