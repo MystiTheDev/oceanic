@@ -73,7 +73,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#android-}"; version="${version#v}"
+          version=$(node -p "require('./package.json').version"); [[ "$GITHUB_REF_NAME" == android-v* ]] && version="${GITHUB_REF_NAME#android-v}"
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
           cp "$apk" "Oceanic_${version}_android_arm64.apk"
           if [[ "$GITHUB_REF_NAME" == android-v* ]]; then
