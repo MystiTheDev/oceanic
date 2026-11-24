@@ -768,7 +768,20 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
 .ocm-bulk button:active { background: rgba(var(--oc-ink), 0.08); }
 .ocm-bulk button:disabled { opacity: 0.35; }
 
-/* ---------- Portrait tablets (landscape tablets use the desktop UI) */
+/* ---------- Tablets: side rail (ocm-tab); ocm-split also puts the list and the page side by side */
+.ocm-tab { --rail: 84px; --list: 400px; }
+.ocm-tab .ocm-nav-fade { display: none; }
+.ocm-tab .ocm-nav { top: 0; bottom: 0; left: 14px; right: auto; flex-direction: column; transform-origin: 0 50%; }
+.ocm-tab .ocm-nav.compact { transform: none; gap: 10px; }
+.ocm-tab .ocm-pill { flex-direction: column; height: auto; width: var(--h); padding: 5px 0; }
+.ocm-tab .ocm-plus-menu { bottom: auto; top: 0; left: calc(100% + 10px); right: auto; transform-origin: 0 0; }
+.ocm-tab .ocm-scroll, .ocm-tab .ocm-bulk { margin-left: var(--rail); }
+.ocm-tab .ocm-page { left: var(--rail); width: auto; }
+.ocm-split .ocm-layer:not(.ocm-page) { right: auto; width: calc(var(--rail) + var(--list)); }
+.ocm-split .ocm-page { left: calc(var(--rail) + var(--list)); box-shadow: none; border-left: 1px solid rgba(var(--oc-ink), 0.08); }
+.ocm-split::after { content: "Open a page to see it here"; position: absolute; inset: 0 0 0 calc(var(--rail) + var(--list)); display: grid; place-items: center; color: var(--oc-text-muted, gray); font-size: 15px; pointer-events: none; z-index: 0; }
+.ocm-split .ocm-folders, .ocm-split .ocm-tiles, .ocm-split .ocm-shortcuts { grid-template-columns: repeat(2, 1fr) !important; }
+
 @media (min-width: 600px) {
   .tablet .ocm-root { zoom: 1.1; }
   .tablet .ocm-scroll > *, .tablet .ocm-editor > * { max-width: 760px; margin-left: auto; margin-right: auto; }
