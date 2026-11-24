@@ -90,8 +90,11 @@ export function AgentToggle({ disabled }: { disabled?: boolean }) {
     <button type="button" disabled={disabled} aria-pressed={agent}
       data-tip={agent ? "Agent mode: on" : "Agent mode: off"} data-tip-sub="When on, Nerida can create and edit notes. You approve changes; auto-apply is in the effort menu."
       onClick={() => nerida.setAgent(!agent)}
-      className={`grid size-7 cursor-pointer place-items-center rounded-lg hover:bg-white/[0.06] disabled:cursor-default ${agent ? "bg-teal-400/10 text-teal-300" : "text-neutral-400 hover:text-neutral-200"}`}>
+      className={`oc-agent-btn flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 hover:bg-white/[0.06] disabled:cursor-default ${agent ? "text-teal-300" : "text-neutral-400 hover:text-neutral-200"}`}>
       <Bot className="size-4" />
+      <span className={`relative h-3.5 w-6 rounded-full transition-colors duration-200 ${agent ? "bg-teal-400/80 shadow-[0_0_8px_rgba(45,212,191,0.5)]" : "bg-white/[0.12]"}`}>
+        <span className={`absolute top-0.5 size-2.5 rounded-full bg-white shadow transition-[left] duration-200 ${agent ? "left-3" : "left-0.5"}`} />
+      </span>
     </button>
   );
 }

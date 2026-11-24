@@ -5,6 +5,7 @@ import { HEADINGS_TO_ATLAS } from "./PromoteDialog";
 import type { PageMeta } from "../data/workspace";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
 import { ExportDialog } from "./ExportDialog";
+import { VersionHistory } from "./VersionHistory";
 import { Toast } from "./Toast";
 import { NeridaMark } from "./NeridaOrb";
 import { openNeridaCards } from "./NeridaCards";
@@ -42,6 +43,7 @@ export function PageHeader({
 }: PageHeaderProps) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
   const [notice, setNotice] = useState<{ message: string; key: number } | null>(null);
   const now = useNow(30_000);
@@ -59,6 +61,7 @@ export function PageHeader({
     else if (action === "duplicate") onDuplicate(page.id);
     else if (action === "trash") onTrash(page.id);
     else if (action === "export") setExportOpen(true);
+    else if (action === "history") setHistoryOpen(true);
     else if (action === "flashcards") openNeridaCards({ pageId: page.id });
     else if (action === "test") setTestOpen(true);
     // Goes through the agent's make_mindmap tool and its review card: one code path.
@@ -142,6 +145,7 @@ export function PageHeader({
         />
       )}
 
+      {historyOpen && <VersionHistory pageId={page.id} onClose={() => setHistoryOpen(false)} />}
       {testOpen && <TestSetup pages={pages} initialNotes={[page.id]} onClose={() => setTestOpen(false)} />}
       {exportOpen && (
         <ExportDialog

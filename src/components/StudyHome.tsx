@@ -19,6 +19,7 @@ import { ScrollRow } from "./ScrollRow";
 import { TestSetup } from "./TestSetup";
 import { useEscape } from "../lib/overlay";
 import { useTestHistory } from "../lib/quiz";
+import { SlidePill } from "./SlidePill";
 
 type Block = { id?: string; type?: string; props?: Record<string, unknown>; content?: unknown; children?: Block[] };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -495,8 +496,9 @@ function TodoWidget({ pages, getDoc, setDoc, onOpen }: { pages: PageMeta[]; getD
       tone="#fbbf24"
       action={
         <div className="flex rounded-md bg-white/[0.05] p-0.5 text-[11px]">
+          <SlidePill className="rounded" />
           {(["list", "page"] as const).map((m) => (
-            <button key={m} type="button" onClick={() => setStudy("todoSource", { ...todoSource, mode: m })} className={`cursor-pointer rounded px-2 py-0.5 ${todoSource.mode === m ? "bg-white/[0.1] text-neutral-100" : "text-neutral-400"}`}>
+            <button key={m} type="button" aria-pressed={todoSource.mode === m} onClick={() => setStudy("todoSource", { ...todoSource, mode: m })} className={`cursor-pointer rounded px-2 py-0.5 ${todoSource.mode === m ? "text-neutral-100" : "text-neutral-400"}`}>
               {m === "list" ? "Type here" : "Use a note"}
             </button>
           ))}

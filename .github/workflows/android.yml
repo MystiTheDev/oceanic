@@ -1,7 +1,8 @@
-# One release for desktop and Android: pushing a `v2.0.8` tag runs this next to
-# release.yml. The APK is published as its own `android-v2.0.8` release (never
-# marked "latest", so the desktop updater's releases/latest link is untouched;
-# the in-app Android updater reads android-v* releases).
+# One release for desktop and Android: pushing a `vX.Y.Z` tag runs this next to
+# release.yml and uploads the APK into that vX.Y.Z release. The phone updater
+# reads v* releases. An `android-v*` tag is only for the one-off bridge APK
+# (e.g. android-v2.0.10): a locked build that tells older phones to
+# install this commit's version. Never marked "latest".
 # Secrets: ANDROID_KEYSTORE (base64 of the .jks), ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
 name: Android
 
@@ -58,25 +59,30 @@ jobs:
           } > keystore.properties
 
       - name: Build APK
-        run: npx tauri android build --apk --target aarch64
+        run: |
+          if [[ "$GITHUB_REF_NAME" == android-v* ]]; then
+            # Bridge points at this commit's version (the release old phones must upgrade to).
+            export VITE_BRIDGE="$(node -p "require('./package.json').version")"
+            npx tauri android build --apk --target aarch64 --config "{\"version\":\"${GITHUB_REF_NAME#android-v}\"}"
+          else
+            npx tauri android build --apk --target aarch64
+          fi
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#android-}"; version="${version#v}"; tag="android-v${version}"
+          version="${GITHUB_REF_NAME#android-}"; version="${version#v}"
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
           cp "$apk" "Oceanic_${version}_android_arm64.apk"
-          gh release create "$tag" --target "$GITHUB_SHA" "Oceanic_${version}_android_arm64.apk" \
-            --title "Oceanic Android v${version}" \
-            --notes "Android build (arm64). Download the APK on your phone and install it; updates install over the old version and keep your notes." \
-            --latest=false
-          # Also attach the APK to the main vX.Y.Z release (desktop draft from release.yml),
-          # so one release holds both. The android-v* release above stays for the phone updater.
-          if [ "$GITHUB_REF_NAME" = "v${version}" ]; then
-            for i in $(seq 1 60); do
-              gh release upload "v${version}" "Oceanic_${version}_android_arm64.apk" --clobber && exit 0
-              sleep 30
-            done
-            echo "::warning::v${version} release not found; APK only in ${tag}"
+          if [[ "$GITHUB_REF_NAME" == android-v* ]]; then
+            gh release create "$GITHUB_REF_NAME" --target "$GITHUB_SHA" "Oceanic_${version}_android_arm64.apk" --title "Oceanic Android v${version} (upgrade notice)" --notes "Upgrade notice for phones on v2.0.9 or older. Install the latest Oceanic from the main release." --latest=false
+            exit 0
           fi
+          # Attach the APK to the main vX.Y.Z release (desktop draft from release.yml).
+          for i in $(seq 1 60); do
+            gh release upload "v${version}" "Oceanic_${version}_android_arm64.apk" --clobber && exit 0
+            sleep 30
+          done
+          echo "::error::v${version} release not found; APK not published"
+          exit 1

@@ -1,4 +1,5 @@
 {
   "version": "0.0.1",
-  "configurations": [{ "name": "oceanic-web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 1420 }]
+  "configurations": [{ "name": "oceanic-web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 1420 },
+    { "name": "site", "runtimeExecutable": "node", "runtimeArgs": ["C:/Users/Admin/AppData/Local/Temp/claude/5d8f01fce16d0b30/b121f92e-1e4b-4c0a-849e-158c735e9141/scratchpad/serve.js", "C:/Users/Admin/Videos/Oceanic/site"], "port": 5178 }]
 }

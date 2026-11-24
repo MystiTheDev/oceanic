@@ -1,4 +1,4 @@
-// Phone self-updater: checks GitHub for a newer `android-v*` release with an
+// Phone self-updater: checks GitHub for a newer `vX.Y.Z` release with an
 // APK, shows a bottom sheet, and hands the download to UpdaterPlugin.kt.
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
@@ -6,15 +6,14 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { buzz } from "./mobilePrefs";
 
 const API = "https://api.github.com/repos/MystiTheDev/oceanic/releases?per_page=30";
-const LAST_CHECK = "oc-update-last-check";
 const SKIPPED = "oc-update-skipped";
-const DAY = 24 * 60 * 60 * 1000;
+const RETRY = [10_000, 30_000, 60_000, 120_000]; // failed startup check: try again after these delays
 
 type Release = { version: string; notes: string; apk: string };
 type CheckResult = "found" | "none" | "error";
 
-const parse = (v: string) => v.replace(/^\D*/, "").split(/[.+-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0);
-const newer = (a: string, b: string) => {
+export const parse = (v: string) => v.replace(/^\D*/, "").split(/[.+-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0);
+export const newer = (a: string, b: string) => {
   const [x, y] = [parse(a), parse(b)];
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
   return false;
@@ -35,18 +34,22 @@ const plain = (md: string) =>
     .replace(/(\*\*|__|`)/g, "")
     .trim();
 
+// Only the "## ... Android" section of the release notes, up to the next "## ".
+const androidNotes = (md: string) => md.replace(/\r/g, "").match(/^##[^\n]*Android[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m)?.[1] ?? "";
+
 async function latest(): Promise<Release | null> {
   const res = await fetch(API, { headers: { Accept: "application/vnd.github+json" } });
   if (!res.ok) throw new Error(`GitHub ${res.status}`);
   const list: { tag_name: string; body: string | null; draft: boolean; prerelease: boolean; assets: { name: string; browser_download_url: string }[] }[] = await res.json();
-  let best: Release | null = null;
+  let best: (typeof list)[number] | null = null;
   for (const r of list) {
-    if (r.draft || r.prerelease || !r.tag_name.startsWith("android-v")) continue;
-    const apk = r.assets.find((a) => a.name.endsWith(".apk"));
-    const version = r.tag_name.slice("android-v".length);
-    if (apk && (!best || newer(version, best.version))) best = { version, notes: plain(r.body ?? ""), apk: apk.browser_download_url };
+    if (r.draft || r.prerelease || !/^v\d/.test(r.tag_name)) continue;
+    if (!best || newer(r.tag_name, best.tag_name)) best = r;
   }
-  return best;
+  // The APK is uploaded late; until it is there, there is no update.
+  const apk = best?.assets.find((a) => a.name.endsWith(".apk"));
+  if (!best || !apk) return null;
+  return { version: best.tag_name.slice(1), notes: plain(androidNotes(best.body ?? "")), apk: apk.browser_download_url };
 }
 
 // Settings' "Check for updates" asks the mounted prompt through this.
@@ -60,7 +63,6 @@ export function MobileUpdater() {
 
   useEffect(() => {
     const check = async (manual: boolean): Promise<CheckResult> => {
-      store.set(LAST_CHECK, String(Date.now()));
       try {
         const [r, current] = await Promise.all([latest(), getVersion()]);
         if (!r || !newer(r.version, current)) return "none";
@@ -73,8 +75,12 @@ export function MobileUpdater() {
       }
     };
     manualCheck = () => check(true);
-    if (Date.now() - Number(store.get(LAST_CHECK) ?? 0) > DAY) void check(false);
-    return () => { manualCheck = null; };
+    let timer = 0;
+    const auto = async (n: number) => {
+      if ((await check(false)) === "error" && n < RETRY.length) timer = window.setTimeout(() => void auto(n + 1), RETRY[n]);
+    };
+    void auto(0);
+    return () => { manualCheck = null; window.clearTimeout(timer); };
   }, []);
 
   if (!release) return null;

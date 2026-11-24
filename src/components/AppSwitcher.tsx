@@ -32,8 +32,8 @@ export function AppSwitcher({ current, onSwitch }: { current: AppId; onSwitch: (
     }
   }, [open]);
   return (
-    <div className="oc-rail-hide flex flex-col gap-px px-2 pb-1">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full cursor-pointer items-center gap-1.5 px-2 pb-0.5 pt-3 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-500 hover:text-neutral-400">
+    <div data-tour="apps" className="oc-rail-hide flex flex-col gap-px px-2 pb-1">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full cursor-pointer mt-0.5 h-7 items-center gap-2 rounded-md px-2 text-[14px] text-neutral-400 transition-colors duration-100 hover:bg-white/5 hover:text-neutral-300">
         <LayoutGrid className="size-3.5" />
         <span className="flex-1 text-left">More apps</span>
         {!open && ORDER.filter((a) => a !== current).map((a) => <img key={a} src={APPS[a].logo} alt="" className="size-4 object-contain opacity-80" />)}

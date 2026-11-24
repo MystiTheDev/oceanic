@@ -3,6 +3,7 @@ mod ai;
 mod db;
 mod scope;
 mod amsi;
+mod sync;
 
 use scope::Scope;
 
@@ -138,7 +139,7 @@ const UPLOAD_EXT: &[&str] = &[
     "txt", "md", "csv", "json", "zip", "7z", "rar", "epub",
 ];
 
-fn assets_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn assets_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("assets");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
@@ -414,8 +415,15 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// Launched by "Start in tray with Windows": the first reveal is skipped.
+#[cfg(desktop)]
+static TRAY_START: AtomicBool = AtomicBool::new(false);
+
 #[cfg(desktop)]
 fn show_main(app: &AppHandle) {
+    if TRAY_START.swap(false, Ordering::Relaxed) {
+        return;
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -669,6 +677,57 @@ async fn share_call(app: AppHandle, cmd: String, args: serde_json::Value) -> Res
     Err("Android only".into())
 }
 
+/// "Start in tray with Windows".
+#[tauri::command]
+fn autostart_get(app: AppHandle) -> bool {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        return app.autolaunch().is_enabled().unwrap_or(false);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[tauri::command]
+fn autostart_set(app: AppHandle, on: bool) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let l = app.autolaunch();
+        return if on { l.enable() } else { l.disable() }.map_err(|e| e.to_string());
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, on);
+        Err("Desktop only".into())
+    }
+}
+
+/// Marker file: present = a login launch opens the window instead of staying in the tray.
+fn start_shown_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("start-shown"))
+}
+
+#[tauri::command]
+fn start_minimized_get(app: AppHandle) -> bool {
+    !start_shown_file(&app).is_some_and(|f| f.exists())
+}
+
+#[tauri::command]
+fn start_minimized_set(app: AppHandle, on: bool) -> Result<(), String> {
+    let f = start_shown_file(&app).ok_or("No config folder")?;
+    if on {
+        let _ = std::fs::remove_file(&f);
+        Ok(())
+    } else {
+        std::fs::create_dir_all(f.parent().unwrap()).and_then(|_| std::fs::write(&f, b"1")).map_err(|e| e.to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -694,7 +753,8 @@ pub fn run() {
                 .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
                 .build(),
         )
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--tray"])));
     // Android: share sheet for export, .ocean files opened from other apps.
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
@@ -715,6 +775,19 @@ pub fn run() {
             })
             .build(),
     );
+    // LAN sync on Android: multicast lock + device name (SyncPlugin.kt).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("lan-sync")
+            .setup(|app, api| {
+                app.manage(sync::SyncPlugin(api.register_android_plugin("io.github.mystithedev.oceanic", "SyncPlugin")?));
+                Ok(())
+            })
+            .build(),
+    );
+    // Phone scans the laptop's pairing QR code.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -733,6 +806,17 @@ pub fn run() {
             };
             app.manage(Scope::load(app.handle(), legacy)?);
             app.manage(db::Db(Mutex::new(conn)));
+            app.manage(sync::Sync::default());
+            sync::start_listener(app.handle());
+            sync::start_watch(app.handle());
+            #[cfg(desktop)]
+            // Launched at login: stay in the tray unless "Start minimized" was turned off.
+            if std::env::args().any(|a| a == "--tray") && !start_shown_file(app.handle()).is_some_and(|f| f.exists()) {
+                TRAY_START.store(true, Ordering::Relaxed);
+                if let Some(splash) = app.get_webview_window("splash") {
+                    let _ = splash.close();
+                }
+            }
             #[cfg(desktop)]
             app.manage(ai::Ai::default());
             #[cfg(desktop)]
@@ -783,6 +867,25 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             apk_install,
             share_call,
+            sync::sync_info,
+            sync::sync_pair_start,
+            sync::sync_pair_cancel,
+            sync::sync_discover,
+            sync::sync_pair_join,
+            sync::sync_test,
+            sync::sync_now,
+            sync::sync_unpair,
+            sync::sync_network,
+            sync::sync_trust,
+            sync::sync_networks,
+            sync::sync_forget_network,
+            sync::sync_android,
+            sync::sync_set_option,
+            sync::sync_set_hold_mb,
+            autostart_get,
+            autostart_set,
+            start_minimized_get,
+            start_minimized_set,
             #[cfg(desktop)]
             ai::ai_status,
             #[cfg(desktop)]
@@ -799,6 +902,7 @@ pub fn run() {
             ai::ai_chat,
             #[cfg(desktop)]
             ai::ai_stop,
+            ai::ai_embed,
             #[cfg(desktop)]
             ai::ai_set_key,
             #[cfg(desktop)]
@@ -815,6 +919,9 @@ pub fn run() {
             db::get_page,
             db::create_page,
             db::save_page,
+            db::page_versions,
+            db::page_ydoc,
+            db::content_stale_pages,
             db::rename_page,
             db::set_page_icon,
             db::toggle_pin_page,

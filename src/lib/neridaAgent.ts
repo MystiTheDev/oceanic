@@ -2,10 +2,10 @@ import { useSyncExternalStore } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import { api, type MindmapNodeRecord } from "../data/api";
 import type { PageMeta } from "../data/workspace";
-import { docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
+import { AGENT_SYSTEM, docText, engine, nerida, uid, type AgentLog, type ChatMessage, type ModelRef, type ToolCall } from "./nerida";
 import { scrubInjection } from "./neridaGuard";
 import { searchNotes } from "./noteIndex";
-import { gatherText, generateCards, stopGenerating, withCards } from "./neridaStudy";
+import { gatherText, generateCards, stopGenerating, whyNoFacts, withCards } from "./neridaStudy";
 
 /* Nerida agent mode (Phase 4.5): the model calls the app's tools itself.
  *
@@ -40,6 +40,8 @@ export type AgentHost = {
 };
 let host: AgentHost | null = null;
 export const setAgentHost = (h: AgentHost | null) => void (host = h);
+/** The app's note functions, or null before App has mounted. */
+export const agentHost = () => host;
 const H = () => {
   if (!host) throw new Error("Notes aren't ready yet.");
   return host;
@@ -79,6 +81,8 @@ export async function undo(logId: string) {
 
 /* ------------------------------------------------------------------ stop */
 let stopped = false;
+/** This run was started without Agent mode (see `needsTool`): every change asks, even with Auto-apply on. */
+let askAll = false;
 export function stopAgent() {
   stopped = true;
   for (const c of cards) c.resolve(false);
@@ -179,7 +183,7 @@ const fresh = (blocks: PartialBlock[]): PartialBlock[] => JSON.parse(JSON.string
 
 /** Applies an action: through an Accept card, or straight away (creating things with auto-apply on). */
 async function approve(card: Omit<AgentCard, "id">, create: boolean): Promise<boolean> {
-  if (create && nerida.get().autoApply) return true;
+  if (create && nerida.get().autoApply && !askAll) return true;
   return ask(card);
 }
 const rejected = (what: string): Out => stopped ? { result: "Stopped by the user.", log: { kind: "error", text: `Stopped before: ${what}`, state: "rejected" } } : ({ result: `The user rejected this (${what}). Nothing was changed. Don't retry unless they ask.`, log: { kind: "error", text: `Rejected: ${what}`, state: "rejected" } });
@@ -208,7 +212,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const t = asStr(a.title) || "Untitled";
     const parent = a.parent ? findNote(a.parent) : null;
     const md = asStr(a.content);
-    const ok = await approve({ kind: "create", title: `Create note Ã¢â‚¬Å“${t}Ã¢â‚¬Â${parent ? ` in ${title(parent)}` : ""}`, after: md || "(empty)" }, true);
+    const ok = await approve({ kind: "create", title: `Create note “${t}”${parent ? ` in ${title(parent)}` : ""}`, after: md || "(empty)" }, true);
     if (!ok) return rejected(`create note ${t}`);
     const id = await H().createNote(t, parent?.id ?? null, md ? H().markdown(md) : undefined);
     if (!id) throw new Error("Couldn't create the note.");
@@ -246,7 +250,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
       }
     }
     const n = plan.length;
-    const ok = await ask({ kind: "edit", title: `Edit ${n} block${n > 1 ? "s" : ""} in Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, before: was.reverse().join("\n\n"), after: now.reverse().join("\n\n") });
+    const ok = await ask({ kind: "edit", title: `Edit ${n} block${n > 1 ? "s" : ""} in “${title(p)}”`, before: was.reverse().join("\n\n"), after: now.reverse().join("\n\n") });
     if (!ok) return rejected(`edit ${title(p)}`);
     H().setDoc(p.id, doc);
     return { result: `Edited ${n} block${n > 1 ? "s" : ""} in "${title(p)}". Block numbers changed: call read_note again before more edits.`, log: { kind: "edit", text: `Edited ${n} block${n > 1 ? "s" : ""} in ${title(p)}`, pageId: p.id, state: "applied" }, undo: () => H().setDoc(p.id, fresh(before)) };
@@ -259,7 +263,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const old = title(p);
     if (!(await ask({ kind: "edit", title: "Rename note", before: old, after: t }))) return rejected(`rename ${old}`);
     H().rename(p.id, t);
-    return { result: `Renamed "${old}" to "${t}".`, log: { kind: "edit", text: `Renamed ${old} Ã¢â€ â€™ ${t}`, pageId: p.id, state: "applied" }, undo: () => H().rename(p.id, p.title) };
+    return { result: `Renamed "${old}" to "${t}".`, log: { kind: "edit", text: `Renamed ${old} → ${t}`, pageId: p.id, state: "applied" }, undo: () => H().rename(p.id, p.title) };
   },
 
   async move_note(a) {
@@ -269,7 +273,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     if (to?.id === p.id) throw new Error("A note can't go inside itself.");
     const from = p.parentId;
     const where = to ? `into ${title(to)}` : "to the top level";
-    if (!(await ask({ kind: "edit", title: `Move Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â ${where}` }))) return rejected(`move ${title(p)}`);
+    if (!(await ask({ kind: "edit", title: `Move “${title(p)}” ${where}` }))) return rejected(`move ${title(p)}`);
     await H().move(p.id, to?.id ?? null);
     return { result: `Moved "${title(p)}" ${where}.`, log: { kind: "edit", text: `Moved ${title(p)} ${where}`, pageId: p.id, state: "applied" }, undo: () => H().move(p.id, from) };
   },
@@ -280,7 +284,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const rm = new Set(asList(a.remove).map((t) => t.toLowerCase()));
     const tags = [...new Set([...old.filter((t) => !rm.has(t.toLowerCase())), ...asList(a.add)])];
     if (tags.join() === old.join()) return { result: "Tags already match; nothing changed." };
-    if (!(await ask({ kind: "edit", title: `Tags on Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, before: old.join(", ") || "(none)", after: tags.join(", ") || "(none)" }))) return rejected(`tag ${title(p)}`);
+    if (!(await ask({ kind: "edit", title: `Tags on “${title(p)}”`, before: old.join(", ") || "(none)", after: tags.join(", ") || "(none)" }))) return rejected(`tag ${title(p)}`);
     H().setTags(p.id, tags);
     return { result: `Tags on "${title(p)}" are now: ${tags.join(", ") || "none"}.`, log: { kind: "edit", text: `Tagged ${title(p)}: ${tags.join(", ") || "no tags"}`, pageId: p.id, state: "applied" }, undo: () => H().setTags(p.id, old) };
   },
@@ -288,7 +292,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
   async delete_note(a) {
     const p = findNote(a.note);
     const subs = live().filter((x) => x.parentId === p.id).length;
-    if (!(await ask({ kind: "delete", title: `Move Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â to Trash`, warning: subs ? `Its ${subs} sub-note${subs > 1 ? "s go" : " goes"} too.` : undefined }))) return rejected(`delete ${title(p)}`);
+    if (!(await ask({ kind: "delete", title: `Move “${title(p)}” to Trash`, warning: subs ? `Its ${subs} sub-note${subs > 1 ? "s go" : " goes"} too.` : undefined }))) return rejected(`delete ${title(p)}`);
     H().trash(p.id);
     return { result: `Moved "${title(p)}" to the Trash.`, log: { kind: "delete", text: `Moved ${title(p)} to Trash`, state: "applied" }, undo: () => H().restore(p.id) };
   },
@@ -299,8 +303,8 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const made: string[] = [];
     await generateCards(await gatherText([p.id], false), count, ["qa"], "medium", (c) => made.push(c.text));
     if (stopped) return { result: "Stopped." };
-    if (!made.length) return { result: `Couldn't find enough facts in "${title(p)}" for flashcards.`, log: { kind: "error", text: `No flashcards from ${title(p)}` } };
-    if (!(await approve({ kind: "study", title: `Add ${made.length} flashcards to Ã¢â‚¬Å“${title(p)}Ã¢â‚¬Â`, lines: made }, true))) return rejected(`flashcards for ${title(p)}`);
+    if (!made.length) return { result: `No flashcards from "${title(p)}". ${whyNoFacts()}`, log: { kind: "error", text: `No flashcards from ${title(p)}` } };
+    if (!(await approve({ kind: "study", title: `Add ${made.length} flashcards to “${title(p)}”`, lines: made }, true))) return rejected(`flashcards for ${title(p)}`);
     const before = await H().getDoc(p.id);
     H().setDoc(p.id, withCards(JSON.parse(JSON.stringify(before)), made));
     return { result: `Added ${made.length} flashcards to "${title(p)}".`, log: { kind: "study", text: `Made ${made.length} flashcards in ${title(p)}`, pageId: p.id, state: "applied" }, undo: () => H().setDoc(p.id, fresh(before)) };
@@ -319,7 +323,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const branches = (Array.isArray(a.branches) ? a.branches : []).map((b) => (typeof b === "string" ? { label: b, children: [] } : { label: asStr((b as Args).label), children: asList((b as Args).children) })).filter((b) => b.label).slice(0, 12);
     if (!branches.length) throw new Error("branches is empty.");
     const lines = branches.map((b) => `${b.label}${b.children.length ? `: ${b.children.join(", ")}` : ""}`);
-    if (!(await approve({ kind: "study", title: `Create mind map Ã¢â‚¬Å“${t}Ã¢â‚¬Â`, lines }, true))) return rejected(`mind map ${t}`);
+    if (!(await approve({ kind: "study", title: `Create mind map “${t}”`, lines }, true))) return rejected(`mind map ${t}`);
     const map = await api.createMindmap(t, "");
     const nodes: MindmapNodeRecord[] = [{ id: "root", label: t, positionX: 0, positionY: 0, parentNodeId: null, linkedPageId: link?.id ?? null, styleJson: '{"shape":"pill"}' }];
     branches.forEach((b, i) => {
@@ -341,8 +345,8 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const moving = asList(a.move).map(findNote);
     const lines = [...subs.map((s) => `New: ${s.title}`), ...moving.map((m) => `Move in: ${title(m)}`)];
     // Moving existing notes is a change, so it always asks.
-    if (!(await approve({ kind: "create", title: `Create folder Ã¢â‚¬Å“${t}Ã¢â‚¬Â`, lines: lines.length ? lines : undefined }, !moving.length))) return rejected(`folder ${t}`);
-    const id = await H().createNote(t, null, H().markdown(`Ã°Å¸â€œÂ ${t}`));
+    if (!(await approve({ kind: "create", title: `Create folder “${t}”`, lines: lines.length ? lines : undefined }, !moving.length))) return rejected(`folder ${t}`);
+    const id = await H().createNote(t, null, H().markdown(`📁 ${t}`));
     if (!id) throw new Error("Couldn't create the folder.");
     const made: string[] = [];
     for (const s of subs) {
@@ -366,9 +370,9 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
   async link_notes(a) {
     const [x, y] = [findNote(a.from), findNote(a.to)];
     if (x.id === y.id) throw new Error("Pick two different notes.");
-    if (!(await approve({ kind: "create", title: `Link Ã¢â‚¬Å“${title(x)}Ã¢â‚¬Â Ã¢â€ â€ Ã¢â‚¬Å“${title(y)}Ã¢â‚¬Â` }, true))) return rejected("link");
+    if (!(await approve({ kind: "create", title: `Link “${title(x)}” ↔ “${title(y)}”` }, true))) return rejected("link");
     await api.connectPages(x.id, y.id, "related");
-    return { result: `Linked "${title(x)}" and "${title(y)}" on the Atlas.`, log: { kind: "create", text: `Linked ${title(x)} Ã¢â€ â€ ${title(y)}`, pageId: x.id, state: "applied" }, undo: () => api.deleteCanvasEdge(x.id, y.id) };
+    return { result: `Linked "${title(x)}" and "${title(y)}" on the Atlas.`, log: { kind: "create", text: `Linked ${title(x)} ↔ ${title(y)}`, pageId: x.id, state: "applied" }, undo: () => api.deleteCanvasEdge(x.id, y.id) };
   },
 
   async add_calendar_event(a) {
@@ -376,7 +380,7 @@ const RUN: Record<string, (a: Args) => Promise<Out>> = {
     const date = asStr(a.date);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) throw new Error(`date must be YYYY-MM-DD, got "${date}". Today is ${new Date().toISOString().slice(0, 10)}.`);
     const md = asStr(a.details);
-    if (!(await approve({ kind: "create", title: `Add Ã¢â‚¬Å“${t}Ã¢â‚¬Â on ${date}`, after: md || undefined }, true))) return rejected(`event ${t}`);
+    if (!(await approve({ kind: "create", title: `Add “${t}” on ${date}`, after: md || undefined }, true))) return rejected(`event ${t}`);
     const id = await H().createNote(t, null, md ? H().markdown(md) : undefined, date);
     if (!id) throw new Error("Couldn't create the event.");
     return { result: `Added "${t}" to the calendar on ${date}.`, log: { kind: "create", text: `Added ${t} on ${date}`, pageId: id, state: "applied" }, undo: () => H().trash(id) };
@@ -420,6 +424,12 @@ const HINTS: [RegExp, string[]][] = [
   [/\b(link|connect)\b/i, ["link_notes"]],
   [/\b(calendar|event|remind|due|schedule|meeting|on (mon|tue|wed|thu|fri|sat|sun))/i, ["add_calendar_event"]],
 ];
+/** Tools a message may use when Agent mode is off and the user said "just this once": no delete, no study or map tools. */
+export const AUTO_TOOLS = ["search_notes", "read_note", "create_note", "edit_note", "rename_note", "move_note", "tag_note", "create_folder"];
+const ACTION = /\b(make|create|write|add|new|start|edit|change|update|append|insert|rename|retitle|move|put|tag|untag|organi[sz]e|group)\b[^.?!]*\b(notes?|page|folder|tags?)\b|\bnotes? (about|on|called|titled|named)\b|^\s*(please\s+)?(move|put)\b.+\b(under|into|inside)\b|^\s*(please\s+)?(tag|rename)\b.+\b(as|to)\b/i;
+/** A message that asks Nerida to change notes (not a question about how to). Agent mode is off, so the app asks first. */
+export const needsTool = (q: string) => ACTION.test(q) && !/^\s*(how|why|what|when|where|who|which|is|are|does|do)\b/i.test(q);
+
 /** search_notes + read_note always, plus tools the request hints at; all tools if nothing matches. */
 export function pickTools(q: string): ToolDef[] {
   const want = new Set(HINTS.filter(([r]) => r.test(q)).flatMap(([, t]) => t));
@@ -436,11 +446,13 @@ const EXAMPLES =
 /* For models that can't take native tools (the provider errors) or that write the call as text.
  * Strict JSON, checked, up to 2 retries. Phase 8 swaps this for GBNF grammars + a router. */
 export const jsonFallback = {
-  system: (tools = TOOLS) =>
+  /** `grammar`: the built-in engine is held to JSON, so the final answer is {"answer": …} too. */
+  system: (tools = TOOLS, grammar = false) =>
     "To use a tool, reply with ONLY one JSON object and nothing else: {\"tool\": \"<name>\", \"args\": {...}}. " +
-    "When you are finished, or no tool is needed, reply in plain text (no JSON).\nTools:\n" +
+    (grammar ? 'When you are finished, or no tool is needed, reply {"answer": "<your reply in Markdown>"}.' : "When you are finished, or no tool is needed, reply in plain text (no JSON).") +
+    "\nTools:\n" +
     tools.map((t) => `- ${t.name}(${Object.keys(t.params).map((k) => (t.required.includes(k) ? k : k + "?")).join(", ")}): ${t.description}`).join("\n"),
-  /** A call written as text: `{"tool":Ã¢â‚¬Â¦}`, `{"name":Ã¢â‚¬Â¦,"arguments":Ã¢â‚¬Â¦}` or `<tool_call>Ã¢â‚¬Â¦</tool_call>`. null = plain answer; Error = a broken attempt. */
+  /** A call written as text: `{"tool":…}`, `{"name":…,"arguments":…}` or `<tool_call>…</tool_call>`. null = plain answer; Error = a broken attempt. */
   parse(text: string): { name: string; args: Args } | Error | null {
     const t = text.replace(/<\/?tool_call>/g, "").replace(/^```(?:json)?|```$/gm, "").trim();
     if (!/^\{[\s\S]*"(tool|name)"/.test(t)) return null;
@@ -454,7 +466,35 @@ export const jsonFallback = {
     }
   },
   retries: 2,
+  /** JSON schema the built-in engine turns into a grammar: a valid call to one of `tools`, or (unless a tool is forced) an answer.
+   *  Small models then can't write broken JSON, unknown tools or missing arguments. */
+  schema: (tools: ToolDef[], answer: boolean) => ({
+    type: "json_schema",
+    json_schema: {
+      name: "step",
+      schema: {
+        oneOf: [
+          ...tools.map((t) => ({ type: "object", properties: { tool: { const: t.name }, args: { type: "object", properties: t.params, required: t.required } }, required: ["tool", "args"] })),
+          ...(answer ? [{ type: "object", properties: { answer: { type: "string" } }, required: ["answer"] }] : []),
+        ],
+      },
+    },
+  }),
 };
+
+/** The text so far of a streamed {"answer": "…"}, or null while it's a tool call. */
+function partialAnswer(text: string): string | null {
+  const m = text.match(/^\s*\{\s*"answer"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!m) return null;
+  for (let s = m[1]; s; s = s.slice(0, -1)) {
+    try {
+      return JSON.parse(`"${s}"`);
+    } catch {
+      /* cut mid-escape: drop a character */
+    }
+  }
+  return "";
+}
 
 /* ------------------------------------------------------------------ loop */
 export type AgentRun = {
@@ -464,21 +504,32 @@ export type AgentRun = {
   onLog: (l: AgentLog) => void;
   onStep: (label: string) => void;
   onThink?: (t: string) => void;
+  /** Tool name the first step must call ("/" Tools menu). */
+  force?: string;
+  /** Only these tools (Agent mode off, "just this once"); every change asks. */
+  allow?: string[];
 };
 
 const label = (name: string) => ({ search_notes: "Searching notes", read_note: "Reading a note", make_flashcards: "Writing flashcards" } as Record<string, string>)[name] ?? `Using ${name.replace(/_/g, " ")}`;
 
 /** Runs the tool loop; resolves the final answer text. */
-export async function runAgent({ model, messages, onText, onLog, onStep, onThink }: AgentRun): Promise<string> {
+export async function runAgent({ model, messages, onText, onLog, onStep, onThink, force, allow }: AgentRun): Promise<string> {
   stopped = false;
+  askAll = !!allow;
+  const ALL = allow ? TOOLS.filter((t) => allow.includes(t.name)) : TOOLS;
   const msgs = [...messages];
-  let json = false; // provider refused native tools: JSON protocol from now on
+  const small = isBuiltIn(model);
+  // Built-in engine: JSON held to a grammar from the start (no broken calls); others: native tools, JSON if refused.
+  let json = small;
   let retries = 0;
   let answer = "";
-  const small = isBuiltIn(model);
   const req = [...msgs].reverse().find((m) => m.role === "user");
-  const tools = small ? pickTools(String(req?.content ?? "")) : TOOLS;
-  if (small && msgs[0]?.role === "system") msgs[0] = { ...msgs[0], content: `${msgs[0].content}\n\n${EXAMPLES}` };
+  const tools = small ? pickTools(String(req?.content ?? "")).filter((t) => ALL.includes(t)) : ALL;
+  // Examples go right after the fixed agent prompt, before the open note's details, so the engine's prompt cache covers them.
+  if (small && msgs[0]?.role === "system") {
+    const c = String(msgs[0].content);
+    msgs[0] = { ...msgs[0], content: c.startsWith(AGENT_SYSTEM) ? `${AGENT_SYSTEM}\n\n${EXAMPLES}${c.slice(AGENT_SYSTEM.length)}` : `${c}\n\n${EXAMPLES}` };
+  }
   const exec = async (name: string, args: Args): Promise<string> => {
     const bad = check(name, args);
     if (bad) {
@@ -507,12 +558,17 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
     if (last) msgs.push({ role: "user", content: "(Step limit reached. Don't call more tools: tell me briefly what you did and what's left.)" });
     let text = "";
     let calls: ToolCall[] = [];
-    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(tools)}` }, ...msgs.slice(1)] : msgs;
+    const forced = !!force && step === 0;
+    const stepTools = forced ? TOOLS.filter((t) => t.name === force) : tools;
+    const grammar = small && json && !last;
+    const send = json ? [{ ...msgs[0], content: `${msgs[0].content}\n\n${jsonFallback.system(stepTools, grammar)}` }, ...msgs.slice(1)] : msgs;
     try {
       calls = await engine.chat(model, send, (t) => {
         text += t;
-        if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
-      }, onThink, json || last ? undefined : openAiTools(tools));
+        const a = grammar ? partialAnswer(text) : null;
+        if (a !== null) onText(a);
+        else if (!/^\s*[{<`]/.test(text)) onText(text); // don't show raw JSON calls
+      }, onThink, json || last ? undefined : openAiTools(stepTools), forced, grammar ? { response_format: jsonFallback.schema(stepTools, !forced) } : undefined);
     } catch (e) {
       // Provider or model without tool support: switch to the JSON protocol once.
       if (!json && !last && /tool|function/i.test(String(e))) {
@@ -523,6 +579,13 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
       throw e;
     }
     if (stopped) break;
+    if (grammar) {
+      const a = partialAnswer(text);
+      if (a !== null) {
+        answer = a;
+        break;
+      }
+    }
     if (!calls.length && !last) {
       const p = jsonFallback.parse(text);
       if (p instanceof Error) {
@@ -539,9 +602,9 @@ export async function runAgent({ model, messages, onText, onLog, onStep, onThink
         continue;
       }
       // Small models often refuse ("I can't access your notes") on the first turn: nudge once.
-      if (small && step === 0 && tools !== TOOLS) {
+      if (step === 0 && (forced || (small && tools.length < ALL.length))) {
         onText("");
-        msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${tools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
+        msgs.push({ role: "assistant", content: text }, { role: "user", content: `You DO have tools and can change notes. Call one now: ${stepTools.map((t) => t.name).join(", ")}. Use search_notes if you don't know the exact title.` });
         continue;
       }
     }

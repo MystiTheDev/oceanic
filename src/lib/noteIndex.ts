@@ -1,5 +1,6 @@
 import { api } from "../data/api";
 import { pageDirectory } from "../editor/pageDirectory";
+import { indexChunks, similarity } from "./semantic";
 
 /* Workspace-wide word index for Nerida (BM25). Every note is split into sections at its headings
  * (long sections into ~1200-character chunks at block boundaries); each chunk remembers the block it
@@ -91,6 +92,9 @@ function put(id: string, title: string, updatedAt: string, json: string | null |
   docs.set(id, { updatedAt, title, chunks, tf: ws.map(tfOf), len: ws.map((w) => w.length), titleTerms: new Set(terms(title)) });
 }
 
+/** Drops these notes from the index so the next refresh re-reads them (e.g. after their pictures were read). */
+export const forget = (ids: string[]) => ids.forEach((id) => docs.delete(id));
+
 /** Re-reads notes that changed since they were indexed; drops deleted ones. `only`: just these notes. */
 export function refresh(only?: string[]): Promise<void> {
   const run = async () => {
@@ -106,6 +110,8 @@ export function refresh(only?: string[]): Promise<void> {
           put(p.id, p.title || "Untitled", p.updatedAt ?? "", rec?.content ?? null);
         }),
       );
+    // New or edited chunks get meaning vectors in the background (semantic search).
+    if (!only) void indexChunks([...docs.values()].flatMap((e) => e.chunks.map((c) => c.text)));
   };
   // Calls queue behind each other, so two refreshes never fetch the same note at once.
   building = (building ?? Promise.resolve()).then(run, run);
@@ -147,19 +153,43 @@ function score(q: string, within?: Set<string>): Hit[] {
   return hits.sort((a, b) => b.score - a.score);
 }
 
+/** BM25 plus meaning match: a chunk's similarity (0-1) adds up to the top keyword score (at least 3),
+ *  so a chunk with no shared words can still rank when it means the same thing. Keyword-only without the search model. */
+async function hybrid(q: string, within?: Set<string>): Promise<Hit[]> {
+  const hits = score(q, within);
+  const flat = [...docs.entries()].filter(([id]) => !within || within.has(id)).flatMap(([, e]) => e.chunks.map((c) => ({ c, title: e.title })));
+  const sim = flat.length ? await similarity(q, flat.map((x) => x.c.text)) : null;
+  if (!sim) return hits;
+  const top = Math.max(hits[0]?.score ?? 0, 3);
+  const by = new Map(hits.map((h) => [`${h.pageId}#${h.pos}`, h]));
+  flat.forEach(({ c, title }, i) => {
+    if (!sim[i]) return;
+    const k = `${c.pageId}#${c.pos}`;
+    const h = by.get(k);
+    if (h) h.score += sim[i] * top;
+    else by.set(k, { ...c, title, score: sim[i] * top });
+  });
+  return [...by.values()].sort((a, b) => b.score - a.score);
+}
+
 /** Best-matching chunks across the whole workspace. */
 export async function searchChunks(q: string, limit = 20): Promise<Hit[]> {
   await refresh();
-  return score(q).slice(0, limit);
+  return (await hybrid(q)).slice(0, limit);
 }
 
 /** Notes ranked for a question: best chunk + a little for each further matching chunk.
  *  Weak matches (under 35% of the top score, or matching only one rare-ish word in a long query) are dropped. */
-export async function searchNotes(q: string, limit = 3, skip: Set<string> = new Set()): Promise<{ id: string; title: string; score: number }[]> {
+export async function searchNotes(q: string, limit = 3, skip: Set<string> = new Set(), strict = false): Promise<{ id: string; title: string; score: number }[]> {
   await refresh();
+  // strict (auto-attach while typing): keyword hit on most query words required; meaning-only matches dropped.
+  const qn = new Set(terms(q)).size;
+  const kw = strict ? new Map<string, number>() : null;
+  if (kw) for (const h of score(q)) kw.set(h.pageId, Math.max(kw.get(h.pageId) ?? 0, h.score));
   const by = new Map<string, { id: string; title: string; score: number }>();
-  for (const h of score(q)) {
+  for (const h of await hybrid(q)) {
     if (skip.has(h.pageId)) continue;
+    if (kw && (kw.get(h.pageId) ?? 0) < Math.max(2, qn)) continue;
     const x = by.get(h.pageId);
     if (x) x.score += h.score * 0.25;
     else by.set(h.pageId, { id: h.pageId, title: h.title, score: h.score });
@@ -176,7 +206,7 @@ export async function rankWithin(ids: string[], q: string): Promise<{ chunks: Ch
   const chunks = ids.flatMap((id) => docs.get(id)?.chunks ?? []);
   const scoreOf = new Map<Chunk, number>(chunks.map((c) => [c, 0]));
   const byKey = new Map(chunks.map((c) => [`${c.pageId}#${c.pos}`, c]));
-  for (const h of score(q, new Set(ids))) {
+  for (const h of await hybrid(q, new Set(ids))) {
     const c = byKey.get(`${h.pageId}#${h.pos}`);
     if (c) scoreOf.set(c, h.score);
   }

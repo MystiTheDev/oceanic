@@ -1,3 +1,23 @@
+# 🌊 Oceanic v3.0.0: Sync between your devices
+
+## 🖥️ Desktop
+
+- 🔄 LAN sync: pair a phone or PC by QR, then sync notes, attachments and version history over Wi-Fi. Background sync on trusted networks.
+- 🧭 First-run setup wizard and a guided tour.
+- 🖼️ Nerida reads pictures, so images work in chat, search and study.
+- ✏️ Sketch: pen pressure, eraser button, palm rejection and lasso.
+- ⚡ Nerida's engine starts on first use and stops when idle.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
+## 📱 Android
+
+- 🔄 LAN sync with your PC, paired by QR.
+- 🏠 New Home, editor tools, Pages sort and filter, and a new splash.
+- 📤 Export to .ocean, Markdown or web page.
+- 📱 Tablets use the desktop layout in landscape.
+- ⬆️ Updates now come from the main release. Outdated versions ask you to upgrade.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v2.0.9: Desktop and Android in one release
 
 ## 🖥️ Desktop

@@ -1,5 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Upload, CalendarDays, Clock, Network, Plus, Sparkles } from "lucide-react";
+import { Upload, CalendarDays, Clock, Network, Plus, Sparkles, PenTool, Star, ListTodo, ArrowUp, ChevronDown, Check, Layers } from "lucide-react";
+import { dueCards, openReview, useSrs } from "../lib/srs";
+import { isAndroid } from "../mobile/formFactor";
+import { nerida, useNerida, modelLabel, setDefaultModel } from "../lib/nerida";
+import { NERIDA_ASK } from "../lib/neridaPdf";
 import logoRaw from "../assets/logo-raw.png";
 import { tagColor } from "../lib/colors";
 import { api, type MindmapRecord } from "../data/api";
@@ -24,6 +28,7 @@ type HomeViewProps = {
   onNewPage: () => void;
   onNewMindmap: () => void;
   onImport: () => void;
+  onNewSketch: () => void;
   onChangeView: (view: AppView) => void;
 };
 
@@ -51,9 +56,13 @@ export function HomeView(props: HomeViewProps) {
   const pending = pages.filter((p) => p.status === "not_started" || p.status === "in_progress" || (p.dueDate && p.status !== "done"));
   const overdue = pending.filter((p) => p.dueDate && p.dueDate < today);
   const dueToday = pending.filter((p) => p.dueDate === today);
+  const glass = !isAndroid;
+  const favs = pages.filter((p) => p.pinned).slice(0, 8);
+  const dueN = dueCards(useSrs().cards).length;
+  const tasks = [...pending].sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")).slice(0, 6);
   return (
-    <div className="oc-page-in scrollbar-thin h-full overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-8 pb-24 pt-[14vh]">
+    <div className={`oc-page-in scrollbar-thin relative h-full overflow-y-auto ${glass ? "oc-home-glass" : ""}`}>
+      <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-8 pb-24 pt-[14vh]">
         {/* ---- Brand + greeting ---- */}
         <div className="oc-home-brand flex flex-col items-center gap-3 text-center">
           <img src={logoRaw} alt="Oceanic" className="oc-brand-logo oc-logo-float -mb-2 size-24 rounded-[26px] object-contain" />
@@ -70,34 +79,115 @@ export function HomeView(props: HomeViewProps) {
           </p>
         </div>
 
-        {/* ---- What would you like to do today? ---- */}
-        <div className="oc-home-hero relative mx-auto w-full max-w-[760px] overflow-hidden rounded-2xl border border-white/[0.06] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <h2 className="min-w-0 flex-1 text-[16px] font-semibold text-neutral-100">What would you like to do today?</h2>
-            <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
+        {glass && <HomeAsk />}
+
+        <div className={glass ? "grid gap-4 min-[900px]:grid-cols-4" : ""}>
+          {/* ---- What would you like to do today? ---- */}
+          <div className={`${glass ? "oc-home-pane min-[900px]:order-2 min-[900px]:col-span-2" : "oc-home-hero mx-auto max-w-[760px] border border-white/[0.06]"} relative w-full overflow-hidden rounded-2xl px-5 py-4`}>
+            <div className="flex items-center gap-3">
+              <h2 className="min-w-0 flex-1 text-[16px] font-semibold text-neutral-100">What would you like to do today?</h2>
+              {dueN > 0 && (
+                <button type="button" onClick={() => openReview()} title="Review flashcards due today"
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-[#a78bfa]/15 px-2.5 py-1 text-[12px] font-medium text-[#c4b5fd] hover:bg-[#a78bfa]/25">
+                  <Layers className="size-3.5" /> {dueN} card{dueN === 1 ? "" : "s"} due
+                </button>
+              )}
+              <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
+            </div>
+            <div className={`mt-3 gap-2 ${glass ? "grid grid-cols-3" : "flex flex-wrap"}`}>
+              <ActionPill tone="#5aa2e9" icon={<Plus className="size-3.5" />} label="New page" onClick={onNewPage} />
+              <ActionPill tone="#a78bfa" icon={<Sparkles className="size-3.5" />} label="Mindmap" onClick={props.onNewMindmap} />
+              <ActionPill tone="#2dd4bf" icon={<Network className="size-3.5" />} label="Atlas" onClick={() => onChangeView("atlas")} />
+              <ActionPill tone="#fbbf24" icon={<CalendarDays className="size-3.5" />} label="Calendar" onClick={() => onChangeView("calendar")} />
+              <ActionPill tone="#94a3b8" icon={<Upload className="size-3.5" />} label="Import" onClick={props.onImport} />
+              <ActionPill tone="#f472b6" icon={<PenTool className="size-3.5" />} label="Sketch" onClick={props.onNewSketch} />
+            </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <ActionPill tone="#5aa2e9" icon={<Plus className="size-3.5" />} label="New page" onClick={onNewPage} />
-            <ActionPill tone="#a78bfa" icon={<Sparkles className="size-3.5" />} label="New mindmap" onClick={props.onNewMindmap} />
-            <ActionPill tone="#2dd4bf" icon={<Network className="size-3.5" />} label="Atlas" onClick={() => onChangeView("atlas")} />
-            <ActionPill tone="#fbbf24" icon={<CalendarDays className="size-3.5" />} label="Calendar" onClick={() => onChangeView("calendar")} />
-            <ActionPill tone="#94a3b8" icon={<Upload className="size-3.5" />} label="Import" onClick={props.onImport} />
-          </div>
+          {glass && <HomeList icon={<ListTodo className="size-3.5" />} className="min-[900px]:order-1" title="Tasks" empty="Nothing due. Nice." items={tasks} today={today} onOpen={onOpenPage} />}
+          {glass && <HomeList icon={<Star className="size-3.5" />} className="min-[900px]:order-3" title="Favorites" empty="Star a page to pin it here." items={favs} today={today} onOpen={onOpenPage} />}
         </div>
 
         {/* ---- Recently visited ---- */}
         <section className="min-w-0">
           <SectionTitle icon={<Clock className="size-3.5" />}>Recently visited</SectionTitle>
-          {visited.length ? (
+          {!visited.length ? <Empty icon={<Clock className="size-4" />} action={{ label: "New page", onClick: onNewPage }}>Pages you open will show up here.</Empty>
+          : glass ? (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+              {visited.slice(0, 6).map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />)}
+            </div>
+          ) : (
             <ScrollRow deps={visited.length}>
-              {visited.map((p, i) => (
-                <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />
-              ))}
+              {visited.map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />)}
             </ScrollRow>
-          ) : <Empty icon={<Clock className="size-4" />} action={{ label: "New page", onClick: onNewPage }}>Pages you open will show up here.</Empty>}
+          )}
         </section>
-
       </div>
+    </div>
+  );
+}
+
+function HomeList({ className = "", icon, title, empty, items, today, onOpen }: { className?: string; icon: ReactNode; title: string; empty: string; items: PageMeta[]; today: string; onOpen: (id: string) => void }) {
+  return (
+    <section className={`oc-home-pane oc-home-card scrollbar-thin min-w-0 overflow-y-auto rounded-2xl p-3 min-[900px]:max-h-[148px] ${className}`}>
+      <SectionTitle icon={icon}>{title}</SectionTitle>
+      {items.length ? items.map((p) => (
+        <button key={p.id} type="button" onClick={() => onOpen(p.id)} className="oc-glass-inset mb-1.5 flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] text-neutral-200">
+          <span>{p.icon}</span>
+          <span className="min-w-0 flex-1 truncate">{p.title || "Untitled"}</span>
+          {p.dueDate && <span className={`text-[11px] ${p.dueDate < today ? "text-red-400" : p.dueDate === today ? "text-[color:var(--oc-brand-light)]" : "text-neutral-500"}`}>{parseIsoDate(p.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}
+        </button>
+      )) : <p className="px-1 py-3 text-[13px] text-neutral-500">{empty}</p>}
+    </section>
+  );
+}
+
+/** Home chat bar: sends the message to a fresh Nerida chat on the Nerida tab. */
+function HomeAsk() {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const { model, providers } = useNerida();
+  const models = ["nerida:plus", ...providers.flatMap((p) => p.models.map((m) => `custom:${p.id}:${m}`))];
+  const send = () => {
+    const t = text.trim();
+    if (!t) return;
+    nerida.set({ homeMode: "nerida", activeId: null });
+    setText("");
+    // The Nerida view mounts on the next render; ask once it listens.
+    setTimeout(() => window.dispatchEvent(new CustomEvent(NERIDA_ASK, { detail: { text: t, send: true } })), 150);
+  };
+  return (
+    <div className={`oc-home-pane oc-home-card relative flex w-full items-end gap-3 rounded-2xl px-4 py-3 ${open ? "z-30" : ""}`}>
+      <Sparkles className="mb-1.5 size-4 shrink-0 text-[#818cf8]" />
+      <textarea
+        rows={1}
+        value={text}
+        placeholder="Ask Nerida anything about your notes…"
+        onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px"; }}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+        className="min-w-0 flex-1 resize-none bg-transparent py-1 text-[14px] text-neutral-100 outline-none placeholder:text-neutral-500"
+      />
+      <div className="relative mb-0.5">
+        <button type="button" onClick={() => setOpen(!open)} className="oc-home-model flex max-w-[160px] cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[12px] text-neutral-300">
+          <span className="truncate">{modelLabel(model)}</span>
+          <ChevronDown className={`size-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div className="oc-glass-menu oc-pop-in absolute right-0 top-full z-50 mt-2 min-w-[180px] rounded-xl p-1">
+              {models.map((m) => (
+                <button key={m} type="button" onClick={() => { setDefaultModel(m); setOpen(false); }} className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-neutral-200 hover:bg-white/[0.07]">
+                  <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+                  {m === model && <Check className="size-3.5 text-[color:var(--oc-brand-light)]" />}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <button type="button" onClick={send} disabled={!text.trim()} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-[color:var(--oc-brand)] text-white disabled:opacity-40">
+        <ArrowUp className="size-4" />
+      </button>
     </div>
   );
 }
@@ -108,7 +198,7 @@ export function ActionPill({ tone, icon, label, onClick }: { tone: string; icon:
       type="button"
       onClick={onClick}
       style={{ "--tone": tone } as React.CSSProperties}
-      className="oc-action-tile flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[13px] font-medium text-neutral-200 active:scale-[0.97]"
+      className="oc-action-tile flex h-8 cursor-pointer whitespace-nowrap items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[13px] font-medium text-neutral-200 active:scale-[0.97]"
     >
       <span className="oc-action-icon grid size-5 place-items-center rounded-full">{icon}</span>
       {label}
@@ -234,9 +324,9 @@ export function RecentCard({ page, delay, onOpen }: { page: PageMeta; delay: num
       type="button"
       onClick={onOpen}
       style={{ animationDelay: `${delay}ms` }}
-      className="oc-home-card group flex h-[214px] w-[260px] shrink-0 cursor-pointer flex-col overflow-hidden oc-glass oc-glass-hover text-left"
+      className="oc-home-card group flex h-[214px] w-[260px] shrink-0 [.oc-home-glass_&]:w-full cursor-pointer flex-col overflow-hidden oc-glass oc-glass-hover text-left"
     >
-      <div className="h-[84px] shrink-0" style={{ background: banner ? bannerBg(banner) : `linear-gradient(135deg, ${tint}55, ${tint}14 70%, transparent)` }} />
+      <div className="oc-home-cover h-[84px] shrink-0" style={{ background: banner ? bannerBg(banner) : `linear-gradient(135deg, ${tint}55, ${tint}14 70%, transparent)` }} />
       <span className="-mt-[18px] ml-3.5 inline-block origin-bottom-left text-[28px] leading-none transition-transform duration-200 ease-[cubic-bezier(0.3,1.6,0.5,1)] group-hover:scale-[1.15]">
         {page.icon}
       </span>

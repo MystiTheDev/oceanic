@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { AvatarCropper, AvatarViewer } from "./AvatarCropper";
 import { set as setSrs, useSrs } from "../lib/srs";
 import { PACKS, addToDictionary, forgetLearned, removeFromDictionary, setPacks, setReplacements, setSpellSettings, useSpell, type Dialect } from "../lib/spell/engine";
 import { DELETE_APPS, setAskBeforeDelete, useConfirmDelete } from "../lib/confirmDelete";
@@ -10,16 +11,19 @@ import { createPortal } from "react-dom";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "../lib/dialog";
 import {
-  AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smile, Trash2, Upload, User, X,
+  AppWindow, Brush, Check, SpellCheck, ChevronDown, Database, FileText, GraduationCap, Info, Keyboard, Network, Palette, Search, Settings2, Smartphone, Smile, Trash2, Upload, User, X,
 } from "lucide-react";
 import { api } from "../data/api";
 import { resetAtlasGuide } from "./AtlasGuide";
+import { startTour } from "./Tour";
+import { startSetup } from "./SetupWizard";
 import { APP_VERSION } from "./SidebarFooter";
 import { NeridaSettings } from "./NeridaSettings";
 import { BetaPill, NeridaMark } from "./NeridaOrb";
 import { Modal, ModalButton } from "./Modal";
 import { EmojiPicker } from "./EmojiPicker";
 import { useEscape } from "../lib/overlay";
+import { SyncSettings } from "./SyncSettings";
 import logo from "../assets/logo-raw.png";
 
 export const ACCENTS = ["#2383e2", "#0ea5e9", "#14b8a6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#d946ef"];
@@ -64,14 +68,14 @@ export const sidebarPalette = (s: AppSettings): Record<string, string> | null =>
 type Ctx = { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void };
 type Row = { title: string; description?: ReactNode; keywords?: string; control: (c: Ctx) => ReactNode; wide?: boolean };
 type Group = { heading?: string; rows: Row[] };
-type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling" | "nerida";
+type PageId = "account" | "preferences" | "general" | "storage" | "deleting" | "shortcuts" | "about" | "docs" | "sketch" | "mindmap" | "study" | "spelling" | "nerida" | "sync";
 type Page = { id: PageId; label: string; icon: ReactNode; groups?: Group[]; custom?: (c: Ctx) => ReactNode };
 
 const NAV: { heading: string; pages: PageId[] }[] = [
   { heading: "Account", pages: ["account", "preferences"] },
   { heading: "App", pages: ["general", "spelling", "shortcuts"] },
   { heading: "AI", pages: ["nerida"] },
-  { heading: "Data", pages: ["storage", "deleting"] },
+  { heading: "Data", pages: ["sync", "storage", "deleting"] },
   { heading: "Apps", pages: ["docs", "sketch", "mindmap", "study"] },
   { heading: "Help", pages: ["about"] },
 ];
@@ -181,6 +185,18 @@ const PAGES: Page[] = [
             ),
           },
           {
+            title: "Launch at login",
+            description: "Start Oceanic when you sign in to your computer, so study plan reminders arrive on time.",
+            keywords: "startup autostart boot windows",
+            control: () => <LaunchSwitch cmd="autostart" />,
+          },
+          {
+            title: "Start minimized",
+            description: "When launched at login, stay in the system tray instead of opening the window.",
+            keywords: "startup tray hidden background",
+            control: () => <LaunchSwitch cmd="start_minimized" />,
+          },
+          {
             title: "Close to system tray",
             description: "Clicking × hides Oceanic to the tray so it keeps running. Quit from the tray menu.",
             keywords: "background",
@@ -249,6 +265,7 @@ const PAGES: Page[] = [
       { heading: "Oceanic Mindmap", rows: [sc("Add child topic", "Tab"), sc("Add sibling topic", "Enter"), sc("Edit topic", "F2"), sc("Delete topic", "Del")] },
     ],
   },
+  { id: "sync", label: "Sync", icon: <Smartphone />, custom: () => <SyncSettings /> },
   { id: "spelling", label: "Spelling", icon: <SpellCheck />, custom: () => <SpellingPage /> },
   { id: "nerida", label: "Nerida AI", icon: <NeridaMark size={16} />, custom: () => <NeridaSettings /> },
   { id: "about", label: "About", icon: <Info />, custom: () => <AboutPage /> },
@@ -313,6 +330,15 @@ const PAGES: Page[] = [
   },
 ];
 const pageOf = (id: PageId) => PAGES.find((p) => p.id === id)!;
+
+/** Launch-at-login toggles (desktop only): read and set through the app's commands. */
+function LaunchSwitch({ cmd }: { cmd: "autostart" | "start_minimized" }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (isTauri()) void invoke<boolean>(`${cmd}_get`).then(setOn).catch(() => {});
+  }, [cmd]);
+  return <Switch on={on} onChange={(v) => (setOn(v), void invoke(`${cmd}_set`, { on: v }).catch(() => setOn(!v)))} />;
+}
 
 /** Notion-style settings: profile + search + grouped pages on the left, rows on the right. */
 export function SettingsModal({ settings, onChange, onClose, initialPage = "account" }: { settings: AppSettings; onChange: (patch: Partial<AppSettings>) => void; onClose: () => void; initialPage?: string }) {
@@ -506,7 +532,7 @@ function AccentPicker({ settings, onChange }: Ctx) {
   );
 }
 
-function SidebarIconsPicker({ settings, onChange }: Ctx) {
+export function SidebarIconsPicker({ settings, onChange }: Ctx) {
   const pal = sidebarPalette({ ...settings, sidebarIcons: "custom" })!;
   return (
     <div className="flex flex-col items-end gap-2">
@@ -639,25 +665,23 @@ export function Avatar({ name, avatar, size = 22 }: { name: string; avatar?: str
   );
 }
 
-/** Square-crops and shrinks a picked image to a 128px JPEG data URL. */
-async function toAvatar(file: File): Promise<string> {
-  const img = await createImageBitmap(file);
-  const s = Math.min(img.width, img.height);
-  const c = document.createElement("canvas");
-  c.width = c.height = 128;
-  c.getContext("2d")!.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128);
-  return c.toDataURL("image/jpeg", 0.85);
-}
-
 function AccountPage({ settings, onChange }: Ctx) {
   const [name, setName] = useState(settings.userName);
   const [picker, setPicker] = useState<HTMLElement | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  const [crop, setCrop] = useState<File | null>(null);
+  const [viewing, setViewing] = useState(false);
   const kind = settings.avatar.startsWith("data:") ? "photo" : settings.avatar ? "emoji" : "initial";
   return (
     <>
       <div className="mt-6 flex items-center gap-5">
-        <Avatar name={settings.userName} avatar={settings.avatar} size={64} />
+        {kind === "photo" ? (
+          <button type="button" title="View photo" className="cursor-zoom-in rounded-full" onClick={() => setViewing(true)}>
+            <Avatar name={settings.userName} avatar={settings.avatar} size={64} />
+          </button>
+        ) : (
+          <Avatar name={settings.userName} avatar={settings.avatar} size={64} />
+        )}
         <div className="min-w-0 flex-1">
           <label className="text-[12px] text-neutral-500">
             Preferred name
@@ -675,7 +699,7 @@ function AccountPage({ settings, onChange }: Ctx) {
       <div className="flex items-center gap-6 border-b border-white/[0.04] py-3.5">
         <div className="min-w-0 flex-1">
           <p className="text-[14px] text-neutral-100">Avatar</p>
-          <p className="mt-0.5 text-[12.5px] text-neutral-500">Shown in the sidebar and here. Photos are shrunk to 128 px and kept inside Oceanic.</p>
+          <p className="mt-0.5 text-[12.5px] text-neutral-500">Shown in the sidebar and here. Photos are cropped to a circle and kept inside Oceanic. Click your photo to view it.</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
           <AvatarChoice on={kind === "initial"} onClick={() => onChange({ avatar: "" })}><span className="text-[12px] font-semibold">Aa</span> Initial</AvatarChoice>
@@ -691,14 +715,16 @@ function AccountPage({ settings, onChange }: Ctx) {
         onChange={async (e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
-          if (f) onChange({ avatar: await toAvatar(f) });
+          if (f) setCrop(f);
         }}
       />
+      {crop && <AvatarCropper file={crop} onDone={(avatar) => (onChange({ avatar }), setCrop(null))} onCancel={() => setCrop(null)} />}
+      {viewing && <AvatarViewer src={settings.avatar} onClose={() => setViewing(false)} />}
       {picker && <EmojiPicker anchor={picker} onSelect={(em) => (onChange({ avatar: em }), setPicker(null))} onClose={() => setPicker(null)} />}
     </>
   );
 }
-const AvatarChoice = ({ on, onClick, children }: { on: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) => (
+export const AvatarChoice = ({ on, onClick, children }: { on: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) => (
   <button
     type="button"
     onClick={onClick}
@@ -720,6 +746,8 @@ function AboutPage() {
       <p className="max-w-sm text-[13px] text-neutral-400">Notes, Docs, Sketch and Mindmap in one calm, offline-first workspace.</p>
       <div className="mt-2 flex gap-2">
         <Btn onClick={() => void checkForUpdates(true)}>Check for updates</Btn>
+        <Btn onClick={startTour}>Replay tour</Btn>
+        <Btn onClick={startSetup}>Run setup again</Btn>
       </div>
       {/* Creator */}
       <div className="mt-4 flex w-full max-w-md items-center gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-br from-sky-500/10 to-transparent p-3.5 text-left">

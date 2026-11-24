@@ -1,4 +1,5 @@
 import { buildOceanFile } from "../lib/oceanFile";
+import { isAndroid } from "../mobile/formFactor";
 import { useState, type ReactNode } from "react";
 import { Modal, ModalButton } from "./Modal";
 import { useEnter } from "../lib/overlay";
@@ -124,7 +125,7 @@ export function ExportDialog({ page, pages, loadBlocks, onDone, onClose }: Expor
         <div className="p-5">
           {/* Format cards */}
           <div className="grid grid-cols-2 gap-2.5">
-            {FORMATS.map(({ id, label, hint, desc, gets, tone, icon: Icon }, i) => {
+            {FORMATS.filter((f) => !isAndroid || f.id !== "pdf").map(({ id, label, hint, desc, gets, tone, icon: Icon }, i) => {
               const on = format === id;
               return (
                 <button

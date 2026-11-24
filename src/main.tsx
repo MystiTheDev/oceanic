@@ -14,6 +14,8 @@ if (import.meta.env.PROD) {
 }
 
 trackKeyboardMode();
+// Pen hover: Windows draws a white dot that vanishes on light pages, so swap in our own cursor (see .oc-pen in index.css).
+window.addEventListener("pointermove", (e) => document.documentElement.classList.toggle("oc-pen", e.pointerType === "pen"), { passive: true });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
