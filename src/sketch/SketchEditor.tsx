@@ -14,8 +14,9 @@ import { NewCanvasDialog } from "./SketchHome";
 import { SlidePill } from "../components/SlidePill";
 import {
   forgetSketch, isUnsavedSketch, markSketchDirty, pickImage, pickSketchSavePath, readImageFile, refreshSketches, sketchTitle, touchRecentSketch,
-  untitledSketch, useSketch, writeImageFile,
+  untitledSketch, useSketch, writeImageFile, pickImageCanvas, newSketch,
 } from "./store";
+import { isAndroid } from "../mobile/formFactor";
 
 type Tool = "select" | "lasso" | "pencil" | "brush" | "marker" | "airbrush" | "eraser" | "fill" | "picker" | "text" | "hand" | ShapeKind;
 type Pt = { x: number; y: number };
@@ -67,9 +68,15 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   useEffect(() => {
     if (text) textRef.current?.focus();
   }, [text?.at.x, text?.at.y]);
-  const [showLayers, setShowLayers] = useState(true);
+  const [showLayers, setShowLayers] = useState(!isAndroid);
   const [dialog, setDialog] = useState<null | "new" | "resize">(null);
   const [menu, setMenu] = useState(false);
+  // Image import: the picked image waits for "insert" or "open as a new canvas".
+  const [imported, setImported] = useState<HTMLCanvasElement | null>(null);
+  const importImage = () => void pickImageCanvas().then((c) => c && setImported(c));
+  // Touch dock (Android): open popover; the dock hides while drawing.
+  const [pop, setPop] = useState<null | "draw" | "pick" | "shape" | "colour" | "size" | "file">(null);
+  const [drawing, setDrawing] = useState(false);
   const stackRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLCanvasElement>(makeCanvas(1, 1));
@@ -85,6 +92,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
         if (isUnsavedSketch(path)) {
           const u = untitledSketch(path);
           docRef.current = new SketchDoc(u?.w ?? 1280, u?.h ?? 720);
+          if (u?.img) docRef.current.ctx.drawImage(u.img, 0, 0);
           setStatus("unsaved");
         } else {
           const bytes = await readImageFile(path);
@@ -685,6 +693,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
           <div className="oc-docs-pop absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-xl" onClick={() => setMenu(false)}>
             <MItem label="New…" hint="Ctrl+N" onClick={() => setDialog("new")} />
             <MItem label="Open…" hint="Ctrl+O" onClick={() => void pickImage().then((p) => p && onOpen(p))} />
+            <MItem label="Import image…" onClick={importImage} />
             <MItem label="Save" hint="Ctrl+S" onClick={() => void save()} />
             <MItem label="Copy image (paste into Docs or notes)" onClick={() => void copyImage()} />
             <div className="my-1 h-px bg-white/[0.06]" />
@@ -730,10 +739,10 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
             ref={stackRef}
             className={`oc-checker absolute inset-0 touch-none ${tool === "hand" ? "cursor-grab" : tool === "text" ? "cursor-text" : tool === "select" ? "cursor-default" : "cursor-crosshair"}`}
             style={{ imageRendering: zoom > 2 ? "pixelated" : "auto", cursor: ringCursor() }}
-            onPointerDown={onDown}
+            onPointerDown={(e) => (setDrawing(true), setPop(null), onDown(e))}
             onPointerMove={onMove}
-            onPointerUp={onUp}
-            onPointerCancel={onUp}
+            onPointerUp={(e) => (setDrawing(false), onUp(e))}
+            onPointerCancel={(e) => (setDrawing(false), onUp(e))}
             onPointerLeave={() => setCursor(null)}
             onContextMenu={(e) => e.preventDefault()}
           />
@@ -804,6 +813,80 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     </div>
   );
 
+  const importDialog = imported && (
+    <Modal onClose={() => setImported(null)} className="w-[360px] p-5">
+      <h2 className="mb-4 text-[15px] font-semibold text-neutral-100">Import image</h2>
+      <div className="flex flex-col gap-2">
+        <ModalButton variant="primary" onClick={() => (pasteCanvas(imported), setImported(null))}>Insert into this canvas</ModalButton>
+        <ModalButton onClick={() => (onOpen(newSketch(imported.width, imported.height, imported)), setImported(null))}>Open as a new canvas</ModalButton>
+      </div>
+    </Modal>
+  );
+
+  if (isAndroid) {
+    // Touch: the canvas fills the screen; a glass dock floats at the bottom and hides while drawing or typing.
+    const toolIcon: Partial<Record<Tool, ReactNode>> = {
+      select: <MousePointer2 />, lasso: <LassoSelect />, pencil: <Pencil />, brush: <Brush />, marker: <Highlighter />, airbrush: <SprayCan />,
+      ...Object.fromEntries(SHAPES.map((x) => [x.kind, x.icon])),
+    };
+    const pop1 = (id: NonNullable<typeof pop>, button: ReactNode, body: ReactNode, cls = "") => (
+      <span className="relative flex">
+        {button}
+        {pop === id && <div className={`oc-dock-pop ${cls}`}>{body}</div>}
+      </span>
+    );
+    const group = (id: "draw" | "pick" | "shape", tools: Tool[], fallback: ReactNode, items: ReactNode) =>
+      pop1(id, <IBtn tip="" on={tools.includes(tool)} onClick={() => setPop(pop === id ? null : id)}>{tools.includes(tool) ? toolIcon[tool] : fallback}</IBtn>, <div className="flex items-center gap-1" onClick={() => setPop(null)}>{items}</div>);
+    return (
+      <div className="oc-sketch relative h-full" onMouseDown={(e) => text && !(e.target as HTMLElement).closest("textarea") && !stackRef.current?.contains(e.target as Node) && commitText()}>
+        <div className="flex h-full">
+          {canvasArea}
+          {showLayers && !drawing && <aside className="oc-dock-layers scrollbar-thin">{layersPanel}</aside>}
+        </div>
+        <div className={`oc-dock ocm-liquid${drawing || text ? " hide" : ""}`}>
+          <IBtn tip="Sketch Home" onClick={onHome}><House /></IBtn>
+          <IBtn tip="Undo" disabled={!doc.canUndo} onClick={() => (commitFloating(), doc.undo(), changed())}><Undo2 /></IBtn>
+          <IBtn tip="Redo" disabled={!doc.canRedo} onClick={() => (doc.redo(), changed())}><Redo2 /></IBtn>
+          <span className="h-6 w-px bg-white/[0.1]" />
+          {group("draw", ["pencil", "brush", "marker", "airbrush"], <Brush />, <><T t="pencil" icon={<Pencil />} label="Pencil" /><T t="brush" icon={<Brush />} label="Brush" /><T t="marker" icon={<Highlighter />} label="Marker" /><T t="airbrush" icon={<SprayCan />} label="Airbrush" /></>)}
+          <T t="eraser" icon={<Eraser />} label="Eraser" />
+          {group("pick", ["select", "lasso"], <MousePointer2 />, <><T t="select" icon={<MousePointer2 />} label="Select" /><T t="lasso" icon={<LassoSelect />} label="Lasso" /></>)}
+          {group("shape", SHAPE_KINDS as Tool[], <Square />, <>{shapeTools}{shapeStyle}</>)}
+          <T t="fill" icon={<PaintBucket />} label="Fill" />
+          <T t="picker" icon={<Pipette />} label="Colour picker" />
+          <T t="text" icon={<Type />} label="Text" />
+          <T t="hand" icon={<Hand />} label="Pan" />
+          <span className="h-6 w-px bg-white/[0.1]" />
+          {pop1("colour", (
+            <button type="button" aria-label="Colour" onClick={() => setPop(pop === "colour" ? null : "colour")} className="grid size-9 place-items-center">
+              <span className="size-6 rounded-full border-2 border-white/70" style={{ background: color1 }} />
+            </button>
+          ), colours)}
+          {pop1("size", (
+            <button type="button" aria-label="Size" onClick={() => setPop(pop === "size" ? null : "size")} className="grid size-9 place-items-center">
+              <span className="rounded-full bg-neutral-200" style={{ width: Math.max(3, Math.min(22, size / 2)), height: Math.max(3, Math.min(22, size / 2)) }} />
+            </button>
+          ), <div className="flex items-center gap-3">{sizeCtl}{optionsFor}</div>)}
+          <span className="h-6 w-px bg-white/[0.1]" />
+          <IBtn tip="Layers" on={showLayers} onClick={() => setShowLayers((v) => !v)}><Layers /></IBtn>
+          {pop1("file", <IBtn tip="More" on={pop === "file"} onClick={() => setPop(pop === "file" ? null : "file")}><Save /></IBtn>, (
+            <div className="w-52" onClick={() => setPop(null)}>
+              <MItem label="Save" onClick={() => void save()} />
+              <MItem label="Import image…" onClick={importImage} />
+              <MItem label="New canvas…" onClick={() => setDialog("new")} />
+              <MItem label="Fit to screen" onClick={fitZoom} />
+              <MItem label="Resize image…" onClick={() => setDialog("resize")} />
+              <MItem label="Copy image" onClick={() => void copyImage()} />
+            </div>
+          ), "end")}
+        </div>
+        {dialog === "new" && <NewCanvasDialog onClose={() => setDialog(null)} onCreate={(p) => (setDialog(null), onOpen(p))} />}
+        {dialog === "resize" && <ResizeDialog w={doc.w} h={doc.h} onClose={() => setDialog(null)} onApply={(w, h) => (setDialog(null), edit((d) => d.scaleImage(w, h)))} />}
+        {importDialog}
+      </div>
+    );
+  }
+
   return (
     <div className="oc-sketch relative flex h-full flex-col" onMouseDown={(e) => text && !(e.target as HTMLElement).closest("textarea") && !stackRef.current?.contains(e.target as Node) && commitText()}>
       {titleStrip}
@@ -857,6 +940,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       {statusBar}
       {dialog === "new" && <NewCanvasDialog onClose={() => setDialog(null)} onCreate={(p) => (setDialog(null), onOpen(p))} />}
       {dialog === "resize" && <ResizeDialog w={doc.w} h={doc.h} onClose={() => setDialog(null)} onApply={(w, h) => (setDialog(null), edit((d) => d.scaleImage(w, h)))} />}
+      {importDialog}
     </div>
   );
 }

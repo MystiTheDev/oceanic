@@ -6,7 +6,8 @@ import { openContextMenu } from "../components/ContextMenu";
 import { requestDelete } from "../lib/confirmDelete";
 import sketchLogo from "../assets/sketch-logo.png";
 import { Modal, ModalButton } from "../components/Modal";
-import { newSketch, pickImage, pickSketchFolder, readImageFile, sketchTitle, useSketch, forgetRecentSketch, revealSketch, trashSketch } from "./store";
+import { isAndroid } from "../mobile/formFactor";
+import { newSketch, pickImageCanvas, pickImage, pickSketchFolder, readImageFile, sketchTitle, useSketch, forgetRecentSketch, revealSketch, trashSketch } from "./store";
 
 const PRESETS: [string, number, number][] = [
   ["HD", 1280, 720],
@@ -89,6 +90,11 @@ export function SketchHome({ onOpen, openNow, onFocusTab, onCloseTab }: { onOpen
           <button
             type="button"
             onClick={async () => {
+              // Android: no file paths from the picker; the image opens as a new canvas.
+              if (isAndroid) {
+                const c = await pickImageCanvas();
+                return c && onOpen(newSketch(c.width, c.height, c));
+              }
               const f = await pickImage();
               if (f) onOpen(f);
             }}
@@ -106,9 +112,9 @@ export function SketchHome({ onOpen, openNow, onFocusTab, onCloseTab }: { onOpen
         <section>
           <div className="mb-3 flex items-center">
             <h2 className="flex-1 text-[12px] font-semibold uppercase tracking-wide text-neutral-500">{folder ? folder.split(/[\\/]/).pop() : "Your images"}</h2>
-            <button type="button" onClick={pickSketchFolder} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200">
+            {!isAndroid && <button type="button" onClick={pickSketchFolder} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-200">
               <FolderSearch className="size-4" /> Change folder
-            </button>
+            </button>}
           </div>
           {files.length ? (
             <Grid>{files.map((f) => <Thumb key={f.path} path={f.path} inFolder onOpen={onOpen} />)}</Grid>

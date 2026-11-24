@@ -5,12 +5,14 @@
  * the avatar. Android's back gesture closes sheets and pages.
  * Animations use Motion and follow Android's "Remove animations" setting.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { isTablet } from "./formFactor";
+import { APPS } from "../components/AppSwitcher";
 import { VersionHistory } from "../components/VersionHistory";
 import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, useScroll, useTransform, type Transition } from "motion/react";
 import {
   ArrowUpLeft, CalendarDays, Camera, SlidersHorizontal, ImagePlus, Paperclip, Check, Clock, CheckSquare, ChevronLeft, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
-  RotateCcw, Search, Settings, Sun, Tag, Trash2, X,
+  RotateCcw, Search, Settings, Sun, Tag, Trash2, X, LayoutGrid,
   History,
 } from "lucide-react";
 import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
@@ -72,11 +74,15 @@ type Props = {
   tagLibrary: string[];
   onCreateTag: (tag: string, color: string) => void;
   onProps: (id: string, props: PageProps) => void;
+  /** App switcher: open Oceanic Sketch. */
+  onSketch: () => void;
 };
 
 const DAY = 86_400_000;
 const propsOf = (x: PageMeta): PageProps => ({ dueDate: x.dueDate ?? null, status: x.status ?? null, tags: x.tags ?? [] });
 const today = () => new Date(new Date().toDateString()).getTime();
+/** Tablet Pages list headings by last edit. */
+const ageGroup = (iso?: string) => { const t = Date.parse(iso ?? ""); return t >= today() ? "Today" : t >= today() - 6 * DAY ? "This week" : "Older"; };
 
 /** Playful spring used across the phone UI (slight overshoot). */
 const spring: Transition = { type: "spring", stiffness: 380, damping: 24, mass: 0.9 };
@@ -92,7 +98,7 @@ const slideIn = (i: number, dir: number) => ({
 });
 /** Items that rise up one after another when a screen appears. */
 const rise = (i: number) => ({
-  initial: { opacity: 0, y: 18 },
+  initial: { opacity: 0, y: isTablet ? 0 : 18 },
   animate: { opacity: 1, y: 0 },
   transition: { ...spring, delay: Math.min(i, 10) * 0.045 },
 });
@@ -289,6 +295,7 @@ export function MobileShell(p: Props) {
   });
   // Tapping + opens a small create menu.
   const [plusMenu, setPlusMenu] = useState(false);
+  const [appsMenu, setAppsMenu] = useState(false);
   // Open page: the top bar turns frosted and shows the title once the title scrolls away.
   const [pageScrolled, setPageScrolled] = useState(false);
   useEffect(() => setPageScrolled(false), [openPage?.id]);
@@ -793,7 +800,7 @@ export function MobileShell(p: Props) {
       <div className="ocm-scroll" ref={scroller}>
         <AnimatePresence mode="wait" initial={false}>
           {tab === "home" ? (
-            <motion.div key="home" initial={{ opacity: 0, x: -40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 * dir }} transition={calm}>
+            <motion.div key="home" className="ocm-homeview" initial={{ opacity: 0, x: -40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 * dir }} transition={calm}>
               <motion.header className={`ocm-hero ocm-${tod}`} style={{ y: heroY, opacity: heroFade }}>
                 {/* Sun low at dawn/dusk, high by day; a moon and twinkling stars at night. */}
                 <span className="ocm-sun" aria-hidden />
@@ -815,9 +822,6 @@ export function MobileShell(p: Props) {
                       <CountUp value={soon.length} /> due this week · <CountUp value={pages.length} /> {pages.length === 1 ? "page" : "pages"}
                     </p>
                   </div>
-                  <motion.button {...press} className="ocm-avatar" aria-label="Profile" onClick={() => (buzz(), setSheet("profile"))}>
-                    <Avatar name={p.userName} avatar={p.avatar} size={42} />
-                  </motion.button>
                 </div>
               </motion.header>
 
@@ -848,14 +852,14 @@ export function MobileShell(p: Props) {
                 {prefs.homeOrder
                   .filter((id) => !prefs.homeHidden.includes(id))
                   .map((id) => (
-                    <motion.div key={id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spring}>
+                    <motion.div key={id} className={`ocm-hs-${id}`} layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spring}>
                       {home[id]}
                     </motion.div>
                   ))}
               </AnimatePresence>
             </motion.div>
           ) : tab === "calendar" ? (
-            <motion.div key="calendar" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
+            <motion.div key="calendar" className="ocm-calview" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
               <MobileCalendar pages={pages} day={calDay} setDay={setCalDay} onOpen={p.onOpen} hold={hold} onCreateTask={p.onCreateTask} />
             </motion.div>
           ) : (
@@ -913,8 +917,9 @@ export function MobileShell(p: Props) {
               )}
               <div className="ocm-list">
                 {listed.map((x, i) => (
+                  <Fragment key={x.id}>
+                  {isTablet && sortKey === "edited" && (i === 0 || ageGroup(x.updatedAt) !== ageGroup(listed[i - 1].updatedAt)) && <p className="ocm-card-head ocm-group">{ageGroup(x.updatedAt)}</p>}
                   <motion.button
-                    key={x.id}
                     className={`ocm-row${selected.has(x.id) ? " sel" : ""}`}
                     onClick={() =>
                       selecting
@@ -938,6 +943,7 @@ export function MobileShell(p: Props) {
                     </span>
                     <span className="ocm-row-date">{edited(x.updatedAt)}</span>
                   </motion.button>
+                  </Fragment>
                 ))}
                 {!listed.length && <p className="ocm-empty">{q ? `No pages match “${query}”.` : "No pages here."}</p>}
               </div>
@@ -973,8 +979,27 @@ export function MobileShell(p: Props) {
               {/* The glass lens springs between tabs. */}
               {tab === id && <motion.span layoutId="ocm-lens" className="ocm-lens" transition={spring} />}
               <Icon size={22} />
+              <span className="ocm-pill-label">{label}</span>
             </motion.button>
           ))}
+          {/* App switcher: only apps that work on Android are listed. */}
+          <span className="ocm-apps-wrap">
+            <motion.button aria-label="Apps" aria-expanded={appsMenu} onClick={() => (buzz(), setAppsMenu((o) => !o))} whileTap={{ scale: 0.88 }} transition={spring}>
+              <LayoutGrid size={22} />
+              <span className="ocm-pill-label">Apps</span>
+            </motion.button>
+            <AnimatePresence>
+              {appsMenu && (
+                <motion.div className="ocm-plus-menu ocm-apps-menu" initial={{ opacity: 0, scale: 0.85, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.85, y: 8 }} transition={spring}>
+                  <button onClick={() => (setAppsMenu(false), buzz(), p.onSketch())}><i><img src={APPS.sketch.logo} alt="" width={20} /></i><span>{APPS.sketch.name}<small>{APPS.sketch.tagline}</small></span></button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </span>
+          <motion.button className="ocm-pill-me" aria-label="Profile" onClick={() => (buzz(), setSheet("profile"))} whileTap={{ scale: 0.88 }} transition={spring}>
+            <Avatar name={p.userName} avatar={p.avatar} size={28} />
+            <span className="ocm-pill-label">You</span>
+          </motion.button>
         </div>
         <span className="ocm-plus-wrap">
           <AnimatePresence>
