@@ -7,11 +7,13 @@ export const isAndroid = fake || /Android/i.test(navigator.userAgent);
 /** Android tablet: shortest screen side is at least 600dp. */
 export const isTablet = isAndroid && Math.min(fake ? innerWidth : screen.width, fake ? innerHeight : screen.height) >= 600;
 
-const landscape = matchMedia("(orientation: landscape)");
-const sub = (cb: () => void) => (landscape.addEventListener("change", cb), () => landscape.removeEventListener("change", cb));
-/** Phone UI: phones, and tablets held upright. Landscape tablets get the desktop UI. */
-export const phoneUINow = () => isAndroid && !(isTablet && landscape.matches);
-export const usePhoneUI = () => useSyncExternalStore(sub, phoneUINow);
+const subResize = (cb: () => void) => (addEventListener("resize", cb), () => removeEventListener("resize", cb));
+/** Phone shell (MobileShell): every Android device. Tablets get its tablet layout, see useTabletUI. */
+export const phoneUINow = () => isAndroid;
+export const usePhoneUI = () => isAndroid;
+/** Tablet layout: side rail; "split" (window >= 840px) also shows list + editor side by side. Narrow split-screen windows fall back to the phone layout. */
+const tabletNow = () => (!isTablet || innerWidth < 600 ? null : innerWidth >= 840 ? "split" : "rail");
+export const useTabletUI = () => useSyncExternalStore(subResize, tabletNow);
 
 if (isTablet) document.documentElement.classList.add("tablet");
 

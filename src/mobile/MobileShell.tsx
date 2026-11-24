@@ -24,6 +24,7 @@ import { startOfWeek } from "../lib/prefs";
 import { PropSheet, RowProps, fmtDue, setPropOpener, type PropKind } from "./MobileProps";
 import type { PageProperties as PageProps } from "../data/api";
 import { STATUSES } from "../lib/colors";
+import { useTabletUI } from "./formFactor";
 import { buzz, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 import type { AttachKind } from "./attach";
 import { TagChip } from "../components/PageProperties";
@@ -338,6 +339,19 @@ export function MobileShell(p: Props) {
     setDir(TAB_ORDER.indexOf(t) > TAB_ORDER.indexOf(tab) ? 1 : -1);
     setTab(t);
   };
+  const tablet = useTabletUI();
+  // Hardware keyboard on tablets: Ctrl+N new page, Ctrl+K/F search, Esc closes the page.
+  useEffect(() => {
+    if (!tablet) return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      if (mod && k === "n") (e.preventDefault(), p.onCreate());
+      else if (mod && (k === "k" || k === "f")) (e.preventDefault(), setTab("pages"), setTimeout(() => searchRef.current?.focus(), 300));
+      else if (e.key === "Escape" && openPage && !sheet) history.back();
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  });
   const [calDay, setCalDay] = useState(() => iso(new Date()));
   const dueMap = useMemo(() => dueByDay(pages), [pages]);
   const weekStart = startOfWeek(new Date());
@@ -768,7 +782,7 @@ export function MobileShell(p: Props) {
   );
 
   // The open page slides in from the right over the list; back slides it out.
-  const screen = openPage ? (
+  const page = openPage && (
     <motion.div key="page" className="ocm ocm-page ocm-layer" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={spring}>
       <header className={`ocm-pagebar${pageScrolled ? " scrolled" : ""}`}>
         <motion.button {...press} className="ocm-icon" aria-label="Back" onClick={() => history.back()}>
@@ -781,7 +795,8 @@ export function MobileShell(p: Props) {
       </header>
       <div className="ocm-editor" onScrollCapture={(e) => setPageScrolled((e.target as HTMLElement).scrollTop > 110)}>{p.editor}</div>
     </motion.div>
-  ) : (
+  );
+  const list = (
     <motion.div
       key="list"
       className="ocm ocm-layer"
@@ -1006,9 +1021,10 @@ export function MobileShell(p: Props) {
   return (
     // "user": follows Android's Remove animations setting; Settings can force them off.
     <MotionConfig reducedMotion={prefs.reduceMotion ? "always" : "user"}>
-      <div className="ocm-root">
+      <div className={`ocm-root${tablet ? ` ocm-tab ocm-${tablet}` : ""}`}>
         {/* No initial={false} here: Motion would then block entrance animations of everything inside. */}
-        <AnimatePresence>{screen}</AnimatePresence>
+        {/* Tablets keep the list (and its side rail) mounted under the page. */}
+        <AnimatePresence>{tablet ? [list, page] : openPage ? page : list}</AnimatePresence>
         {sheets}
         {viewing && <AvatarViewer src={p.avatar} onClose={() => setViewing(false)} />}
       </div>
