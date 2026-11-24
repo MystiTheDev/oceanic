@@ -1,0 +1,33 @@
+/* First-launch wizard: liquid glass panel with a soft brand aura. Fallback first. */
+.oc-setup.oc-dialog {
+  position: relative;
+  border-radius: 22px;
+  border-color: rgb(255 255 255 / 0.1);
+  background: radial-gradient(90% 55% at 50% -10%, rgb(56 189 248 / 0.16), transparent 70%),
+    radial-gradient(60% 40% at 100% 110%, rgb(124 58 237 / 0.12), transparent 70%), rgb(23 23 23);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 0 0 1px rgb(255 255 255 / 0.03), 0 30px 80px -24px rgb(0 0 0 / 0.75);
+}
+/* Solid panel; the app behind it is blurred by the overlay instead. */
+[data-oc-modal]:has(> .oc-setup) {
+  background: rgb(0 0 0 / 0.45);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+/* Inputs and tiles inside the glass: inset, no backdrop-filter (never nest). */
+.oc-setup-field {
+  background: rgb(255 255 255 / 0.04);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  transition: box-shadow 0.15s, background-color 0.15s;
+}
+.oc-setup-field:hover { background: rgb(255 255 255 / 0.06); }
+.oc-setup-field:focus, .oc-setup-field:focus-visible, .oc-setup-field[data-on] {
+  outline: none;
+  background: rgb(56 189 248 / 0.1);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(56 189 248 / 0.55), 0 0 0 3px rgb(56 189 248 / 0.15);
+}
+.oc-setup-next {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.14), transparent), var(--color-sky-500);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 22px -10px rgb(56 189 248 / 0.8);
+}
+:root[data-theme="light"] .oc-setup.oc-dialog { background: radial-gradient(90% 55% at 50% -10%, rgb(56 189 248 / 0.14), transparent 70%), rgb(255 255 255 / 0.85); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.06), 0 30px 80px -24px rgb(0 0 0 / 0.35); }
+:root[data-theme="light"] .oc-setup-field { background: rgb(0 0 0 / 0.03); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1); }

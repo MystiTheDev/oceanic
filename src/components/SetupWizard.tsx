@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { Smile, Upload } from "lucide-react";
+import "./setup.css";
 import { AnimatePresence, motion } from "motion/react";
 import { Modal } from "./Modal";
 import { Stepper } from "./Stepper";
 import { AvatarCropper } from "./AvatarCropper";
 import { EmojiPicker } from "./EmojiPicker";
-import { Avatar, AvatarChoice, Select, SidebarIconsPicker, type AppSettings } from "./SettingsModal";
+import { Avatar, Select, SidebarIconsPicker, type AppSettings } from "./SettingsModal";
 import { NeridaMark } from "./NeridaOrb";
 import { DiffCard } from "./NeridaDiff";
 import { downloadModel, engine, useNerida, type AiStatus } from "../lib/nerida";
@@ -16,11 +17,11 @@ export const SETUP_START = "oc-setup-start";
 export const startSetup = () => window.dispatchEvent(new Event(SETUP_START));
 
 const input =
-  "h-9 w-full rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-[14px] text-neutral-100 outline-none focus:border-sky-500/60";
+  "oc-setup-field h-10 w-full rounded-xl px-3.5 text-[14px] text-neutral-100 placeholder:text-neutral-500";
 const Title = ({ t, sub }: { t: string; sub: string }) => (
-  <div className="mb-4">
-    <h2 className="text-[17px] font-semibold text-neutral-100">{t}</h2>
-    <p className="mt-0.5 text-[13px] text-neutral-400">{sub}</p>
+  <div className="mb-5">
+    <h2 className="text-[19px] font-semibold tracking-tight text-neutral-100">{t}</h2>
+    <p className="mt-1 text-[13px] leading-relaxed text-neutral-400">{sub}</p>
   </div>
 );
 const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -63,20 +64,20 @@ export function SetupWizard({
     <>
       <Title t="Welcome to Oceanic 🌊" sub="What should we call you?" />
       <div className="flex items-center gap-4">
-        <Avatar name={name} avatar={settings.avatar} size={56} />
+        <span className="shrink-0 rounded-full p-[3px] shadow-[0_8px_24px_-10px_rgb(56_189_248/0.6)]" style={{ background: "linear-gradient(135deg, rgb(56 189 248 / 0.5), rgb(124 58 237 / 0.4))" }}><Avatar name={name} avatar={settings.avatar} size={56} /></span>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className={input} />
       </div>
-      <p className="mb-2 mt-5 text-[12px] text-neutral-500">Profile picture (optional)</p>
-      <div className="flex gap-1.5">
-        <AvatarChoice on={kind === "initial"} onClick={() => onChange({ avatar: "" })}><span className="text-[12px] font-semibold">Aa</span> Initial</AvatarChoice>
-        <AvatarChoice on={kind === "emoji"} onClick={(e) => setPicker({ el: e.currentTarget, for: "avatar" })}><Smile className="size-3.5" /> Emoji</AvatarChoice>
-        <AvatarChoice on={kind === "photo"} onClick={() => file.current?.click()}><Upload className="size-3.5" /> Photo</AvatarChoice>
+      <p className="mb-2 mt-6 text-[12px] font-medium text-neutral-500">Profile picture <span className="font-normal text-neutral-600">· optional</span></p>
+      <div className="grid grid-cols-3 gap-2">
+        <Tile on={kind === "initial"} onClick={() => onChange({ avatar: "" })}><span className="text-[17px] font-semibold leading-5">Aa</span> Initial</Tile>
+        <Tile on={kind === "emoji"} onClick={(e) => setPicker({ el: e.currentTarget, for: "avatar" })}><Smile className="size-5" /> Emoji</Tile>
+        <Tile on={kind === "photo"} onClick={() => file.current?.click()}><Upload className="size-5" /> Photo</Tile>
       </div>
     </>,
     <>
       <Title t="Your workspace" sub="Give it a name and an icon. You can add more workspaces later." />
       <div className="flex items-center gap-3">
-        <button type="button" onClick={(e) => setPicker({ el: e.currentTarget, for: "ws" })} className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-[22px] hover:bg-white/[0.08]">
+        <button type="button" onClick={(e) => setPicker({ el: e.currentTarget, for: "ws" })} className="oc-setup-field grid size-12 shrink-0 cursor-pointer place-items-center rounded-2xl text-[24px] transition-transform active:scale-95" title="Pick an icon">
           {ws.icon || <Smile className="size-5 text-neutral-500" />}
         </button>
         <input value={ws.name} onChange={(e) => setWs({ ...ws, name: e.target.value })} placeholder="Workspace name" className={input} />
@@ -100,9 +101,10 @@ export function SetupWizard({
   };
 
   return (
-    <Modal className="w-[480px]" label="Set up Oceanic">
+    <Modal className="oc-setup w-[520px] max-w-[calc(100vw-32px)]" label="Set up Oceanic">
       <Stepper
         steps={steps}
+        labels={["You", "Workspace", "Look", "Nerida"]}
         canNext={(i) => (i === 0 ? !!name.trim() : i === 1 ? !!ws.name.trim() : true)}
         onStep={commit}
         onFinish={onDone}
@@ -166,7 +168,7 @@ function AiStep() {
         </div>
       ) : (
         <div className="flex flex-col items-start gap-2">
-          <button type="button" disabled={!status} onClick={() => void start()} className="h-8 cursor-pointer rounded-md bg-gradient-to-r from-[#38d6ff] to-[#7c3aed] px-4 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40">
+          <button type="button" disabled={!status} onClick={() => void start()} className="h-9 cursor-pointer rounded-full shadow-[inset_0_1px_0_rgb(255_255_255/0.3),0_8px_22px_-10px_rgb(124_58_237/0.8)] bg-gradient-to-r from-[#38d6ff] to-[#7c3aed] px-4 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40">
             Download Nerida
           </button>
           <p className="text-[12px] text-neutral-500">Large download. Best with 8 GB+ RAM. Or skip and get it later in Settings → Nerida AI.</p>
@@ -195,7 +197,7 @@ function Showcase() {
   const typed = sc.ask.slice(0, Math.round((sc.ask.length * k) / 10));
   const words = sc.answer?.split(" ") ?? [];
   return (
-    <div className="mb-4 flex h-[196px] flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.025]">
+    <div className="oc-setup-field mb-4 flex h-[196px] flex-col overflow-hidden rounded-2xl">
       <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-1.5 text-[12px] font-medium text-neutral-300">
         <NeridaMark size={14} busy={k > 10 && k < 16} /> Nerida
       </div>
@@ -218,3 +220,11 @@ function Showcase() {
     </div>
   );
 }
+
+/** Big choice tile (Initial / Emoji / Photo) with a selected ring. */
+const Tile = ({ on, onClick, children }: { on: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: React.ReactNode }) => (
+  <button type="button" onClick={onClick} data-on={on || undefined}
+    className={`oc-setup-field flex h-[68px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl text-[12.5px] transition-transform active:scale-[0.97] ${on ? "text-neutral-100" : "text-neutral-400 hover:text-neutral-200"}`}>
+    {children}
+  </button>
+);
