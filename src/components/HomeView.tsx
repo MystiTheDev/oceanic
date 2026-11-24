@@ -62,7 +62,6 @@ export function HomeView(props: HomeViewProps) {
   const tasks = [...pending].sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")).slice(0, 6);
   return (
     <div className={`oc-page-in scrollbar-thin relative h-full overflow-y-auto ${glass ? "oc-home-glass" : ""}`}>
-      {glass && <div aria-hidden className="oc-home-aura"><i /><i /><i /></div>}
       <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-8 pb-24 pt-[14vh]">
         {/* ---- Brand + greeting ---- */}
         <div className="oc-home-brand flex flex-col items-center gap-3 text-center">
