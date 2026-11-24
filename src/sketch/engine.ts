@@ -7,7 +7,7 @@ import { drawStroke, type Stroke } from "./ink";
  */
 export type Layer = { id: string; name: string; visible: boolean; opacity: number; canvas: HTMLCanvasElement; strokes: Stroke[]; base: HTMLCanvasElement | null };
 export type Rect = { x: number; y: number; w: number; h: number };
-type Snapshot = { w: number; h: number; active: number; layers: { id: string; name: string; visible: boolean; opacity: number; data: ImageData; strokes: Stroke[]; base: ImageData | null }[] };
+type Snapshot = { w: number; h: number; active: number; layers: { id: string; name: string; visible: boolean; opacity: number; data: ImageData; strokes: Stroke[]; base: ImageData | null }[]; texts: unknown[]; label: string };
 
 let nextId = 1;
 const lid = () => `l${nextId++}`;
@@ -25,6 +25,10 @@ export class SketchDoc {
   h: number;
   layers: Layer[] = [];
   active = 0;
+  /** Editor-owned text boxes; kept here so undo/redo covers them. */
+  texts: unknown[] = [];
+  /** Name given to the next undo step unless checkpoint() gets one. */
+  label = "Edit";
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
   onChange: () => void = () => {};
@@ -53,11 +57,13 @@ export class SketchDoc {
   }
 
   /* ---------------------------------------------------------------- history */
-  private snap(): Snapshot {
+  private snap(label: string): Snapshot {
     return {
+      label,
       w: this.w,
       h: this.h,
       active: this.active,
+      texts: this.texts,
       layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, data: ctx2d(l.canvas).getImageData(0, 0, this.w, this.h), strokes: l.strokes.slice(), base: l.base && ctx2d(l.base).getImageData(0, 0, this.w, this.h) })),
     };
   }
@@ -71,27 +77,32 @@ export class SketchDoc {
       if (l.base) ctx2d((base = makeCanvas(s.w, s.h))).putImageData(l.base, 0, 0);
       return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, canvas, strokes: l.strokes, base };
     });
+    this.texts = s.texts;
     this.active = Math.min(s.active, this.layers.length - 1);
     this.onChange();
   }
   /** Call before any change; keeps the last 30 states. Bakes vector ink to pixels unless `keepInk`. */
-  checkpoint(keepInk = false) {
+  checkpoint(keepInk = false, label = this.label) {
     if (!keepInk) for (const l of this.layers) (l.strokes = []), (l.base = null);
-    this.undoStack.push(this.snap());
+    this.undoStack.push(this.snap(label));
     if (this.undoStack.length > 30) this.undoStack.shift();
     this.redoStack = [];
   }
   undo() {
     const s = this.undoStack.pop();
     if (!s) return;
-    this.redoStack.push(this.snap());
+    this.redoStack.push(this.snap(s.label));
     this.restore(s);
   }
   redo() {
     const s = this.redoStack.pop();
     if (!s) return;
-    this.undoStack.push(this.snap());
+    this.undoStack.push(this.snap(s.label));
     this.restore(s);
+  }
+  /** Names of undoable steps, oldest first. */
+  get history() {
+    return this.undoStack.map((s) => s.label);
   }
   get canUndo() {
     return this.undoStack.length > 0;

@@ -353,7 +353,7 @@ export default function App() {
       setSettings(next);
       loadConfirmDeleteSettings(stored);
       applyAccent(next.accent);
-      setAskName(!next.userName);
+      setAskName(!next.userName && localStorage.getItem("oc.setupSkipped") !== "1");
       setWorkspaces(wsList);
       setRecent(JSON.parse(stored.recentPages ?? "[]"));
       setRecentMaps(JSON.parse(stored.recentMindmaps ?? "[]"));
@@ -1525,12 +1525,22 @@ export default function App() {
     }, 300);
     return () => clearTimeout(t);
   }, [phoneUI]); // eslint-disable-line react-hooks/exhaustive-deps
-  const switchApp = (app: AppId) => {
+  const loaderFrom = useRef<DOMRect | null>(null);
+  const switchApp = (app: AppId, from?: DOMRect) => {
+    loaderFrom.current = from ?? null;
     const doc = activePageId?.startsWith("doc:") ? activePageId.slice(4) : null;
     if (doc && isDirtyUntitled(doc)) return setSavePrompt({ path: doc, proceed: () => go(app) });
     go(app);
   };
   const go = (app: AppId) => {
+    // Splash on every switch. The app mounts after the icon's fly-in so its first render doesn't stall it.
+    if (settings.appLoader) {
+      setAppLoading(app);
+      return void window.setTimeout(() => openApp(app), 700);
+    }
+    openApp(app);
+  };
+  const openApp = (app: AppId) => {
     setView("document");
     setActiveTabId(
       app === "notes" ? (lastNotesTab.current ?? HOME_TAB)
@@ -1538,7 +1548,6 @@ export default function App() {
       : app === "sketch" ? (lastSketchTab.current ?? SKETCH_HOME_TAB)
       : (lastMindmapTab.current ?? MM_HOME_TAB),
     );
-    if (settings.appLoader) setAppLoading(app);
   };
   const footerFor = (app: AppId) => (
     <>
@@ -2193,7 +2202,7 @@ export default function App() {
           </div>
         </Modal>
       )}
-      {appLoading && <AppLoader app={appLoading} onLeave={() => {
+      {appLoading && <AppLoader app={appLoading} from={loaderFrom.current} onLeave={() => {
         setHomeKey((k) => k + 1);
         // Ease the app in under the fading splash instead of a hard cut.
         appRoot.current?.querySelectorAll<HTMLElement>(":scope > :not([data-app-loader])").forEach((el) =>
@@ -2252,6 +2261,7 @@ export default function App() {
             api.updateWorkspace(ws.id, name, icon, ws.color).catch(report("Save workspace"));
           }}
           onDone={() => (setAskName(false), setTimeout(startTour, 300))}
+          onSkip={() => (localStorage.setItem("oc.setupSkipped", "1"), setAskName(false))}
         />
       )}
       {!isAndroid && <Tour />}

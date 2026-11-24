@@ -108,6 +108,7 @@ export const SUBJECTS: { id: string; label: string; icon: string; branches: stri
   { id: "chemistry", label: "Chemistry", icon: "🧪", branches: ["Physical", "Organic", "Inorganic", "Reactions", "Lab work"] },
   { id: "maths", label: "Maths", icon: "📐", branches: ["Algebra", "Calculus", "Geometry", "Trigonometry", "Statistics"] },
   { id: "cs", label: "Computer Science", icon: "💻", branches: ["Programming", "Data Structures", "Algorithms", "Databases", "Networks"] },
+  { id: "biology", label: "Biology", icon: "🧬", branches: ["Cells", "Genetics", "Evolution", "Ecology", "Human Body", "Plants"] },
   { id: "literature", label: "Literature", icon: "📚", branches: ["Themes", "Characters", "Plot", "Setting", "Quotes"] },
 ];
 export const subjectOf = (id: string) => SUBJECTS.find((s) => s.id === id) ?? SUBJECTS[0];

@@ -25,13 +25,13 @@ function AskModePick() {
 }
 
 /* Nerida settings look: grouped cards, muted row icons, cyan→violet accent. */
-const card = "overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.025] divide-y divide-white/[0.05]";
+const card = "oc-st-card overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.045] shadow-[0_1px_2px_rgb(0_0_0/0.2)] divide-y divide-white/[0.06]";
 const rowCls = "flex items-center gap-3 px-4 py-3";
 const accentBtn = "cursor-pointer rounded-md bg-gradient-to-r from-[#38d6ff] to-[#7c3aed] px-3 py-1 text-[12.5px] font-medium text-white shadow-sm shadow-violet-900/30 hover:brightness-110 disabled:cursor-default disabled:opacity-40";
 const RowIcon = ({ icon: I }: { icon: LucideIcon }) => (
   <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-neutral-400"><I className="size-4" /></span>
 );
-const sectionTitle = "mt-6 mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-neutral-500";
+const sectionTitle = "mt-[var(--st-gap)] mb-1.5 ml-4 text-[11px] font-semibold uppercase tracking-[0.06em] text-neutral-500";
 
 const ABOUT: Record<ModelId, string> = {
   plus: "Smarter answers, better explanations, flashcards and quizzes. Best with 8 GB+ RAM.",
@@ -66,7 +66,7 @@ export function NeridaSettings() {
 
   return (
     <div>
-      <p className="mb-1 px-1 text-[12px] text-neutral-500">Runs on this PC: your notes never leave it · {size(used)} used</p>
+      <p className="mb-1 ml-4 text-[12px] text-neutral-500">Runs on this PC: your notes never leave it · {size(used)} used</p>
       {!status.server && used > 0 && (
         <div className="mb-2 flex items-center gap-4 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] p-3">
           <p className="min-w-0 flex-1 text-[12.5px] text-amber-200/90">

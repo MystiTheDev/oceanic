@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { trackKeyboardMode } from "./lib/overlay";
+import { applyUiScale } from "./lib/uiScale";
 
 // Browser reload and page keys do nothing useful in a desktop app (kept in dev for reloading).
 if (import.meta.env.PROD) {
@@ -14,6 +15,7 @@ if (import.meta.env.PROD) {
 }
 
 trackKeyboardMode();
+applyUiScale();
 // Pen hover: Windows draws a white dot that vanishes on light pages, so swap in our own cursor (see .oc-pen in index.css).
 window.addEventListener("pointermove", (e) => document.documentElement.classList.toggle("oc-pen", e.pointerType === "pen"), { passive: true });
 

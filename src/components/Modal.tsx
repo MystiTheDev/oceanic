@@ -9,6 +9,7 @@ export function Modal({
   className = "w-[400px]",
   label,
   sheet,
+  glass,
 }: {
   children: ReactNode;
   onClose?: () => void;
@@ -17,6 +18,8 @@ export function Modal({
   label?: string;
   /** Phones: a bottom sheet instead of a centered dialog. */
   sheet?: boolean;
+  /** Liquid glass shell (frosted, rimmed) over a blurred backdrop. */
+  glass?: boolean;
 }) {
   if (sheet) className += " oc-sheet";
   const box = useRef<HTMLDivElement>(null);
@@ -26,7 +29,7 @@ export function Modal({
   return createPortal(
     <div
       data-oc-modal
-      className="oc-fade-in fixed inset-0 z-[60] grid place-items-center bg-black/50"
+      className={`oc-fade-in fixed inset-0 z-[60] grid place-items-center ${glass ? "bg-black/40 backdrop-blur-[14px] backdrop-saturate-150" : "bg-black/50"}`}
       onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}
     >
       <div
@@ -35,7 +38,7 @@ export function Modal({
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
-        className={`oc-pop-in oc-dialog max-h-[85vh] overflow-hidden border border-white/[0.08] bg-[var(--oc-surface)] outline-none ${className}`}
+        className={`oc-pop-in oc-dialog max-h-[85vh] overflow-hidden outline-none ${glass ? "oc-glass-panel oc-glass-text relative" : "border border-white/[0.08] bg-[var(--oc-surface)]"} ${className}`}
       >
         {children}
       </div>
