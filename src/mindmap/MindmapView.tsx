@@ -55,6 +55,8 @@ import {
   Trash2,
   Unlink,
   Lightbulb,
+  StickyNote,
+  Focus,
 } from "lucide-react";
 import { api } from "../data/api";
 import { PromoteDialog, type PromoteItem } from "../components/PromoteDialog";
@@ -73,6 +75,8 @@ import {
   subtree,
   logoOf,
   toMermaid,
+  toOutline,
+  sideOf,
   toRecord,
   type MNode,
   type NodeStyle,
@@ -98,6 +102,8 @@ type TopicData = MNode & {
   actions: Actions;
 };
 type Actions = {
+  /** Open the note editor for this topic. */
+  editNote: (id: string) => void;
   rename: (id: string, label: string) => void;
   stopEditing: () => void;
   setStyle: (id: string, patch: Partial<NodeStyle>) => void;
@@ -170,6 +176,9 @@ const TopicNode = memo(function TopicNode({ data, selected }: NodeProps<Node<Top
           <button type="button" title="Link to a page" className={`oc-mm-tool ${data.linkedPageId ? "is-on" : ""}`} onClick={(e) => data.actions.linkMenu(e, data.id)}>
             <Link2 size={14} />
           </button>
+          <button type="button" title="Note (N)" className={`oc-mm-tool ${data.style.note ? "is-on" : ""}`} onClick={() => data.actions.editNote(data.id)}>
+            <StickyNote size={14} />
+          </button>
           <button type="button" title="Send to Atlas…" className="oc-mm-tool" onClick={() => data.actions.sendToAtlas(data.id)}>
             <Lightbulb size={14} />
           </button>
@@ -215,6 +224,11 @@ const TopicNode = memo(function TopicNode({ data, selected }: NodeProps<Node<Top
         ) : (
           <span className="oc-mm-label">{data.label || "Untitled"}</span>
         )}
+        {data.style.note && (
+          <button type="button" title={data.style.note} className="nodrag oc-mm-link cursor-pointer" onClick={(e) => (e.stopPropagation(), data.actions.editNote(data.id))}>
+            <StickyNote size={11} /> <span className="max-w-[160px] truncate">{data.style.note.split("\n")[0]}</span>
+          </button>
+        )}
         {data.style.collapsed && <span className="oc-mm-collapsed">+ hidden topics</span>}
         {data.linkedPageId && (
           <span className="oc-mm-link">
@@ -227,6 +241,26 @@ const TopicNode = memo(function TopicNode({ data, selected }: NodeProps<Node<Top
 });
 const nodeTypes = { topic: TopicNode };
 
+/** Side panel for a topic's free-text note. */
+function NotePanel({ node, onChange, onClose }: { node: MNode; onChange: (note: string) => void; onClose: () => void }) {
+  return (
+    <div className="oc-mm-float oc-fade-in absolute bottom-20 right-3 z-20 flex w-[300px] flex-col gap-2 rounded-2xl p-3" onKeyDown={(e) => (e.stopPropagation(), e.key === "Escape" && onClose())}>
+      <div className="flex items-center gap-2 text-[13px] font-semibold text-neutral-100">
+        <StickyNote size={15} />
+        <span className="flex-1 truncate">{node.label || "Untitled"}</span>
+        <button type="button" onClick={onClose} className="cursor-pointer rounded-md px-1.5 text-neutral-400 hover:bg-white/10 hover:text-neutral-100" aria-label="Close note">✕</button>
+      </div>
+      <textarea
+        autoFocus
+        defaultValue={node.style.note ?? ""}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        placeholder="Write a note for this topic…"
+        className="h-40 resize-none rounded-lg border border-white/[0.08] bg-white/[0.04] p-2 text-[13px] leading-relaxed text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-white/20"
+      />
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------- editor */
 function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: Props) {
   const rf = useReactFlow();
@@ -237,6 +271,10 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  /** Topic whose note is open in the side panel. */
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  /** Focus mode: everything outside this topic's branch is dimmed. */
+  const [focus, setFocus] = useState<string | null>(null);
   /** Topic Nerida is growing branches under. */
   const [mapFor, setMapFor] = useState<string | null>(null);
   /** Topic whose branch is being sent to Atlas. */
@@ -381,6 +419,7 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
         wrap.current?.focus();
       },
       stopEditing: () => setEditing(null),
+      editNote: (id) => (setSelected(id), setNoteFor(id)),
       cut: (id) => update((ns) => ns.map((n) => (n.id === id ? { ...n, parentId: null } : n))),
       startConnect: (id) => setConnectFrom(id),
       setStyle: (id, patch) => update((ns) => ns.map((n) => (n.id === id ? { ...n, style: { ...n.style, ...patch } } : n))),
@@ -416,10 +455,19 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
     return out;
   }, [nodes]);
 
+  /** Focus mode: the focused branch plus its ancestors stay lit. */
+  const lit = useMemo(() => {
+    if (!focus || !nodes) return null;
+    const out = subtree(nodes, focus);
+    for (let p = nodes.find((n) => n.id === focus)?.parentId; p; p = nodes.find((n) => n.id === p)?.parentId) out.add(p);
+    return out;
+  }, [focus, nodes]);
+
   const rfNodes: Node<TopicData>[] = useMemo(
     () =>
       (nodes ?? []).map((n) => ({
         hidden: hidden.has(n.id),
+        className: lit && !lit.has(n.id) ? "oc-mm-dim" : undefined,
         measured: measured.current.get(n.id),
         id: n.id,
         type: "topic",
@@ -434,7 +482,7 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
           actions,
         },
       })),
-    [nodes, selected, editing, actions, pageTitle, hidden],
+    [nodes, selected, editing, actions, pageTitle, hidden, lit],
   );
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -452,12 +500,12 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
           sourceHandle: right ? "s-right" : "s-left",
           targetHandle: right ? "t-left" : "t-right",
           type: "default",
-          style: { stroke: color, strokeWidth: 2 },
+          style: { stroke: color, strokeWidth: 2, opacity: lit && !lit.has(n.id) ? 0.15 : 1 },
           markerEnd: n.style.arrow ? { type: "arrowclosed" as never, color, width: 16, height: 16 } : undefined,
         },
       ];
     });
-  }, [nodes, hidden]);
+  }, [nodes, hidden, lit]);
 
   const onNodesChange = (changes: NodeChange<Node<TopicData>>[]) => {
     let resized = false;
@@ -481,15 +529,44 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
       const k = e.key.toLowerCase();
       if (k === "z" && !e.shiftKey) return void (e.preventDefault(), undo());
       if (k === "y" || (k === "z" && e.shiftKey)) return void (e.preventDefault(), redo());
+      if (k === "f") return void (e.preventDefault(), setSearching(true));
     }
     if (connectFrom && e.key === "Escape") return void setConnectFrom(null);
+    if (focus && e.key === "Escape") return void setFocus(null);
     if (editing || !selected || (e.target as HTMLElement).tagName === "INPUT") return;
     if (e.key === "Tab") addChild(selected);
     else if (e.key === "Enter") selected === ROOT ? addChild(ROOT) : addSibling(selected);
     else if (e.key === "Delete" || e.key === "Backspace") remove(selected);
     else if (e.key === "F2" || e.key === " ") setEditing(selected);
+    else if (e.key.startsWith("Arrow")) {
+      const to = neighbour(selected, e.key);
+      if (to) {
+        setSelected(to.id);
+        const vp = rf.getViewport(), r = wrap.current!.getBoundingClientRect();
+        const sx = to.x * vp.zoom + vp.x, sy = to.y * vp.zoom + vp.y;
+        if (sx < 80 || sy < 80 || sx > r.width - 80 || sy > r.height - 80) void rf.setCenter(to.x, to.y, { zoom: vp.zoom, duration: 250 });
+      }
+    } else if (!e.ctrlKey && !e.metaKey && (e.key === "n" || e.key === "N")) setNoteFor(selected);
+    else if (!e.ctrlKey && !e.metaKey && (e.key === "f" || e.key === "F")) setFocus((v) => (v === selected ? null : selected));
     else return;
     e.preventDefault();
+  };
+
+  /** Arrow-key target: parent/children follow the branch's side; up/down walk siblings. */
+  const neighbour = (id: string, key: string): MNode | undefined => {
+    const ns = (nodes ?? []).filter((n) => !hidden.has(n.id));
+    const n = ns.find((x) => x.id === id);
+    if (!n) return;
+    const near = (list: MNode[]) => list.sort((a, b) => Math.abs(a.y - n.y) - Math.abs(b.y - n.y))[0];
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      const sib = ns.filter((x) => x.parentId === n.parentId && x.id !== n.id && (n.parentId !== ROOT || sideOf(ns, x) === sideOf(ns, n)));
+      const dir = key === "ArrowDown" ? 1 : -1;
+      return sib.filter((x) => (x.y - n.y) * dir > 0).sort((a, b) => (a.y - b.y) * dir)[0];
+    }
+    const dir = key === "ArrowRight" ? 1 : -1;
+    if (n.id === ROOT) return near(ns.filter((x) => x.parentId === ROOT && Math.sign(x.x - n.x) === dir));
+    const outward = sideOf(ns, n) === dir;
+    return outward ? near(ns.filter((x) => x.parentId === n.id)) : ns.find((x) => x.id === n.parentId);
   };
 
   /** Tidy up with motion: positions ease to the new layout over ~320ms. */
@@ -514,7 +591,7 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
   };
 
   /* ------------------------------------------------------------ export */
-  const exportImage = async (kind: "png" | "svg") => {
+  const exportImage = async (kind: "png" | "svg", asPdf = false) => {
     const el = wrap.current?.querySelector<HTMLElement>(".react-flow__viewport");
     if (!el || !nodes) return;
     // Crop to the topics themselves (plus a margin), at 100% zoom.
@@ -545,8 +622,20 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
       kind === "png"
         ? Uint8Array.from(atob(url.split(",")[1]), (c) => c.charCodeAt(0))
         : new TextEncoder().encode(decodeURIComponent(url.split(",")[1]));
+    if (asPdf) return { bytes, w, h };
     await save(`${title || "Mindmap"}.${kind}`, bytes);
   };
+  /** One-page PDF of the map image (page sized to the map). */
+  const exportPdf = async () => {
+    const img = await exportImage("png", true);
+    if (!img) return;
+    const { PDFDocument } = await import("pdf-lib");
+    const pdf = await PDFDocument.create();
+    const png = await pdf.embedPng(img.bytes);
+    pdf.addPage([img.w, img.h]).drawImage(png, { x: 0, y: 0, width: img.w, height: img.h });
+    await save(`${title || "Mindmap"}.pdf`, await pdf.save());
+  };
+  const exportOutline = () => save(`${title || "Mindmap"} outline.md`, new TextEncoder().encode(toOutline(nodes ?? [])));
   const exportMermaid = () =>
     save(`${title || "Mindmap"}.md`, new TextEncoder().encode(`# ${title}\n\n\`\`\`mermaid\n${toMermaid(nodes ?? [])}\n\`\`\`\n`));
   const save = async (name: string, data: Uint8Array) => {
@@ -604,6 +693,8 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
       { label: "Add child", icon: <Plus className="size-4" />, hint: "Tab", onSelect: () => addChild(id) },
       { label: "Add sibling", icon: <Plus className="size-4" />, hint: "Enter", disabled: isRoot, onSelect: () => addSibling(id) },
       { label: "Edit label", icon: <PenLine className="size-4" />, hint: "F2", onSelect: () => setEditing(id) },
+      { label: n.style.note ? "Edit note" : "Add note", icon: <StickyNote className="size-4" />, hint: "N", onSelect: () => setNoteFor(id) },
+      { label: focus === id ? "Exit focus" : "Focus branch", icon: <Focus className="size-4" />, hint: "F", onSelect: () => setFocus(focus === id ? null : id) },
       { label: "Expand with Nerida", icon: <NeridaMark size={16} />, onSelect: () => setMapFor(id) },
       "divider",
       { label: "Connect to a topic…", icon: <GitBranchPlus className="size-4" />, disabled: isRoot, onSelect: () => setConnectFrom(id) },
@@ -689,6 +780,8 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
   const exportItems: MenuItem[] = [
     { label: "PNG image (2×)", onSelect: () => void exportImage("png") },
     { label: "SVG vector", onSelect: () => void exportImage("svg") },
+    { label: "PDF", onSelect: () => void exportPdf() },
+    { label: "Markdown outline (.md)", onSelect: () => void exportOutline() },
     { label: "Mermaid (.md)", onSelect: () => void exportMermaid() },
     "divider",
     { label: "Oceanic mindmap (.omap)", onSelect: () => void buildOmap(mindmapId).then((b) => save(`${title || "Mindmap"}.omap`, b)) },
@@ -719,6 +812,19 @@ function Editor({ mindmapId, pages, onOpenPage, onTitle, onHome, workspaceId }: 
         <div className="oc-fade-in absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-lg bg-sky-600 px-3 py-1.5 text-[13px] font-medium text-[#fff] shadow-lg">
           Click a topic to connect “{nodes.find((n) => n.id === connectFrom)?.label}” to it · Esc to cancel
         </div>
+      )}
+      {focus && (
+        <button type="button" onClick={() => setFocus(null)} className="oc-fade-in absolute left-1/2 top-16 z-20 -translate-x-1/2 cursor-pointer rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-medium text-[#fff] shadow-lg">
+          Focusing “{nodes.find((n) => n.id === focus)?.label}” · Esc or click to exit
+        </button>
+      )}
+      {noteFor && nodes.some((n) => n.id === noteFor) && (
+        <NotePanel
+          key={noteFor}
+          node={nodes.find((n) => n.id === noteFor)!}
+          onChange={(note) => actions.setStyle(noteFor, { note: note || undefined })}
+          onClose={() => (setNoteFor(null), wrap.current?.focus())}
+        />
       )}
       {/* Window drag strip above the canvas (the editor is full-window, like Docs). */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-[5] h-3" />
