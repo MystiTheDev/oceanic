@@ -196,7 +196,7 @@ export async function searchNotes(q: string, limit = 3, skip: Set<string> = new 
   }
   const ranked = [...by.values()].sort((a, b) => b.score - a.score);
   const top = ranked[0]?.score ?? 0;
-  const min = Math.max(top * 0.35, terms(q).length > 2 ? 1.5 : 0.5);
+  const min = Math.max(top * (strict ? 0.6 : 0.35), terms(q).length > 2 ? 1.5 : 0.5);
   return ranked.filter((r) => r.score >= min).slice(0, limit);
 }
 

@@ -53,18 +53,19 @@ export function ContextPicker({ notes, sendCount, tokens, cloud, onPin, onRemove
         {cloud ? <Cloud className="size-3 text-amber-300" /> : <Layers className="size-3" />}
         {sent.length ? `${sent.length} note${sent.length > 1 ? "s" : ""} · ~${tokens.toLocaleString()} tokens` : "Add notes"}
       </button>
-      {sent.map((n) => (
-        <span key={n.id} title={`${WHY[n.why]}${n.pinned ? " · pinned" : ""}`}
+      {sent.slice(0, 3).map((n) => (
+        <span key={n.id} title={`${WHY[n.why]}${n.pinned ? " · pinned: always sent" : ""}`}
           className={`oc-nl-chip oc-chip-in flex max-w-[160px] items-center gap-1 rounded-full border bg-white/[0.03] px-2 py-0.5 text-[11.5px] text-neutral-300 ${n.why === "found" && !n.pinned ? "border-dashed border-sky-300/30" : n.pinned ? "border-teal-300/30" : "border-white/[0.1]"}`}>
           {n.pinned ? <Pin className="size-2.5 shrink-0 text-teal-300" /> : n.why === "found" ? <Search className="size-2.5 shrink-0 text-sky-300" /> : <span>{n.icon}</span>}
           <span className="truncate">{n.title}</span>
-          <button type="button" title="Don't send this note" className="cursor-pointer text-neutral-500 hover:text-neutral-200" onClick={() => onRemove(n)}><X className="size-3" /></button>
+          <button type="button" title="Remove from this chat" className="cursor-pointer text-neutral-500 hover:text-neutral-200" onClick={() => onRemove(n)}><X className="size-3" /></button>
         </span>
       ))}
+      {sent.length > 3 && <button type="button" onClick={() => setOpen(true)} className="oc-nl-chip cursor-pointer rounded-full border border-white/[0.1] px-2 py-0.5 text-[11.5px] text-neutral-400 hover:text-neutral-200">+{sent.length - 3}</button>}
       {open && (
         <div className="oc-menu-pop absolute bottom-full left-0 z-30 mb-2 w-80 rounded-xl border border-white/[0.08] bg-neutral-900/95 p-1.5 shadow-2xl shadow-black/50 backdrop-blur">
           <p className="px-2 pt-1 pb-1.5 text-[11.5px] text-neutral-500">
-            Nerida reads these notes with your next message (up to {MAX_NOTES}; long notes are cut to the parts that match).
+            Nerida reads these notes with your next message (up to {MAX_NOTES}; long notes are cut to the parts that match). Pin keeps a note in every message; X removes it from this chat.
           </p>
           {cloud && (
             <p className="mx-1 mb-1.5 flex items-start gap-1.5 rounded-lg bg-amber-300/[0.07] px-2 py-1.5 text-[11.5px] text-amber-200/90">
@@ -80,11 +81,11 @@ export function ContextPicker({ notes, sendCount, tokens, cloud, onPin, onRemove
                   <span className="block truncate text-neutral-200">{n.title}</span>
                   <span className="block text-[10.5px] text-neutral-500">{i >= sendCount ? `Over the ${MAX_NOTES}-note limit` : WHY[n.why]}</span>
                 </span>
-                <button type="button" title={n.pinned ? "Unpin" : "Pin: always send with this chat"} onClick={() => onPin(n.id)}
-                  className={`cursor-pointer rounded p-1 ${n.pinned ? "text-teal-300" : "text-neutral-500 opacity-0 group-hover:opacity-100 hover:text-neutral-200"}`}>
+                <button type="button" title={n.pinned ? "Unpin" : "Pin: always send with this chat (X removes it)"} onClick={() => onPin(n.id)}
+                  className={`cursor-pointer rounded p-1 ${n.pinned ? "text-teal-300" : "text-neutral-500 opacity-40 group-hover:opacity-100 hover:text-neutral-200"}`}>
                   <Pin className="size-3.5" />
                 </button>
-                <button type="button" title="Don't send this note" onClick={() => onRemove(n)} className="cursor-pointer rounded p-1 text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
+                <button type="button" title="Remove from this chat" onClick={() => onRemove(n)} className="cursor-pointer rounded p-1 text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
               </div>
             ))}
           </div>

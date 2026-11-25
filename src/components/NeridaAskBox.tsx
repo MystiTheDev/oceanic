@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, X } from "lucide-react";
+import { NeridaMark } from "./NeridaOrb";
 
 /* Nerida's question box: a glass card docked above the chat input, one question per page.
  * Dots jump between questions; 1-9 pick an option, Enter goes on, Esc cancels.
@@ -68,7 +69,7 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
   const preview = q.options.find((o) => (picked[q.id] ?? []).includes(o.label) && o.preview)?.preview;
   return (
     /* Inset glass (no own backdrop-filter: it sits inside the glass panel). Container query: side-by-side preview and key hints only when wide. */
-    <div className="oc-ask-box oc-glass-inset @container mx-2 mb-2 overflow-hidden rounded-2xl">
+    <div className="oc-ask-box oc-msg-in oc-glass-inset @container mx-2 mb-2 overflow-hidden rounded-2xl">
       <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2">
         <span className="min-w-0 truncate rounded-full bg-teal-400/15 px-2 py-0.5 text-[11px] font-medium text-teal-200">{title}</span>
         <span className="flex-1" />
@@ -80,17 +81,17 @@ export function NeridaAskBox({ title, questions, onDone, onCancel, busy }: { tit
             ))}
           </span>
         )}
-        <span className="shrink-0 text-[11px] font-medium text-neutral-400">{q.header}</span>
+        <span className="shrink-0 text-[11px] font-medium text-neutral-400">{q.header}{questions.length > 1 && <span className="ml-1 font-normal text-neutral-500">{page + 1} of {questions.length}</span>}</span>
         <button type="button" onClick={onCancel} title="Cancel (Esc)" className="cursor-pointer rounded p-0.5 text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
       </div>
 
       {busy ? (
-        <div className="px-4 py-5 text-[13px] text-neutral-300">{busy}</div>
+        <div className="flex items-center gap-2 px-4 py-5 text-[13px]"><NeridaMark busy size={15} /><span className="oc-nerida-shimmer">{busy}</span></div>
       ) : (
         <div className="flex flex-col gap-3 px-3 py-3 @[520px]:flex-row">
           <div className="min-w-0 flex-1">
             <div className="mb-2 px-1 text-[13.5px] font-medium text-neutral-100">{q.question}{q.multi && <span className="ml-1.5 text-[11px] font-normal text-neutral-500">pick any</span>}</div>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex max-h-[45vh] flex-col gap-0.5 overflow-y-auto">
               {q.options.map((o, i) => {
                 const on = (picked[q.id] ?? []).includes(o.label);
                 return (

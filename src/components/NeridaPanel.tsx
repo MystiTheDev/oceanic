@@ -481,8 +481,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
-    setExcluded(new Set());
-    if (pageId) void relatedNotes(pageId).then(setNotes);
+    // Only the open note itself: linked/sub-pages pulled in unrelated notes. Removed notes stay removed.
+    if (pageId) void relatedNotes(pageId).then((r) => setNotes(r.filter((n) => n.why === "current")));
     else setNotes([]);
   }, [pageId]);
   // PDF selection bar → "Explain / Summarize / Ask about it".
@@ -642,7 +642,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         if (unread.length && (await canSeeImages())) {
           if (await readNoteImages(ids, (n, total) => mark(`Reading picture ${n} of ${total}`))) forgetIndex(ids);
         } else if (unread.length) setNeedVision(`${unread.length} picture${unread.length > 1 ? "s" : ""} in your notes can't be read without the Vision add-on.`);
-        mark(`Reading ${used.length} note${used.length > 1 ? "s" : ""}`);
+        mark(`Reading ${used.slice(0, 2).map((n) => n.title || "Untitled").join(", ")}${used.length > 2 ? ` +${used.length - 2}` : ""}`);
         const c = await buildContext(used, text, book);
         context = c.text;
         mark(`Found ${c.parts} relevant part${c.parts === 1 ? "" : "s"}`);
@@ -894,7 +894,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         </div>
         {ready && !home && <p className="oc-nl-hint mt-1 flex justify-between px-1 text-[10.5px] text-neutral-600">
           <span><kbd className="text-neutral-400">/</kbd> for actions · <kbd className="text-neutral-400">@</kbd> to add a note</span>
-          {neridaState.warming && !busy ? <span className="oc-nerida-shimmer">Getting ready…</span> : home && <span>🔒 Runs on this PC. Your notes stay here.</span>}
+          {neridaState.warming && !busy && <span className="oc-nerida-shimmer">Getting ready…</span>}
         </p>}
       </div>
   );
@@ -906,7 +906,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     <aside
       onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
       onDrop={(e) => { if (!ready || !e.dataTransfer.files.length) return; e.preventDefault(); e.stopPropagation(); void addFiles(e.dataTransfer.files); }}
-      className={home ? "oc-page-in oc-main-aura relative flex h-full w-full flex-col" : "oc-nerida-in oc-glass-panel relative m-2 flex h-[calc(100%-16px)] w-[360px] shrink-0 flex-col overflow-hidden rounded-[20px]"}>
+      className={home ? "oc-nerida oc-page-in oc-main-aura relative flex h-full w-full flex-col" : "oc-nerida oc-nerida-in oc-glass-panel relative m-2 flex h-[calc(100%-16px)] w-[360px] shrink-0 flex-col overflow-hidden rounded-[20px]"}>
       {/* header */}
       {home ? (
         <div className="h-12 shrink-0" />
@@ -1052,7 +1052,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               <div className="mb-2">
                 <button type="button" onClick={() => setStepsOpen((o) => !o)} className="flex cursor-pointer items-center gap-2 text-[12.5px]">
                   <NeridaMark busy size={15} />
-                  <span className="oc-nerida-shimmer">{steps[steps.length - 1].label}…</span>
+                  <span className="oc-nerida-shimmer">{steps[steps.length - 1].label.replace(/^(\w+ing\b[^:…]*)$/, "$1…")}</span>
                   <ChevronDown className={`size-3 text-neutral-500 transition-transform ${stepsOpen ? "" : "-rotate-90"}`} />
                 </button>
                 {stepsOpen && (
