@@ -1,3 +1,4 @@
+import { DENSITIES, ZOOMS, getDensity, getZoom, setUiScale } from "../lib/uiScale";
 /**
  * Settings on phones: a full-screen grouped list; each row opens its own
  * screen. Choices open a bottom sheet with radio options. Android's back
@@ -221,6 +222,8 @@ export function MobileSettings({ settings, onChange, onClose, pageCount, trashCo
     body = (
       <section className="ocs-group">
         <Row title="Text size" value={label(SIZES, settings.editorSize)} onClick={() => setChoice({ title: "Text size", value: settings.editorSize, options: SIZES, pick: (v) => onChange({ editorSize: v as AppSettings["editorSize"] }) })} />
+        <Row title="Interface zoom" value={label(ZOOMS, getZoom())} onClick={() => setChoice({ title: "Interface zoom", value: getZoom(), options: ZOOMS, pick: (v) => setUiScale("zoom", v) })} />
+        <Row title="Density" value={label(DENSITIES, getDensity())} onClick={() => setChoice({ title: "Density", value: getDensity(), options: DENSITIES, pick: (v) => setUiScale("density", v) })} />
       </section>
     );
   } else if (screen === "calendar") {

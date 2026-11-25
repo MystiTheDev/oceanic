@@ -236,6 +236,11 @@ html.oc-pen * {
     -webkit-backdrop-filter: blur(34px) saturate(190%); backdrop-filter: blur(34px) saturate(190%);
   }
 }
+/* Text-heavy glass (dialogs): fuller tint so words stay readable even if the blur is weak. */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .oc-glass-panel.oc-glass-text { background: radial-gradient(120% 40% at 50% 0%, rgb(45 212 191 / 0.08), transparent 70%), rgb(23 23 23 / 0.86); }
+  :root[data-theme="light"] .oc-glass-panel.oc-glass-text { background: radial-gradient(120% 40% at 50% 0%, rgb(13 148 136 / 0.06), transparent 70%), rgb(255 255 255 / 0.88); }
+}
 @media (prefers-reduced-transparency: reduce) {
   .oc-glass-panel { background: rgb(23 23 23 / 0.97); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
@@ -355,3 +360,68 @@ html.oc-pen * {
 :root[data-theme="light"] .oc-seg-pill:not(.oc-tab-active) { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.06); }
 .oc-view-pill { transition-duration: 200ms; transition-timing-function: cubic-bezier(.2,0,0,1); }
 @media (prefers-reduced-motion: reduce) { .oc-seg-pill, :has(> .oc-seg-pill) > * { transition: none !important; } }
+
+/* Density (Settings → Appearance → Density; per device, see lib/uiScale.ts). Spacing only. */
+:root { --st-row: 46px; --st-pad: 10px; --st-nav: 30px; --st-tile: 22px; --st-col: 720px; --st-gap: 26px; --st-gap-nav: 14px; }
+:root[data-density="compact"] { --st-row: 36px; --st-pad: 6px; --st-nav: 28px; --st-tile: 20px; --st-col: 680px; --st-gap: 18px; --st-gap-nav: 10px; }
+:root[data-density="relaxed"] { --st-row: 54px; --st-pad: 14px; --st-nav: 34px; --st-tile: 24px; --st-col: 760px; --st-gap: 34px; --st-gap-nav: 18px; }
+:root[data-density="compact"] .oc-sidebar .oc-row { height: 24px; }
+:root[data-density="relaxed"] .oc-sidebar .oc-row { height: 32px; }
+/* Custom pages inside a settings card bring their own row hairlines: drop the last one. */
+.oc-st-card > :last-child, .oc-st-card > * > :last-child { border-bottom-width: 0; }
+
+/* Sketch ribbon: toned-down liquid glass (chrome only). */
+.oc-sketch-ribbon {
+  background: rgb(23 23 23 / 0.9);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .oc-sketch-ribbon { background: rgb(23 23 23 / 0.62); backdrop-filter: blur(12px) saturate(1.15); }
+}
+:root[data-theme="light"] .oc-sketch-ribbon { background: rgb(250 250 250 / 0.75); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 1px 0 rgb(0 0 0 / 0.06); }
+/* Settings: quiet selection (tint + accent bar), darker content canvas so cards lift. */
+.oc-st-pill { background: color-mix(in srgb, var(--color-sky-500) 16%, transparent); box-shadow: inset 3px 0 0 var(--color-sky-500); }
+.oc-st-canvas { background: color-mix(in srgb, var(--oc-surface) 72%, black); }
+:root[data-theme="light"] .oc-st-canvas { background: color-mix(in srgb, var(--oc-surface) 94%, black); }
+:root[data-theme="light"] .oc-st-card { background: #fff; border-color: rgb(0 0 0 / 0.07); }
+/* Settings sidebar: floating frosted glass panel (chrome only; content pane stays solid). */
+.oc-st-side {
+  background: linear-gradient(180deg, rgb(45 212 191 / 0.06), transparent 40%), rgb(38 38 38 / 0.55);
+  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+}
+.oc-st-search { background: rgb(255 255 255 / 0.07); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.05); }
+.oc-st-side .oc-st-pill { background: rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 2px 6px -2px rgb(0 0 0 / 0.4); }
+:root[data-theme="light"] .oc-st-side { background: linear-gradient(180deg, rgb(13 148 136 / 0.05), transparent 40%), rgb(255 255 255 / 0.6); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8), inset 0 0 0 1px rgb(0 0 0 / 0.06), 0 8px 24px -12px rgb(0 0 0 / 0.15); }
+:root[data-theme="light"] .oc-st-search, :root[data-theme="light"] .oc-st-side .oc-st-pill { background: rgb(255 255 255 / 0.75); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08); }
+@media (prefers-reduced-transparency: reduce) { .oc-st-side { background: rgb(38 38 38); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* Sketch sliders: toned-down glass track, accent fill to the thumb, glossy thumb. */
+.oc-range { appearance: none; -webkit-appearance: none; height: 16px; background: transparent; cursor: pointer; }
+.oc-range::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(to right, var(--oc-sketch) 0 var(--p), rgb(255 255 255 / 0.07) var(--p) 100%);
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.07), 0 1px 0 rgb(255 255 255 / 0.04);
+}
+.oc-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -4px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0, rgb(238 238 242) 45%, rgb(196 196 206) 100%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45), inset 0 1px 0 #fff, 0 0 0 1px rgb(255 255 255 / 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.oc-range:hover::-webkit-slider-thumb { transform: scale(1.15); }
+.oc-range:active::-webkit-slider-thumb { transform: scale(1.25); box-shadow: 0 1px 3px rgb(0 0 0 / 0.45), inset 0 1px 0 #fff, 0 0 0 4px color-mix(in srgb, var(--oc-sketch) 30%, transparent); }
+.oc-range:focus-visible { outline: none; }
+.oc-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--oc-sketch) 45%, transparent); }
+:root[data-theme="light"] .oc-range::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--oc-sketch) 0 var(--p), rgb(0 0 0 / 0.08) var(--p) 100%);
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.12), inset 0 0 0 1px rgb(0 0 0 / 0.05);
+}
+/* Sidebar Import while files are dragged over the sidebar. */
+.oc-drop-glow { background: color-mix(in srgb, var(--color-sky-500) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-sky-500) 55%, transparent), 0 0 14px -2px color-mix(in srgb, var(--color-sky-500) 60%, transparent); }
+/* Two-column settings card (Shortcuts): hairlines between rows and columns. */
+.oc-st-cols > * { border-top: 1px solid rgb(255 255 255 / 0.06); }
+.oc-st-cols > :nth-child(-n + 2) { border-top: 0; }
+.oc-st-cols > :nth-child(odd) { border-right: 1px solid rgb(255 255 255 / 0.06); }
+:root[data-theme="light"] .oc-st-cols > *, :root[data-theme="light"] .oc-st-cols > :nth-child(odd) { border-color: rgb(0 0 0 / 0.07); }
+:root[data-theme="light"] .oc-st-cols > :nth-child(-n + 2) { border-top: 0; }

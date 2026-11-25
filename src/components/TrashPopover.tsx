@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Search, Trash2, Undo2 } from "lucide-react";
+import { Search, Trash2, Undo2, X } from "lucide-react";
+import { Modal } from "./Modal";
 import type { PageMeta } from "../data/workspace";
 import { openContextMenu } from "./ContextMenu";
 
@@ -14,9 +14,8 @@ type TrashPopoverProps = {
   onClose: () => void;
 };
 
-/** Notion's Trash: popover beside the sidebar with search, Restore and Delete forever. */
+/** Trash: centred glass dialog with search, Restore and Delete forever. */
 export function TrashPopover({
-  anchor,
   pages,
   onRestore,
   onDeleteForever,
@@ -38,33 +37,21 @@ export function TrashPopover({
     .sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0))
     .filter((p) => (p.title || "Untitled").toLowerCase().includes(q));
 
-  const rect = anchor.getBoundingClientRect();
-  const top = Math.min(rect.top, window.innerHeight - 440);
-  const left = rect.right + 6;
-
   useEffect(() => inputRef.current?.focus(), []);
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (!ref.current?.contains(t) && !anchor.contains(t)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [anchor, onClose]);
 
-  return createPortal(
-    <div
-      ref={ref}
-      style={{ top: Math.max(8, top), left }}
-      className="oc-pop-in fixed z-50 flex max-h-[min(420px,70vh)] w-[340px] origin-top-left flex-col rounded-lg border border-white/[0.08] bg-neutral-800 shadow-xl shadow-black/50"
-    >
-      <div className="p-2">
-        <div className="flex h-7 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 transition-colors duration-100 focus-within:border-sky-500/60">
+  return (
+    <Modal glass onClose={onClose} className="flex h-[min(560px,80vh)] w-[min(560px,92vw)] flex-col">
+      <div ref={ref} className="flex items-center gap-3 px-5 pb-2 pt-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[17px] font-bold tracking-tight text-neutral-100">Trash</h2>
+          <p className="text-[12px] text-neutral-500">{count ? `${noun} · restore any time` : "Deleted pages show up here"}</p>
+        </div>
+        <button type="button" aria-label="Close" onClick={onClose} className="grid size-7 cursor-pointer place-items-center rounded-full bg-white/[0.06] text-neutral-400 hover:bg-white/[0.12] hover:text-neutral-100">
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="px-4 pb-2">
+        <div className="flex h-8 items-center gap-2 rounded-full bg-white/[0.06] px-3 focus-within:ring-2 focus-within:ring-[color:var(--color-sky-500)]/50">
           <Search className="size-3.5 shrink-0 text-neutral-500" />
           <input
             ref={inputRef}
@@ -76,7 +63,7 @@ export function TrashPopover({
         </div>
       </div>
 
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 pb-2">
         {shown.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
             <Trash2 className="size-6 text-neutral-600" />
@@ -89,7 +76,7 @@ export function TrashPopover({
             confirmId === page.id ? (
               <div
                 key={page.id}
-                className="oc-fade-in flex h-8 items-center gap-2 rounded-md bg-red-500/10 px-2 text-[13px]"
+                className="oc-fade-in flex h-12 items-center gap-2 rounded-lg bg-red-500/10 px-3 text-[13px]"
               >
                 <span className="min-w-0 flex-1 truncate text-red-300">Delete forever?</span>
                 <button
@@ -125,10 +112,13 @@ export function TrashPopover({
                     },
                   ])
                 }
-                className="group flex h-8 items-center gap-2 rounded-md px-2 text-[13px] text-neutral-300 transition-colors duration-100 hover:bg-white/[0.05]"
+                className="group flex h-12 items-center gap-3 rounded-lg px-3 text-[13.5px] text-neutral-200 transition-colors duration-100 hover:bg-white/[0.05]"
               >
                 <span className="w-5 shrink-0 text-center leading-none">{page.icon}</span>
-                <span className="min-w-0 flex-1 truncate">{page.title || "Untitled"}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{page.title || "Untitled"}</span>
+                  {page.trashedAt ? <span className="block text-[11.5px] text-neutral-500">Deleted {ago(page.trashedAt)}</span> : null}
+                </span>
                 <button
                   type="button"
                   title="Restore"
@@ -152,10 +142,10 @@ export function TrashPopover({
       </div>
 
       {count > 0 && (
-        <div className="border-t border-white/[0.06] p-1.5">
+        <div className="border-t border-white/[0.06] px-4 py-3">
           {confirmAll ? (
             <div
-              className={`oc-fade-in flex h-8 items-center gap-2 rounded-md px-2 text-[13px] ${
+              className={`oc-fade-in flex h-8 items-center gap-2 rounded-full px-3 text-[13px] ${
                 confirmAll === "delete" ? "bg-red-500/10" : "bg-white/[0.04]"
               }`}
             >
@@ -189,11 +179,11 @@ export function TrashPopover({
               </button>
             </div>
           ) : (
-            <div className="flex gap-1">
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmAll("restore")}
-                className="flex h-7 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[13px] text-neutral-300 transition-colors duration-100 hover:bg-white/[0.06] hover:text-neutral-100"
+                className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full bg-white/[0.07] px-4 text-[13px] text-neutral-200 transition-colors duration-100 hover:bg-white/[0.12]"
               >
                 <Undo2 className="size-3.5" />
                 Restore all
@@ -201,7 +191,7 @@ export function TrashPopover({
               <button
                 type="button"
                 onClick={() => setConfirmAll("delete")}
-                className="flex h-7 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[13px] text-neutral-300 transition-colors duration-100 hover:bg-red-500/15 hover:text-red-400"
+                className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full bg-red-500/15 px-4 text-[13px] text-red-300 transition-colors duration-100 hover:bg-red-500/25 hover:text-red-200"
               >
                 <Trash2 className="size-3.5" />
                 Delete all
@@ -211,10 +201,20 @@ export function TrashPopover({
         </div>
       )}
 
-      <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] text-neutral-500">
-        Pages in Trash can be restored. Deleting forever can't be undone.
+      <p className="border-t border-white/[0.06] px-5 py-2.5 text-[11.5px] text-neutral-500">
+        Deleting forever can't be undone.
       </p>
-    </div>,
-    document.body,
+    </Modal>
   );
+}
+
+/** "just now", "5 min ago", "3 hours ago", "2 days ago". */
+function ago(t: number) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
 }

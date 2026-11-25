@@ -2,43 +2,102 @@ import { registerSaver } from "../lib/embedSource";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   House,
+  Grid3x3, History, Rows3, Ruler, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Maximize, Underline, ZoomIn, ZoomOut,
   ArrowRight, Brush, Circle, ClipboardPaste, Copy, Crop, Droplet, Eraser, Eye, EyeOff, FlipHorizontal, FlipVertical, Hand, Highlighter,
   Layers, Minus, MousePointer2, PaintBucket, Pencil, Pipette, Plus, Redo2, RotateCcw, RotateCw, Save, Scaling, Scissors, Slash, Square, SprayCan,
   LassoSelect, Trash2, Triangle, Type, Undo2, ArrowUp, ArrowDown, Merge, CopyPlus,
-  Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Check, Grid3x3, Move, Sun,
 } from "lucide-react";
 import { WindowControls } from "../components/TitleBar";
 import { Modal, ModalButton } from "../components/Modal";
-import { SketchDoc, ctx2d, drawShape, floodFill, makeCanvas, rgbToHex, smoothPoints, type Blend, type Rect, type ShapeKind } from "./engine";
+import { SketchDoc, ctx2d, drawShape, floodFill, makeCanvas, rgbToHex, type Rect, type ShapeKind } from "./engine";
 import { drawSegment, drawStroke, type Stroke } from "./ink";
-import { FONTS, drawText, padOf, textBox, type TextObj } from "./text";
 import { NewCanvasDialog } from "./SketchHome";
 import { SlidePill } from "../components/SlidePill";
 import {
   forgetSketch, isUnsavedSketch, markSketchDirty, pickImage, pickSketchSavePath, readImageFile, refreshSketches, sketchTitle, touchRecentSketch,
-  untitledSketch, useSketch, writeImageFile,
+  untitledSketch, useSketch, writeImageFile, pickImageCanvas, newSketch,
 } from "./store";
+import { isAndroid } from "../mobile/formFactor";
 
-type Tool = "select" | "lasso" | "pencil" | "brush" | "marker" | "airbrush" | "eraser" | "fill" | "picker" | "text" | "hand" | ShapeKind;
+type Tool = "select" | "lasso" | "pencil" | "brush" | "marker" | "airbrush" | "eraser" | "fill" | "picker" | "text" | "hand" | "sticker" | ShapeKind;
 type Pt = { x: number; y: number };
-/** A lifted piece: drawn from `canvas` into box x/y/w/h, rotated `rot` (radians) about its centre, flipped by fx/fy. */
-type Floating = { k: number; canvas: HTMLCanvasElement; x: number; y: number; w: number; h: number; rot: number; fx: 1 | -1; fy: 1 | -1; path?: Pt[] };
-type TextStyle = Omit<TextObj, "id" | "layer" | "x" | "y" | "value">;
-const GRID = 16;
-const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
-const BLENDS: [Blend, string][] = [["source-over", "Normal"], ["multiply", "Multiply"], ["screen", "Screen"], ["overlay", "Overlay"], ["darken", "Darken"], ["lighten", "Lighten"], ["difference", "Difference"], ["color-dodge", "Colour dodge"], ["color-burn", "Colour burn"]];
-let floatKey = 0;
+/** A lifted piece: drawn at (x, y) sized w × h, rotated `rot` radians about its centre. */
+type Floating = { canvas: HTMLCanvasElement; x: number; y: number; w: number; h: number; rot: number };
+type Handle = "move" | "rot" | [number, number];
+/** Live text box (editable while the sketch is open; flattened into saved images). */
+type TextObj = { id: number; x: number; y: number; w: number; value: string; font: string; size: number; b: boolean; i: boolean; u: boolean; align: "left" | "center" | "right"; color: string; bg: string | null };
+type TextStyle = Omit<TextObj, "id" | "x" | "y" | "w" | "value">;
+const FONTS: Record<string, string> = { Sans: 'Inter, "Segoe UI", sans-serif', Serif: "Georgia, serif", Mono: "Consolas, monospace", Hand: '"Segoe Print", "Comic Sans MS", cursive' };
+const TEXT_SIZES = [12, 16, 24, 32, 48, 72];
+const cssFont = (t: TextStyle, z = 1) => `${t.i ? "italic " : ""}${t.b ? "bold " : ""}${t.size * z}px ${FONTS[t.font]}`;
+type Tab = "home" | "draw" | "text" | "shapes" | "view";
+const TABS: [Tab, string][] = [["home", "Home"], ["draw", "Draw"], ["text", "Text"], ["shapes", "Shapes"], ["view", "View"]];
+const TAB_TOOL: Partial<Record<Tab, Tool>> = { home: "select", draw: "brush", text: "text", shapes: "rect" };
+type Preset = { tool: Tool; size: number; color: string } | null;
+const PRESETS_KEY = "oceanic:sketch-pen-presets";
+const loadPresets = (): Preset[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(PRESETS_KEY) ?? "null");
+    if (Array.isArray(v) && v.length === 3) return v;
+  } catch {}
+  return [null, null, null];
+};
 
-/** Paint a floating piece with its transform. */
-function drawFloating(g: CanvasRenderingContext2D, f: Floating) {
-  g.save();
-  g.translate(f.x + f.w / 2, f.y + f.h / 2);
-  g.rotate(f.rot);
-  g.scale(f.fx, f.fy);
-  g.drawImage(f.canvas, -f.w / 2, -f.h / 2, f.w, f.h);
-  g.restore();
+/** Word-wrap `value` to `w` px with the context's current font. */
+function wrapLines(g: CanvasRenderingContext2D, value: string, w: number) {
+  const out: string[] = [];
+  for (const para of value.split("\n")) {
+    let line = "";
+    for (const word of para.split(/(\s+)/)) {
+      if (line && g.measureText(line + word).width > w && word.trim()) (out.push(line.trimEnd()), (line = word.trimStart()));
+      else line += word;
+    }
+    out.push(line);
+  }
+  return out;
+}
+/** Paint text boxes onto a flattened image (same layout as the on-screen boxes). */
+function drawTexts(g: CanvasRenderingContext2D, texts: TextObj[]) {
+  const PAD = 4;
+  for (const t of texts) {
+    if (!t.value.trim()) continue;
+    g.save();
+    g.font = cssFont(t);
+    g.textBaseline = "top";
+    const lh = t.size * 1.25;
+    const lines = wrapLines(g, t.value, t.w - PAD * 2);
+    if (t.bg) (g.fillStyle = t.bg), g.fillRect(t.x, t.y, t.w, lines.length * lh + PAD * 2);
+    g.fillStyle = t.color;
+    g.strokeStyle = t.color;
+    g.lineWidth = Math.max(1, t.size / 14);
+    lines.forEach((line, k) => {
+      const lw = g.measureText(line).width;
+      const x = t.align === "left" ? t.x + PAD : t.align === "center" ? t.x + (t.w - lw) / 2 : t.x + t.w - PAD - lw;
+      const y = t.y + PAD + k * lh + (lh - t.size) / 2;
+      g.fillText(line, x, y);
+      if (t.u) g.beginPath(), g.moveTo(x, y + t.size * 1.02), g.lineTo(x + lw, y + t.size * 1.02), g.stroke();
+    });
+    g.restore();
+  }
+}
+/** Point p in a floating piece's own (unrotated, centre-origin) frame. */
+const toLocal = (f: Floating, p: Pt) => {
+  const cx = f.x + f.w / 2, cy = f.y + f.h / 2, c = Math.cos(-f.rot), s = Math.sin(-f.rot);
+  return { x: (p.x - cx) * c - (p.y - cy) * s, y: (p.x - cx) * s + (p.y - cy) * c };
+};
+/** Clear pixels close to `bg` (transparent selection, like Paint). */
+function dropColour(c: HTMLCanvasElement, bg: string) {
+  const g = ctx2d(c);
+  const img = g.getImageData(0, 0, c.width, c.height);
+  const [r, gr, b] = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
+  for (let i = 0; i < img.data.length; i += 4)
+    if (Math.abs(img.data[i] - r) + Math.abs(img.data[i + 1] - gr) + Math.abs(img.data[i + 2] - b) < 24) img.data[i + 3] = 0;
+  g.putImageData(img, 0, 0);
 }
 
+const STICKERS = ["✔️", "❌", "⭐", "❤️", "➡️", "⬅️", "⚠️", "❓", "❗", "💡", "📌", "✅", "🔥", "👍", "🎯", "📝"];
+const CUSTOM_KEY = "oceanic:sketch-custom-colours";
+const TOOL_LABEL: Record<string, string> = { select: "Move", lasso: "Move", pencil: "Pencil", brush: "Brush", marker: "Marker", airbrush: "Airbrush", eraser: "Eraser", fill: "Fill", text: "Text", sticker: "Sticker" };
 const PALETTE = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200", "#22b14c", "#00a2e8", "#3f48cc", "#a349a4",
   "#ffffff", "#c3c3c3", "#b97a57", "#ffaec9", "#ffc90e", "#efe4b0", "#b5e61d", "#99d9ea", "#7092be", "#c8bfe7",
@@ -52,7 +111,7 @@ const SHAPES: { kind: ShapeKind; icon: ReactNode; label: string }[] = [
   { kind: "arrow", icon: <ArrowRight />, label: "Arrow" },
 ];
 const SHAPE_KINDS = SHAPES.map((s) => s.kind) as string[];
-const TOOL_KEYS: Record<string, Tool> = { s: "select", q: "lasso", p: "pencil", b: "brush", k: "marker", a: "airbrush", e: "eraser", g: "fill", i: "picker", t: "text", h: "hand", l: "line", u: "rect" };
+const TOOL_KEYS: Record<string, Tool> = { s: "select", q: "lasso", p: "pencil", b: "brush", e: "eraser", g: "fill", i: "picker", t: "text", h: "hand", l: "line", u: "rect" };
 
 type Status = "loading" | "saved" | "saving" | "unsaved" | "error";
 
@@ -69,33 +128,81 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const [color1, setColor1] = useState("#000000");
   const [color2, setColor2] = useState("#ffffff");
   const [shapeMode, setShapeMode] = useState<"outline" | "fill" | "both">("outline");
-  const [textStyle, setTextStyle] = useState<TextStyle>({ font: FONTS[0].css, size: 28, color: "#000000", bold: false, italic: false, underline: false, align: "left", outline: null, bg: null, shadow: false });
-  const [smooth, setSmooth] = useState(30);
-  const [taper, setTaper] = useState(true);
-  const [grid, setGrid] = useState(false);
-  type BarTab = "draw" | "shapes" | "image" | "edit";
-  const [barTab, setBarTab] = useState<BarTab>("draw");
-  // The bar follows the active tool (pick a shape: Shapes tab; any other drawing tool: Draw).
-  useEffect(() => { if (SHAPE_KINDS.includes(toolNow)) setBarTab("shapes"); else if (toolNow !== "select" && toolNow !== "lasso") setBarTab("draw"); }, [toolNow]);
-  const snap = (p: Pt): Pt => (grid ? { x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID } : p);
   const [zoom, setZoom] = useState(1);
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [selection, setSelection] = useState<Rect | null>(null);
   const [floating, setFloating] = useState<Floating | null>(null);
+  const [transparentSel, setTransparentSel] = useState(false);
+  // Brush feel (brush, marker, airbrush) and straight-line mode.
+  const [opacity, setOpacity] = useState(100);
+  const [hardness, setHardness] = useState(100);
+  const [straight, setStraight] = useState(false);
+  const [sticker, setSticker] = useState(STICKERS[2]);
+  const [histOpen, setHistOpen] = useState(false);
+  const [editColours, setEditColours] = useState(false);
+  const [custom, setCustom] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? "[]"); } catch { return []; }
+  });
+  const addCustom = (c: string) => {
+    const next = [c, ...custom.filter((x) => x !== c)].slice(0, 10);
+    setCustom(next);
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(next)); } catch {}
+  };
   // Palm rejection: while a pen is down, touches are ignored.
   const penId = useRef<number | null>(null);
-  // Live text boxes: editable until baked into their layer.
-  const [texts, setTexts] = useState<TextObj[]>([]);
-  const [textSel, setTextSel] = useState<string | null>(null);
-  const [showLayers, setShowLayers] = useState(true);
+  // Pen options only show once a pen or touchscreen is seen.
+  const [penSeen, setPenSeen] = useState(() => navigator.maxTouchPoints > 0);
+  const [pressureOn, setPressureOn] = useState(true);
+  const [palmOn, setPalmOn] = useState(true);
+  const [tab, setTab] = useState<Tab>("draw");
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => setRecent((r) => [color1, ...r.filter((c) => c !== color1)].slice(0, 8)), [color1]);
+  const [presets, setPresets] = useState<Preset[]>(loadPresets);
+  const savePreset = (i: number) => {
+    const next = presets.map((p, k) => (k === i ? { tool, size, color: color1 } : p));
+    setPresets(next);
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(next)); } catch {}
+  };
+  // Text boxes: `active` is the selected one, `editing` when its textarea is open.
+  // Text boxes live on the doc so undo/redo snapshots include them.
+  const texts = (docRef.current?.texts ?? []) as TextObj[];
+  const setTexts = (fn: (ts: TextObj[]) => TextObj[]) => {
+    const d = docRef.current;
+    if (!d) return;
+    d.texts = fn(d.texts as TextObj[]);
+    textsRef.current = d.texts as TextObj[];
+    rerender();
+  };
+  /** Undo step for a text change (keeps vector ink). */
+  const mark = () => docRef.current?.checkpoint(true, "Text");
+  const [activeText, setActiveText] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [txt, setTxt] = useState<TextStyle>({ font: "Sans", size: 28, b: false, i: false, u: false, align: "left", color: "#000000", bg: null });
+  const textId = useRef(1);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const textsRef = useRef(texts);
+  textsRef.current = texts;
+  const activeObj = texts.find((t) => t.id === activeText) ?? null;
+  // Focus the text box once it's in the page (autoFocus loses to the canvas click).
+  useEffect(() => {
+    if (editing) textRef.current?.focus();
+  }, [editing, activeText]);
+  const [showLayers, setShowLayers] = useState(!isAndroid);
   const [dialog, setDialog] = useState<null | "new" | "resize">(null);
   const [menu, setMenu] = useState(false);
+  // Image import: the picked image waits for "insert" or "open as a new canvas".
+  const [imported, setImported] = useState<HTMLCanvasElement | null>(null);
+  const importImage = () => void pickImageCanvas().then((c) => c && setImported(c));
+  // Touch dock (Android): open popover; the dock hides while drawing.
+  const [pop, setPop] = useState<null | "draw" | "pick" | "shape" | "colour" | "size" | "file">(null);
+  const [drawing, setDrawing] = useState(false);
   const stackRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLCanvasElement>(makeCanvas(1, 1));
   const saveTimer = useRef(0);
   const prevTool = useRef<Tool>("brush");
   const doc = docRef.current;
+  if (doc) doc.label = TOOL_LABEL[toolNow] ?? (SHAPE_KINDS.includes(toolNow) ? "Shape" : "Edit");
 
   /* ------------------------------------------------------------ load */
   useEffect(() => {
@@ -105,6 +212,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
         if (isUnsavedSketch(path)) {
           const u = untitledSketch(path);
           docRef.current = new SketchDoc(u?.w ?? 1280, u?.h ?? 720);
+          if (u?.img) docRef.current.ctx.drawImage(u.img, 0, 0);
           setStatus("unsaved");
         } else {
           const bytes = await readImageFile(path);
@@ -144,7 +252,6 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       l.canvas.className = "absolute inset-0 h-full w-full";
       l.canvas.style.opacity = String(l.opacity);
       l.canvas.style.display = l.visible ? "" : "none";
-      l.canvas.style.mixBlendMode = l.blend === "source-over" ? "normal" : l.blend;
     }
     const ov = overlay.current;
     if (ov.width !== doc.w || ov.height !== doc.h) (ov.width = doc.w), (ov.height = doc.h);
@@ -153,6 +260,12 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   });
 
   /* ------------------------------------------------------------ saving */
+  /** The image as saved: layers plus text boxes. */
+  const composite = (jpg = false) => {
+    const c = docRef.current!.flatten(jpg);
+    drawTexts(ctx2d(c), textsRef.current);
+    return c;
+  };
   const save = async (): Promise<string | null> => {
     const d = docRef.current;
     if (!d) return null;
@@ -174,14 +287,6 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       return null;
     }
   };
-  /** Everything on screen: layers, plus any floating piece and live text. */
-  const composite = (opaque = false) => {
-    const c = docRef.current!.flatten(opaque);
-    const g = ctx2d(c);
-    if (floating) drawFloating(g, floating);
-    for (const t of texts) if (t.value.trim()) drawText(g, t);
-    return c;
-  };
   const saveRef = useRef(save);
   saveRef.current = save;
   useEffect(() => {
@@ -196,90 +301,31 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => ((saveTimer.current = 0), void save()), 1500);
   };
-  const edit = (fn: (d: SketchDoc) => void) => {
+  const edit = (fn: (d: SketchDoc) => void, label?: string) => {
     const d = docRef.current;
     if (!d) return;
     commitFloating();
-    bakeTexts();
-    d.checkpoint();
+    d.checkpoint(false, label);
     fn(d);
     changed();
   };
 
   /* ------------------------------------------------------------ selection / clipboard */
+  /** Stamp a floating piece onto the layer (with its scale and rotation). */
+  const stamp = (f: Floating) => {
+    const g = docRef.current!.ctx;
+    g.save();
+    g.translate(f.x + f.w / 2, f.y + f.h / 2);
+    g.rotate(f.rot);
+    g.drawImage(f.canvas, -f.w / 2, -f.h / 2, f.w, f.h);
+    g.restore();
+  };
   const commitFloating = (f = floating) => {
-    const d = docRef.current;
-    if (!f || !d) return;
-    drawFloating(d.ctx, f);
+    if (!f || !docRef.current) return;
+    stamp(f);
     setFloating(null);
-    setSelection(!f.rot && !f.path ? { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.w), h: Math.round(f.h) } : null);
     changed();
   };
-  /** Cut a rectangle out of the layer into a floating piece. */
-  const lift = (r: Rect): Floating => {
-    const d = docRef.current!;
-    d.checkpoint();
-    const c = selCanvas(r);
-    clearRect(d, r);
-    const f: Floating = { k: ++floatKey, canvas: c, x: r.x, y: r.y, w: r.w, h: r.h, rot: 0, fx: 1, fy: 1 };
-    setFloating(f);
-    setSelection(null);
-    return f;
-  };
-  /** Point inside the (possibly rotated) floating box. */
-  const inFloat = (p: Pt, f: Floating) => {
-    const cx = f.x + f.w / 2, cy = f.y + f.h / 2, c = Math.cos(-f.rot), sn = Math.sin(-f.rot);
-    const lx = (p.x - cx) * c - (p.y - cy) * sn, ly = (p.x - cx) * sn + (p.y - cy) * c;
-    return Math.abs(lx) <= f.w / 2 && Math.abs(ly) <= f.h / 2;
-  };
-  /** Stamp a copy down and keep the piece floating, nudged. */
-  const duplicateFloat = () => {
-    const d = docRef.current;
-    const f = floating ?? (selection && lift(selection));
-    if (!d || !f) return;
-    drawFloating(d.ctx, f);
-    setFloating({ ...f, x: f.x + 16, y: f.y + 16 });
-    changed();
-  };
-  const nudge = (dx: number, dy: number) => {
-    const f = floating ?? (selection && tool === "select" ? lift(selection) : null);
-    if (f) setFloating({ ...f, x: f.x + dx, y: f.y + dy });
-  };
-  /* Handle drags: resize from any edge/corner (Shift keeps ratio), rotate from the knob (Shift snaps 15°). */
-  const xf = useRef<{ h: string; start: Pt; o: Floating } | null>(null);
-  const startXf = (e: React.PointerEvent, h: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const f = floating ?? (selection && lift(selection));
-    if (!f) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    xf.current = { h, start: toCanvas(e), o: f };
-  };
-  const moveXf = (e: React.PointerEvent) => {
-    const s = xf.current;
-    if (!s) return;
-    const p = toCanvas(e), o = s.o;
-    const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
-    if (s.h === "rot") {
-      let r = Math.atan2(p.y - cy, p.x - cx) + Math.PI / 2;
-      if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12);
-      return setFloating({ ...o, rot: r });
-    }
-    const cos = Math.cos(o.rot), sin = Math.sin(o.rot);
-    const dx = p.x - s.start.x, dy = p.y - s.start.y;
-    const lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
-    const hx = s.h.includes("e") ? 1 : s.h.includes("w") ? -1 : 0;
-    const hy = s.h.includes("s") ? 1 : s.h.includes("n") ? -1 : 0;
-    let w = Math.max(4, o.w + hx * lx), h = Math.max(4, o.h + hy * ly);
-    if (e.shiftKey && hx && hy) {
-      const k = Math.max(w / o.w, h / o.h);
-      (w = o.w * k), (h = o.h * k);
-    }
-    const ox = (hx * (w - o.w)) / 2, oy = (hy * (h - o.h)) / 2;
-    const ncx = cx + ox * cos - oy * sin, ncy = cy + ox * sin + oy * cos;
-    setFloating({ ...o, x: ncx - w / 2, y: ncy - h / 2, w, h });
-  };
-  const endXf = () => xf.current && ((xf.current = null), changed());
   const selCanvas = (r: Rect) => {
     const c = makeCanvas(r.w, r.h);
     ctx2d(c).drawImage(docRef.current!.layer.canvas, -r.x, -r.y);
@@ -289,11 +335,39 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     if (d.active === 0) (d.ctx.fillStyle = color2), d.ctx.fillRect(r.x, r.y, r.w, r.h);
     else d.ctx.clearRect(r.x, r.y, r.w, r.h);
   };
+  /** Lift a rectangle, or a free-form loop inside it, off the layer into a floating piece. */
+  const lift = (r: Rect, loop?: Pt[]) => {
+    const d = docRef.current!;
+    if (r.w < 1 || r.h < 1) return;
+    d.checkpoint();
+    let c = selCanvas(r);
+    if (loop) {
+      const path = new Path2D();
+      loop.forEach((q, i) => (i ? path.lineTo(q.x - r.x, q.y - r.y) : path.moveTo(q.x - r.x, q.y - r.y)));
+      path.closePath();
+      const m = makeCanvas(r.w, r.h);
+      const mg = ctx2d(m);
+      mg.fill(path);
+      mg.globalCompositeOperation = "source-in";
+      mg.drawImage(c, 0, 0);
+      c = m;
+      const g = d.ctx;
+      g.save();
+      g.translate(r.x, r.y);
+      if (d.active === 0) (g.fillStyle = color2), g.fill(path);
+      else (g.globalCompositeOperation = "destination-out"), g.fill(path);
+      g.restore();
+    } else clearRect(d, r);
+    if (transparentSel) dropColour(c, color2);
+    setFloating({ canvas: c, x: r.x, y: r.y, w: r.w, h: r.h, rot: 0 });
+    setSelection(null);
+    rerender();
+  };
   const internalClip = useRef<HTMLCanvasElement | null>(null);
   const copySel = async () => {
     const d = docRef.current;
     if (!d) return;
-    const c = floating?.canvas ?? (selection ? selCanvas(selection) : d.flatten());
+    const c = floating?.canvas ?? (selection ? selCanvas(selection) : composite());
     internalClip.current = c;
     try {
       const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/png"));
@@ -303,13 +377,30 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const cutSel = async () => {
     if (!selection && !floating) return;
     await copySel();
-    if (floating) return setFloating(null), setSelection(null), changed();
+    if (floating) return setFloating(null), changed();
     edit((d) => clearRect(d, selection!));
   };
+  const removeText = (id: number) => (mark(), setTexts((ts) => ts.filter((t) => t.id !== id)), setActiveText(null), setEditing(false), changed());
   const deleteSel = () => {
-    if (textSel && tool === "text") return deleteText(textSel);
-    if (floating) return setFloating(null), setSelection(null), changed();
+    if (activeText !== null && !editing) return removeText(activeText);
+    if (floating) return setFloating(null), changed();
     if (selection) edit((d) => clearRect(d, selection));
+  };
+  /** Ctrl+D: leave a copy behind and keep moving the piece (or text box). */
+  const duplicateSel = () => {
+    if (activeObj) {
+      const t = { ...activeObj, id: textId.current++, x: activeObj.x + 12, y: activeObj.y + 12 };
+      return mark(), setTexts((ts) => [...ts, t]), setActiveText(t.id), changed();
+    }
+    if (!floating) return;
+    docRef.current!.checkpoint();
+    stamp(floating);
+    setFloating({ ...floating, x: floating.x + 12, y: floating.y + 12 });
+    changed();
+  };
+  const nudge = (dx: number, dy: number) => {
+    if (activeObj && !editing) return mark(), setTexts((ts) => ts.map((t) => (t.id === activeObj.id ? { ...t, x: t.x + dx, y: t.y + dy } : t))), changed();
+    if (floating) setFloating({ ...floating, x: floating.x + dx, y: floating.y + dy });
   };
   const pasteCanvas = (c: HTMLCanvasElement) => {
     const d = docRef.current;
@@ -319,7 +410,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     // Paste bigger than the canvas grows it, like Paint.
     if (c.width > d.w || c.height > d.h) d.resizeCanvas(Math.max(d.w, c.width), Math.max(d.h, c.height));
     setTool("select");
-    setFloating({ k: ++floatKey, canvas: c, x: 0, y: 0, w: c.width, h: c.height, rot: 0, fx: 1, fy: 1 });
+    setFloating({ canvas: c, x: 0, y: 0, w: c.width, h: c.height, rot: 0 });
     setSelection(null);
   };
   const pasteFromClipboard = async () => {
@@ -336,37 +427,45 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     if (internalClip.current) pasteCanvas(internalClip.current);
   };
 
+  const tabOf = (t: Tool): Tab => (t === "select" || t === "lasso" ? "home" : t === "text" ? "text" : SHAPE_KINDS.includes(t) || t === "sticker" ? "shapes" : "draw");
   const setTool = (t: Tool) => {
     commitFloating();
-    if (t !== "text") bakeTexts();
+    commitText();
     if (t !== "select") setSelection(null);
     if (t !== "picker") prevTool.current = t;
     setToolState(t);
+    setTab(tabOf(t));
   };
+  const pickTab = (t: Tab) => (TAB_TOOL[t] && TAB_TOOL[t] !== tool ? setTool(TAB_TOOL[t]!) : setTab(t));
 
   /* ------------------------------------------------------------ text */
-  const patchText = (id: string, patch: Partial<TextObj>) => setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  const deleteText = (id: string) => (setTexts((ts) => ts.filter((t) => t.id !== id)), setTextSel(null));
-  /** Drop the selection; empty boxes vanish. */
-  const deselectText = () => (setTexts((ts) => ts.filter((t) => t.value.trim())), setTextSel(null));
-  /** Paint every live text into its layer and forget them. */
-  const bakeTexts = () => {
-    const d = docRef.current;
-    const live = texts.filter((t) => t.value.trim());
-    setTexts([]);
-    setTextSel(null);
-    if (!d || !live.length) return;
-    d.checkpoint();
-    for (const t of live) drawText(ctx2d((d.layers.find((l) => l.id === t.layer) ?? d.layer).canvas), t);
+  /** Close the open text box; an empty one is dropped. */
+  const commitText = () => {
+    if (!editing) return setActiveText(null);
+    const t = textsRef.current.find((x) => x.id === activeText);
+    setEditing(false);
+    setActiveText(null);
+    if (t && !t.value.trim()) setTexts((ts) => ts.filter((x) => x.id !== t.id));
     changed();
   };
-  /** Text bar edits restyle the selected box and become the style for new ones. */
-  const styleText = (patch: Partial<TextStyle>) => (setTextStyle((st) => ({ ...st, ...patch })), textSel && patchText(textSel, patch));
+  const patchText = (id: number, patch: Partial<TextObj>) => setTexts((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  /** Text tab controls: change the default style and the selected box. */
+  const styleText = (patch: Partial<TextStyle>) => {
+    setTxt((s) => ({ ...s, ...patch }));
+    if (activeText !== null) (mark(), patchText(activeText, patch), changed());
+  };
+  const newText = (p: Pt) => {
+    const t: TextObj = { ...txt, color: color1, id: textId.current++, x: p.x, y: p.y, w: Math.max(160, 300 / zoom), value: "" };
+    mark();
+    setTexts((ts) => [...ts, t]);
+    setActiveText(t.id);
+    setEditing(true);
+  };
 
   /* ------------------------------------------------------------ pointer */
   const drag = useRef<{
-    start: Pt; last: Pt; button: number; color: string; moveSel?: Pt; resize?: boolean; pan?: Pt; spray?: number;
-    id?: number; tool?: Tool; ink?: Stroke; loop?: Pt[];
+    start: Pt; last: Pt; button: number; color: string; resize?: boolean; pan?: Pt; spray?: number;
+    id?: number; tool?: Tool; ink?: Stroke; loop?: Pt[]; ov?: "line" | "free"; xf?: { h: Handle; from: Floating }; textMove?: { id: number; from: Pt; moved: boolean; width?: boolean };
   } | null>(null);
   /** Brush-size ring (black with a white edge, visible on any background) for painting tools. */
   const ringCursor = () => {
@@ -378,16 +477,17 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${c} ${c}, crosshair`;
   };
   /** Pen pressure 0..1 (mouse and touch draw at full width). */
-  const pressure = (e: React.PointerEvent) => (e.pointerType === "pen" ? Math.max(0.05, e.pressure || 0.5) : 1);
+  const pressure = (e: React.PointerEvent) => (e.pointerType === "pen" && pressureOn ? Math.max(0.05, e.pressure || 0.5) : 1);
   const toCanvas = (e: { clientX: number; clientY: number }): Pt => {
     const r = stackRef.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
   };
-  const inRect = (p: Pt, r: Rect) => p.x >= r.x && p.y >= r.y && p.x <= r.x + r.w && p.y <= r.y + r.h;
 
   const stroke = (from: Pt, to: Pt, color: string, g: CanvasRenderingContext2D) => {
     g.save();
     g.strokeStyle = color;
+    // Soft edge: a same-colour glow (pencil stays hard).
+    if (hardness < 100 && tool !== "pencil") (g.shadowColor = color), (g.shadowBlur = (size * (100 - hardness)) / 100);
     g.lineWidth = tool === "pencil" ? Math.max(1, Math.round(size / 3)) : size;
     g.lineCap = tool === "pencil" ? "square" : "round";
     g.lineJoin = "round";
@@ -399,22 +499,27 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   };
   const spray = (p: Pt, color: string) => {
     const g = docRef.current!.ctx;
+    g.save();
     g.fillStyle = color;
+    g.globalAlpha = opacity / 100;
     for (let i = 0; i < size * 2; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = Math.random() * size;
       g.fillRect(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, 1, 1);
     }
+    g.restore();
   };
 
   const onDown = (e: React.PointerEvent) => {
     const d = docRef.current;
-    if (e.pointerType === "touch" && penId.current !== null) return;
+    if (e.pointerType !== "mouse" && !penSeen) setPenSeen(true);
+    if (e.pointerType === "touch" && palmOn && penId.current !== null) return;
     // Pen side button or eraser end: button 5 / buttons bit 32; PC tablet drivers send the side button as right-click.
     const penErase = e.pointerType === "pen" && (e.button === 5 || e.button === 2 || (e.buttons & 34) !== 0);
     if (!d || (e.button !== 0 && e.button !== 2 && e.button !== 1 && !penErase) || drag.current) return;
     if (e.pointerType === "pen") penId.current = e.pointerId;
     const tool: Tool = penErase ? "eraser" : toolNow;
+    if (editing && tool !== "text") commitText();
     const p = toCanvas(e);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     // Middle button or hand tool pans.
@@ -432,40 +537,43 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       return;
     }
     if (tool === "fill") return edit((doc) => floodFill(doc.ctx, ix, iy, color));
+    if (tool === "sticker") {
+      const px = Math.max(40, size * 6);
+      return edit((doc) => {
+        const g = doc.ctx;
+        g.font = `${px}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillText(sticker, p.x, p.y);
+      }, "Sticker");
+    }
     if (tool === "text") {
       // Keep the browser from moving focus to the canvas after the box mounts.
       e.preventDefault();
-      if (textSel) return deselectText();
-      const t: TextObj = { ...textStyle, color: color1, id: crypto.randomUUID(), layer: d.layer.id, x: Math.round(p.x), y: Math.round(p.y), value: "" };
-      setTexts((ts) => [...ts, t]);
-      return setTextSel(t.id);
+      if (editing) return commitText();
+      return newText(p);
     }
-    if ((tool === "select" || tool === "lasso") && floating) {
-      if (inFloat(p, floating)) {
-        drag.current = { start: p, last: p, button: 0, color, moveSel: { x: floating.x, y: floating.y } };
-        return;
+    if (tool === "select" || tool === "lasso") {
+      if (floating) {
+        const l = toLocal(floating, p);
+        if (Math.abs(l.x) <= floating.w / 2 && Math.abs(l.y) <= floating.h / 2) {
+          drag.current = { start: p, last: p, button: 0, color, id: e.pointerId, tool, xf: { h: "move", from: floating } };
+          return;
+        }
       }
       commitFloating();
-    }
-    if (tool === "lasso") {
-      drag.current = { start: p, last: p, button: 0, color, id: e.pointerId, tool, loop: [p] };
-      return;
-    }
-    if (tool === "select") {
-      if (selection && inRect(p, selection)) {
-        // Lift the selection into a floating piece and move it.
-        const f = lift(selection);
-        drag.current = { start: p, last: p, button: 0, color, moveSel: { x: f.x, y: f.y } };
-        return;
-      }
       setSelection(null);
-      drag.current = { start: snap(p), last: p, button: 0, color };
+      drag.current = { start: p, last: p, button: 0, color, id: e.pointerId, tool, loop: tool === "lasso" ? [p] : undefined };
       return;
     }
-    const isInk = tool === "pencil" || tool === "brush";
+    const pen = tool === "pencil" || tool === "brush" || tool === "marker";
+    // Straight mode / Shift, soft or see-through brush: draw on the overlay, stamp on release.
+    const ov = pen && (straight || e.shiftKey) ? "line" : tool === "brush" && (opacity < 100 || hardness < 100) ? "free" : undefined;
+    const isInk = (tool === "pencil" || tool === "brush") && !ov;
     d.checkpoint(isInk);
-    drag.current = { start: SHAPE_KINDS.includes(tool) ? snap(p) : p, last: p, button: e.button, color, id: e.pointerId, tool };
-    if (isInk) {
+    drag.current = { start: p, last: p, button: e.button, color, id: e.pointerId, tool, ov };
+    if (ov) stroke(p, p, color, ctx2d(overlay.current));
+    else if (isInk) {
       d.beginInk();
       const pencil = tool === "pencil";
       const ink: Stroke = { pts: [{ ...p, p: pressure(e) }], color, width: pencil ? Math.max(1, Math.round(size / 3)) : size, cap: pencil ? "square" : "round" };
@@ -510,15 +618,42 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       setSelection({ x: 0, y: 0, w: Math.max(1, Math.round(p.x)), h: Math.max(1, Math.round(p.y)) });
       return;
     }
-    if (st.moveSel) {
-      if (floating) setFloating({ ...floating, x: st.moveSel.x + p.x - st.start.x, y: st.moveSel.y + p.y - st.start.y });
-      return;
+    if (st.xf) {
+      const { h, from } = st.xf;
+      if (h === "move") return setFloating({ ...from, x: from.x + p.x - st.start.x, y: from.y + p.y - st.start.y });
+      const cx = from.x + from.w / 2, cy = from.y + from.h / 2;
+      if (h === "rot") {
+        let rot = from.rot + Math.atan2(p.y - cy, p.x - cx) - Math.atan2(st.start.y - cy, st.start.x - cx);
+        if (e.shiftKey) rot = Math.round(rot / (Math.PI / 12)) * (Math.PI / 12);
+        return setFloating({ ...from, rot });
+      }
+      // Resize in the piece's own frame; the opposite edge stays put.
+      const [hx, hy] = h;
+      const l = toLocal(from, p);
+      let w = hx ? Math.max(4, hx * l.x + from.w / 2) : from.w;
+      let ht = hy ? Math.max(4, hy * l.y + from.h / 2) : from.h;
+      if (e.shiftKey && hx && hy) {
+        const k = Math.max(w / from.w, ht / from.h);
+        (w = from.w * k), (ht = from.h * k);
+      }
+      const ox = (hx * (w - from.w)) / 2, oy = (hy * (ht - from.h)) / 2;
+      const c = Math.cos(from.rot), sn = Math.sin(from.rot);
+      const ncx = cx + ox * c - oy * sn, ncy = cy + ox * sn + oy * c;
+      return setFloating({ ...from, w, h: ht, x: ncx - w / 2, y: ncy - ht / 2 });
     }
-    if (tool === "select") {
-      const q = snap(p);
-      const x = Math.max(0, Math.min(st.start.x, q.x));
-      const y = Math.max(0, Math.min(st.start.y, q.y));
-      setSelection({ x: Math.round(x), y: Math.round(y), w: Math.round(Math.min(d.w, Math.max(st.start.x, q.x)) - x), h: Math.round(Math.min(d.h, Math.max(st.start.y, q.y)) - y) });
+    if (st.textMove) {
+      const tm = st.textMove;
+      const dx = p.x - st.start.x, dy = p.y - st.start.y;
+      if (!tm.moved && Math.hypot(dx, dy) * zoom < 3) return;
+      if (!tm.moved) mark();
+      tm.moved = true;
+      if (tm.width) return patchText(tm.id, { w: Math.max(40, tm.from.x + dx) });
+      return patchText(tm.id, { x: tm.from.x + dx, y: tm.from.y + dy });
+    }
+    if (tool === "select" && !st.loop) {
+      const x = Math.max(0, Math.min(st.start.x, p.x));
+      const y = Math.max(0, Math.min(st.start.y, p.y));
+      setSelection({ x: Math.round(x), y: Math.round(y), w: Math.round(Math.min(d.w, Math.max(st.start.x, p.x)) - x), h: Math.round(Math.min(d.h, Math.max(st.start.y, p.y)) - y) });
       return;
     }
     const og = ctx2d(overlay.current);
@@ -536,18 +671,15 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       return;
     }
     if (st.ink) {
-      // Stabilizer: the nib trails the pointer by the smoothing amount.
-      const last = st.ink.pts[st.ink.pts.length - 1];
-      const k = 1 - smooth / 100;
-      const q = { x: last.x + (p.x - last.x) * k, y: last.y + (p.y - last.y) * k, p: pressure(e) };
-      drawSegment(d.ctx, st.ink, last, q);
+      const q = { ...p, p: pressure(e) };
+      drawSegment(d.ctx, st.ink, st.ink.pts[st.ink.pts.length - 1], q);
       st.ink.pts.push(q);
       st.last = p;
       return;
     }
     if (SHAPE_KINDS.includes(tool)) {
       og.clearRect(0, 0, d.w, d.h);
-      let end = snap(p);
+      let end = p;
       if (e.shiftKey) {
         // Shift: squares/circles, or lines snapped to 45°.
         const dx = p.x - st.start.x;
@@ -565,7 +697,13 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       st.last = end;
       return;
     }
-    if (tool === "marker") stroke(st.last, p, st.color, og);
+    if (st.ov === "line") {
+      og.clearRect(0, 0, d.w, d.h);
+      stroke(st.start, p, st.color, og);
+      st.last = p;
+      return;
+    }
+    if (tool === "marker" || st.ov) stroke(st.last, p, st.color, og);
     else if (tool === "eraser") erase(st.last, p);
     else if (tool === "pencil" || tool === "brush") stroke(st.last, p, st.color, d.ctx);
     st.last = p;
@@ -579,49 +717,22 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     drag.current = null;
     if (!st || !d) return;
     const tool = st.tool ?? toolNow;
-    if (st.ink) {
-      // Settle the stroke: smooth it, and taper both ends.
-      // The stabilizer trails the pointer: finish where the pen lifted.
-      const end = st.ink.pts[st.ink.pts.length - 1];
-      if (smooth && st.ink.pts.length > 1) st.ink.pts.push({ ...st.last, p: end.p });
-      let pts = smooth ? smoothPoints(st.ink.pts, 0.8, 2) : st.ink.pts;
-      if (taper && pts.length > 4) {
-        const n = pts.length, k = Math.min(n / 3, 10);
-        pts = pts.map((q, i) => ({ ...q, p: q.p * Math.min(1, (i + 1) / k, (n - i) / k) }));
-      }
-      st.ink.pts = pts;
-      d.layer.strokes.push(st.ink);
-      d.redrawInk();
-      return changed();
-    }
+    if (st.ink) return d.layer.strokes.push(st.ink), changed();
     if (st.loop) {
-      // Lasso cuts the pixels inside the loop into a floating piece.
       ctx2d(overlay.current).clearRect(0, 0, d.w, d.h);
-      const loop = st.loop;
-      const xs = loop.map((q) => q.x), ys = loop.map((q) => q.y);
-      const x0 = Math.floor(Math.max(0, Math.min(...xs))), y0 = Math.floor(Math.max(0, Math.min(...ys)));
-      const w = Math.ceil(Math.min(d.w, Math.max(...xs))) - x0, h = Math.ceil(Math.min(d.h, Math.max(...ys))) - y0;
-      if (loop.length < 3 || w < 2 || h < 2) return rerender();
-      d.checkpoint();
-      const local = loop.map((q) => ({ x: q.x - x0, y: q.y - y0 }));
-      const path = new Path2D();
-      local.forEach((q, i) => (i ? path.lineTo(q.x, q.y) : path.moveTo(q.x, q.y)));
-      path.closePath();
-      const c = makeCanvas(w, h);
-      const g = ctx2d(c);
-      g.clip(path);
-      g.drawImage(d.layer.canvas, -x0, -y0);
-      const lg = d.ctx;
-      lg.save();
-      lg.translate(x0, y0);
-      if (d.active > 0) lg.globalCompositeOperation = "destination-out";
-      else lg.fillStyle = color2;
-      lg.fill(path);
-      lg.restore();
-      setFloating({ k: ++floatKey, canvas: c, x: x0, y: y0, w, h, rot: 0, fx: 1, fy: 1, path: local });
-      return rerender();
+      if (st.loop.length < 3) return;
+      const xs = st.loop.map((q) => q.x), ys = st.loop.map((q) => q.y);
+      const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
+      const x1 = Math.min(d.w, Math.ceil(Math.max(...xs))), y1 = Math.min(d.h, Math.ceil(Math.max(...ys)));
+      return lift({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, st.loop);
     }
-    if (st.moveSel) return void (floating && changed());
+    if (st.xf) return rerender();
+    if (st.textMove) {
+      if (st.textMove.moved) return changed();
+      // A click without a drag opens the box for typing.
+      if (tool === "text" || e.detail > 1) (mark(), setEditing(true));
+      return;
+    }
     if (st.spray) window.clearInterval(st.spray);
     if (st.pan) return;
     if (st.resize && selection) {
@@ -629,11 +740,15 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       setSelection(null);
       return edit((doc) => doc.resizeCanvas(r.w, r.h));
     }
-    if (tool === "select") return;
+    if (tool === "select") {
+      if (selection && selection.w > 1 && selection.h > 1) lift(selection);
+      else setSelection(null);
+      return;
+    }
     const og = ctx2d(overlay.current);
-    if (tool === "marker" || SHAPE_KINDS.includes(tool)) {
+    if (tool === "marker" || SHAPE_KINDS.includes(tool) || st.ov) {
       d.ctx.save();
-      d.ctx.globalAlpha = tool === "marker" ? 0.45 : 1;
+      d.ctx.globalAlpha = tool === "marker" ? 0.45 * (opacity / 100) : st.ov && tool === "brush" ? opacity / 100 : 1;
       d.ctx.drawImage(overlay.current, 0, 0);
       d.ctx.restore();
       og.clearRect(0, 0, d.w, d.h);
@@ -652,23 +767,21 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       const handled = () => (e.preventDefault(), e.stopPropagation());
       if (mod && k === "z") return handled(), commitFloating(), d.undo(), changed();
       if (mod && k === "y") return handled(), d.redo(), changed();
-      if (mod && k === "d") return handled(), duplicateFloat();
-      if (k.startsWith("arrow") && (floating || (selection && tool === "select"))) {
-        const step = e.shiftKey ? 10 : 1;
-        handled();
-        return nudge(k === "arrowleft" ? -step : k === "arrowright" ? step : 0, k === "arrowup" ? -step : k === "arrowdown" ? step : 0);
-      }
       if (mod && k === "s") return handled(), void save();
       if (mod && k === "n") return handled(), setDialog("new");
       if (mod && k === "o") return handled(), void pickImage().then((p) => p && onOpen(p));
       if (mod && k === "c") return handled(), void copySel();
       if (mod && k === "x") return handled(), void cutSel();
-      if (mod && k === "a") return handled(), setTool("select"), setSelection({ x: 0, y: 0, w: d.w, h: d.h });
+      if (mod && k === "a") return handled(), setTool("select"), lift({ x: 0, y: 0, w: d.w, h: d.h });
       if (mod && (k === "=" || k === "+")) return handled(), setZoom((z) => Math.min(8, z * 1.25));
       if (mod && k === "-") return handled(), setZoom((z) => Math.max(0.05, z / 1.25));
       if (mod && k === "0") return handled(), fitZoom();
-      if (k === "delete" || k === "backspace") return handled(), deleteSel();
-      if (k === "escape") return commitFloating(), setSelection(null), deselectText();
+      if (k === "delete") return handled(), deleteSel();
+      if (mod && k === "d") return handled(), duplicateSel();
+      if (mod && e.altKey && /^Digit[1-5]$/.test(e.code)) return handled(), pickTab(TABS[Number(e.code[5]) - 1][0]);
+      const arrow = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] }[k];
+      if (arrow && (floating || activeObj)) return handled(), nudge(arrow[0] * (e.shiftKey ? 10 : 1), arrow[1] * (e.shiftKey ? 10 : 1));
+      if (k === "escape") return commitFloating(), setSelection(null), commitText();
       if (k === "enter" && floating) return commitFloating();
       if (!mod && !e.altKey && TOOL_KEYS[k]) return setTool(TOOL_KEYS[k]);
       if (!mod && (k === "[" || k === "]")) return setSize((s) => Math.max(1, Math.min(100, s + (k === "]" ? 2 : -2))));
@@ -684,7 +797,32 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   });
 
   /* ------------------------------------------------------------ actions */
-  const crop = () => selection && (setSelection(null), edit((d) => d.crop(selection)));
+  /** Swap the Background layer's backdrop (old background colour is lifted off, drawing kept). */
+  const setBackground = (kind: "colour" | "clear" | "grid" | "lines", c = color2) =>
+    edit((d) => {
+      const bg = d.layers[0].canvas;
+      const g = ctx2d(bg);
+      const [r, gr, b] = g.getImageData(0, 0, 1, 1).data;
+      dropColour(bg, rgbToHex(r, gr, b));
+      if (kind === "clear") return;
+      g.save();
+      g.globalCompositeOperation = "destination-over";
+      if (kind !== "colour") {
+        g.strokeStyle = "#c7d3e6";
+        g.lineWidth = 1;
+        g.beginPath();
+        for (let y = 32; y < d.h; y += 32) g.moveTo(0, y + 0.5), g.lineTo(d.w, y + 0.5);
+        if (kind === "grid") for (let x = 32; x < d.w; x += 32) g.moveTo(x + 0.5, 0), g.lineTo(x + 0.5, d.h);
+        g.stroke();
+      }
+      g.fillStyle = kind === "colour" ? c : "#ffffff";
+      g.fillRect(0, 0, d.w, d.h);
+      g.restore();
+    }, "Background");
+  const crop = () => {
+    const r = floating ? { x: Math.round(floating.x), y: Math.round(floating.y), w: Math.round(floating.w), h: Math.round(floating.h) } : selection;
+    if (r) setSelection(null), edit((d) => d.crop(r), "Crop");
+  };
   const copyImage = async () => {
     const blob = await new Promise<Blob | null>((r) => composite().toBlob(r, "image/png"));
     if (blob) await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).catch(() => {});
@@ -695,18 +833,18 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
 
   /* ------------------------------------------------------------ UI pieces */
   const T = ({ t, icon, label, keyHint }: { t: Tool; icon: ReactNode; label: string; keyHint?: string }) => (
-    <IBtn tip={keyHint ? `${label} (${keyHint})` : label} on={tool === t} big={layout === "paint"} onClick={() => setTool(t)}>
+    <IBtn tip={keyHint ? `${label} (${keyHint})` : label} on={tool === t} onClick={() => setTool(t)}>
       {icon}
     </IBtn>
   );
   const drawTools = (
     <>
       <T t="select" icon={<MousePointer2 />} label="Select" keyHint="S" />
-      <T t="lasso" icon={<LassoSelect />} label="Lasso" keyHint="Q" />
+      <T t="lasso" icon={<LassoSelect />} label="Free-form select" keyHint="Q" />
       <T t="pencil" icon={<Pencil />} label="Pencil" keyHint="P" />
       <T t="brush" icon={<Brush />} label="Brush" keyHint="B" />
-      <T t="marker" icon={<Highlighter />} label="Marker" keyHint="K" />
-      <T t="airbrush" icon={<SprayCan />} label="Airbrush" keyHint="A" />
+      <T t="marker" icon={<Highlighter />} label="Marker" />
+      <T t="airbrush" icon={<SprayCan />} label="Airbrush" />
       <T t="eraser" icon={<Eraser />} label="Eraser" keyHint="E" />
       <T t="fill" icon={<PaintBucket />} label="Fill" keyHint="G" />
       <T t="picker" icon={<Pipette />} label="Colour picker" keyHint="I" />
@@ -716,56 +854,72 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   );
   const shapeTools = SHAPES.map((s) => <T key={s.kind} t={s.kind} icon={s.icon} label={s.label} />);
   const shapeStyle = (
-    <Seg
-      value={shapeMode}
-      onChange={(v) => setShapeMode(v as typeof shapeMode)}
-      options={[
-        ["outline", <Square key="o" className="size-4" />, "Outline"],
-        ["fill", <Square key="f" className="size-4" fill="currentColor" />, "Fill"],
-        ["both", <Square key="b" className="size-4" fill="currentColor" fillOpacity={0.35} />, "Outline + fill"],
-      ]}
-    />
+    <Seg value={shapeMode} onChange={(v) => setShapeMode(v as typeof shapeMode)} options={[["outline", "Outline"], ["fill", "Fill"], ["both", "Both"]]} />
   );
   const sizeCtl = (
     <label className="flex items-center gap-2 text-[12px] text-neutral-400" data-tip="Size ([ / ])">
       <span className="grid size-7 place-items-center"><span className="rounded-full bg-neutral-200" style={{ width: Math.max(2, Math.min(24, size / 2)), height: Math.max(2, Math.min(24, size / 2)) }} /></span>
-      <Range min={1} max={100} value={size} onChange={setSize} suffix="px" className="w-24" />
-      <span className="w-8 tabular-nums text-neutral-300">{size}px</span>
+      <Slider value={size} min={1} max={100} unit="px" width={72} onChange={setSize} />
     </label>
   );
+  const pick1 = (c: string) => (setColor1(c), activeText !== null && (mark(), patchText(activeText, { color: c }), changed()));
   const colours = (
     <div className="flex items-center gap-2">
-      <div className="relative size-10" data-tip="Colour 1 (left click) · Colour 2 (right click)">
+      <div className="relative size-10 shrink-0" data-tip="Colour 1 (left click) · Colour 2 (right click)">
         <label className="absolute left-0 top-0 size-7 cursor-pointer rounded-md border-2 border-neutral-200 shadow" style={{ background: color1 }}>
-          <input type="color" value={color1} onChange={(e) => setColor1(e.target.value)} className="sr-only" />
+          <input type="color" value={color1} onChange={(e) => pick1(e.target.value)} className="sr-only" />
         </label>
         <label className="absolute bottom-0 right-0 size-6 cursor-pointer rounded-md border-2 border-neutral-500" style={{ background: color2 }}>
           <input type="color" value={color2} onChange={(e) => setColor2(e.target.value)} className="sr-only" />
         </label>
       </div>
       <button type="button" data-tip="Swap colours" onClick={() => (setColor1(color2), setColor2(color1))} className="cursor-pointer text-neutral-400 hover:text-neutral-100">⇄</button>
-      <div className="grid grid-cols-10 gap-[3px]">
-        {PALETTE.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setColor1(c)}
-            onContextMenu={(e) => (e.preventDefault(), setColor2(c))}
-            className="size-[18px] cursor-pointer rounded-sm border border-white/15 transition-transform hover:scale-125"
-            style={{ background: c }}
-          />
-        ))}
+      <div className="flex flex-col gap-1">
+        <div className="grid grid-cols-10 gap-[5px]">
+          {PALETTE.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => pick1(c)}
+              onContextMenu={(e) => (e.preventDefault(), setColor2(c))}
+              className={`size-4 cursor-pointer rounded-full border transition-transform hover:scale-110 ${c === color1 ? "border-white ring-1 ring-[color:var(--oc-sketch)]" : "border-white/20"}`}
+              style={{ background: c }}
+            />
+          ))}
+        </div>
+        <div className="grid grid-cols-10 gap-[5px]" data-tip="Custom colours (Edit colours adds here)">
+          {Array.from({ length: 10 }, (_, i) => custom[i]).map((c, i) =>
+            c ? (
+              <button key={i} type="button" onClick={() => pick1(c)} onContextMenu={(e) => (e.preventDefault(), setColor2(c))} className="size-4 cursor-pointer rounded-full border border-white/20 hover:scale-110" style={{ background: c }} />
+            ) : (
+              <span key={i} className="size-4 rounded-full border border-dashed border-white/15" />
+            ),
+          )}
+        </div>
       </div>
+      <div className="relative">
+        <button type="button" data-tip="Edit colours" onClick={() => setEditColours((v) => !v)} className="grid size-8 cursor-pointer place-items-center rounded-md hover:bg-white/[0.07]">
+          <span className="size-6 rounded-full" style={{ background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }} />
+        </button>
+        {editColours && <EditColours start={color1} onClose={() => setEditColours(false)} onPick={(c) => (pick1(c), addCustom(c), setEditColours(false))} />}
+      </div>
+      {recent.length > 1 && (
+        <div className="grid grid-cols-4 gap-1" data-tip="Recent colours">
+          {recent.map((c) => (
+            <button key={c} type="button" onClick={() => pick1(c)} className="size-4 cursor-pointer rounded-full border border-white/15 hover:scale-125" style={{ background: c }} />
+          ))}
+        </div>
+      )}
     </div>
   );
   const imageTools = (
     <>
-      <IBtn tip="Crop to selection" disabled={!selection} onClick={crop}><Crop /></IBtn>
+      <IBtn tip="Crop to selection" disabled={!selection && !floating} onClick={crop}><Crop /></IBtn>
       <IBtn tip="Resize image" onClick={() => setDialog("resize")}><Scaling /></IBtn>
-      <IBtn tip="Rotate left" onClick={() => edit((d) => d.rotate(-90))}><RotateCcw /></IBtn>
-      <IBtn tip="Rotate right" onClick={() => edit((d) => d.rotate(90))}><RotateCw /></IBtn>
-      <IBtn tip="Flip horizontal" onClick={() => edit((d) => d.flip(true))}><FlipHorizontal /></IBtn>
-      <IBtn tip="Flip vertical" onClick={() => edit((d) => d.flip(false))}><FlipVertical /></IBtn>
+      <IBtn tip="Rotate left" onClick={() => edit((d) => d.rotate(-90), "Rotate")}><RotateCcw /></IBtn>
+      <IBtn tip="Rotate right" onClick={() => edit((d) => d.rotate(90), "Rotate")}><RotateCw /></IBtn>
+      <IBtn tip="Flip horizontal" onClick={() => edit((d) => d.flip(true), "Flip")}><FlipHorizontal /></IBtn>
+      <IBtn tip="Flip vertical" onClick={() => edit((d) => d.flip(false), "Flip")}><FlipVertical /></IBtn>
     </>
   );
   const clipboard = (
@@ -773,60 +927,174 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       <IBtn tip="Paste (Ctrl+V)" onClick={() => void pasteFromClipboard()}><ClipboardPaste /></IBtn>
       <IBtn tip="Cut (Ctrl+X)" disabled={!selection && !floating} onClick={() => void cutSel()}><Scissors /></IBtn>
       <IBtn tip="Copy (Ctrl+C)" onClick={() => void copySel()}><Copy /></IBtn>
+      <IBtn tip="Duplicate (Ctrl+D)" disabled={!floating && !activeObj} onClick={duplicateSel}><CopyPlus /></IBtn>
+      <IBtn tip="Delete (Del)" disabled={!floating && !selection && !activeObj} onClick={deleteSel}><Trash2 /></IBtn>
     </>
   );
-  const curText = texts.find((t) => t.id === textSel);
-  const ts = curText ?? textStyle;
-  const field = "h-7 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[12px] text-neutral-100 outline-none focus:border-[color:var(--oc-sketch)]";
-  const swatch = (value: string, on: (v: string) => void, tip: string) => (
-    <label data-tip={tip} className="relative size-5 shrink-0 cursor-pointer rounded border border-white/30" style={{ background: value }}>
-      <input type="color" value={value} onChange={(e) => on(e.target.value)} className="sr-only" />
-    </label>
+  const st = activeObj ?? txt;
+  const textOpts = (
+    <>
+      <Group label="Font">
+        <select value={st.font} onChange={(e) => styleText({ font: e.target.value })} className="h-7 rounded-md border border-white/[0.1] bg-[var(--oc-surface)] px-1.5 text-[12.5px] text-neutral-100 outline-none">
+          {Object.keys(FONTS).map((f) => <option key={f} value={f} style={{ fontFamily: FONTS[f] }}>{f}</option>)}
+        </select>
+        <input type="number" min={6} max={300} value={st.size} onChange={(e) => styleText({ size: Math.max(6, Number(e.target.value) || 6) })} data-tip="Text size" className="h-7 w-14 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[12.5px] text-neutral-100 outline-none" />
+        <div className="flex gap-0.5">
+          {TEXT_SIZES.map((n) => (
+            <button key={n} type="button" onClick={() => styleText({ size: n })} className={`h-7 min-w-7 cursor-pointer rounded-md px-1 text-[11.5px] tabular-nums ${st.size === n ? "bg-[color:var(--oc-sketch)]/20 text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:bg-white/[0.07]"}`}>{n}</button>
+          ))}
+        </div>
+      </Group>
+      <Group label="Style">
+        <IBtn tip="Bold (Ctrl+B)" on={st.b} onClick={() => styleText({ b: !st.b })}><Bold /></IBtn>
+        <IBtn tip="Italic (Ctrl+I)" on={st.i} onClick={() => styleText({ i: !st.i })}><Italic /></IBtn>
+        <IBtn tip="Underline (Ctrl+U)" on={st.u} onClick={() => styleText({ u: !st.u })}><Underline /></IBtn>
+        <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
+        <IBtn tip="Align left" on={st.align === "left"} onClick={() => styleText({ align: "left" })}><AlignLeft /></IBtn>
+        <IBtn tip="Align centre" on={st.align === "center"} onClick={() => styleText({ align: "center" })}><AlignCenter /></IBtn>
+        <IBtn tip="Align right" on={st.align === "right"} onClick={() => styleText({ align: "right" })}><AlignRight /></IBtn>
+        <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
+        <IBtn tip="Background fill (colour 2)" on={!!st.bg} onClick={() => styleText({ bg: st.bg ? null : color2 })}><PaintBucket /></IBtn>
+      </Group>
+    </>
   );
-  const textBar = (
-    <div className="flex items-center gap-1.5">
-      <select value={ts.font} onChange={(e) => styleText({ font: e.target.value })} className={`${field} w-32 cursor-pointer`} style={{ fontFamily: ts.font }}>
-        {FONTS.map((f) => <option key={f.label} value={f.css} style={{ fontFamily: f.css }}>{f.label}</option>)}
-      </select>
-      <input type="number" min={6} max={400} value={ts.size} onChange={(e) => styleText({ size: Math.max(6, Number(e.target.value) || 6) })} className={`${field} w-14`} data-tip="Text size" />
-      {swatch(ts.color, (v) => (styleText({ color: v }), setColor1(v)), "Text colour")}
-      <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
-      <IBtn tip="Bold" on={ts.bold} onClick={() => styleText({ bold: !ts.bold })}><Bold /></IBtn>
-      <IBtn tip="Italic" on={ts.italic} onClick={() => styleText({ italic: !ts.italic })}><Italic /></IBtn>
-      <IBtn tip="Underline" on={ts.underline} onClick={() => styleText({ underline: !ts.underline })}><Underline /></IBtn>
-      <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
-      <IBtn tip="Align left" on={ts.align === "left"} onClick={() => styleText({ align: "left" })}><AlignLeft /></IBtn>
-      <IBtn tip="Align centre" on={ts.align === "center"} onClick={() => styleText({ align: "center" })}><AlignCenter /></IBtn>
-      <IBtn tip="Align right" on={ts.align === "right"} onClick={() => styleText({ align: "right" })}><AlignRight /></IBtn>
-      <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
-      <IBtn tip="Outline" on={!!ts.outline} onClick={() => styleText({ outline: ts.outline ? null : "#ffffff" })}><Type /></IBtn>
-      {ts.outline && swatch(ts.outline, (v) => styleText({ outline: v }), "Outline colour")}
-      <IBtn tip="Highlight box" on={!!ts.bg} onClick={() => styleText({ bg: ts.bg ? null : "#fff200" })}><Square /></IBtn>
-      {ts.bg && swatch(ts.bg, (v) => styleText({ bg: v }), "Highlight colour")}
-      <IBtn tip="Shadow" on={ts.shadow} onClick={() => styleText({ shadow: !ts.shadow })}><Sun /></IBtn>
-      {curText && <IBtn tip="Delete text (Del)" onClick={() => deleteText(curText.id)}><Trash2 /></IBtn>}
-      {!curText && <span className="ml-1 whitespace-nowrap text-[11.5px] text-neutral-500">Click the canvas to add text</span>}
+  const optionsFor = SHAPE_KINDS.includes(tool) ? shapeStyle : tool === "text" ? <div className="flex gap-2">{textOpts}</div> : null;
+  const presetRow = (
+    <div className="flex gap-1">
+      {presets.map((pr, i) => (
+        <button
+          key={i}
+          type="button"
+          data-tip={pr ? `Preset ${i + 1}: ${pr.tool}, ${pr.size}px · right-click to replace` : `Save current pen as preset ${i + 1}`}
+          onClick={() => (pr ? (setTool(pr.tool), setSize(pr.size), setColor1(pr.color)) : savePreset(i))}
+          onContextMenu={(e) => (e.preventDefault(), savePreset(i))}
+          className="grid size-8 cursor-pointer place-items-center rounded-md border border-white/[0.08] hover:bg-white/[0.07]"
+        >
+          {pr ? <span className="rounded-full" style={{ background: pr.color, width: Math.max(4, Math.min(20, pr.size / 2)), height: Math.max(4, Math.min(20, pr.size / 2)) }} /> : <Plus className="size-3.5 text-neutral-500" />}
+        </button>
+      ))}
     </div>
   );
-  const inkBar = (
-    <div className="flex items-center gap-3 text-[12px] text-neutral-400">
-      <label className="flex items-center gap-2" data-tip="Stabilizer: higher is steadier, with more lag">
-        Smoothing
-        <Range min={0} max={90} value={smooth} onChange={setSmooth} suffix="%" className="w-20" />
-        <span className="w-7 tabular-nums text-neutral-300">{smooth}%</span>
-      </label>
-      <label className="flex cursor-pointer items-center gap-1.5" data-tip="Thin the start and end of each stroke">
-        <input type="checkbox" checked={taper} onChange={(e) => setTaper(e.target.checked)} className="accent-[var(--oc-sketch)]" /> Taper
-      </label>
+  const penOpts = penSeen && (
+    <Group label="Pen">
+      <div className="flex flex-col gap-0.5 text-[12px] text-neutral-300">
+        <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={pressureOn} onChange={(e) => setPressureOn(e.target.checked)} className="accent-[var(--oc-sketch)]" />Pressure</label>
+        <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={palmOn} onChange={(e) => setPalmOn(e.target.checked)} className="accent-[var(--oc-sketch)]" />Palm rejection</label>
+      </div>
+    </Group>
+  );
+  const tabsBar = (
+      <div className="ml-2 flex w-fit gap-0.5 rounded-lg p-0.5">
+        <SlidePill className="rounded-md !bg-[color:var(--oc-sketch)]/20" />
+        {TABS.map(([t, l], i) => (
+          <button key={t} type="button" aria-pressed={tab === t} data-tip={`${l} (Ctrl+Alt+${i + 1})`} onClick={() => pickTab(t)} className={`h-7 cursor-pointer rounded-md px-3 text-[12.5px] font-medium ${tab === t ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+  );
+  const ribbon = (
+    <div className="oc-sketch-ribbon oc-docs-enter shrink-0 px-2 pb-2">
+      <div key={tab} className="oc-fade-in flex min-h-[83px] items-stretch gap-1 overflow-x-auto">
+        {tab === "home" && (
+          <>
+            <Group label="Clipboard">{clipboard}</Group>
+            <Group label="Select">
+              <T t="select" icon={<MousePointer2 />} label="Rectangle select" keyHint="S" />
+              <T t="lasso" icon={<LassoSelect />} label="Free-form select" keyHint="Q" />
+              <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-[12px] text-neutral-300" data-tip="Leave colour 2 behind when moving">
+                <input type="checkbox" checked={transparentSel} onChange={(e) => setTransparentSel(e.target.checked)} className="accent-[var(--oc-sketch)]" />Transparent
+              </label>
+            </Group>
+            <Group label="Image">{imageTools}</Group>
+            <Group label="Background">
+              <IBtn tip="Solid colour (colour 2)" onClick={() => setBackground("colour")}><span className="size-4 rounded border border-white/40" style={{ background: color2 }} /></IBtn>
+              <IBtn tip="Transparent" onClick={() => setBackground("clear")}><span className="oc-checker size-4 rounded border border-white/40" /></IBtn>
+              <IBtn tip="Grid paper" onClick={() => setBackground("grid")}><Grid3x3 /></IBtn>
+              <IBtn tip="Lined paper" onClick={() => setBackground("lines")}><Rows3 /></IBtn>
+            </Group>
+            <Group label="Colours">{colours}</Group>
+          </>
+        )}
+        {tab === "draw" && (
+          <>
+            <Group label="Tools">
+              <div className="flex gap-0.5">
+                <T t="pencil" icon={<Pencil />} label="Pencil" keyHint="P" />
+                <T t="brush" icon={<Brush />} label="Brush" keyHint="B" />
+                <T t="marker" icon={<Highlighter />} label="Marker" />
+                <T t="airbrush" icon={<SprayCan />} label="Airbrush" />
+                <T t="eraser" icon={<Eraser />} label="Eraser" keyHint="E" />
+                <T t="fill" icon={<PaintBucket />} label="Fill" keyHint="G" />
+                <T t="picker" icon={<Pipette />} label="Colour picker" keyHint="I" />
+                <T t="hand" icon={<Hand />} label="Pan" keyHint="H" />
+              </div>
+            </Group>
+            <Group label="Size">{sizeCtl}</Group>
+            <Group label="Brush">
+              <div className="flex flex-col gap-0.5 text-[11.5px] text-neutral-400">
+                <label className="flex items-center justify-between gap-1.5" data-tip="Opacity (brush, marker, airbrush)">Opacity<Slider value={opacity} min={5} max={100} unit="%" width={76} onChange={setOpacity} /></label>
+                <label className="flex items-center justify-between gap-1.5" data-tip="Hardness: lower is a softer edge">Hardness<Slider value={hardness} min={0} max={100} unit="%" width={76} onChange={setHardness} /></label>
+              </div>
+              <span className="oc-checker grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10" data-tip="Brush preview">
+                <span
+                  className="rounded-full"
+                  style={{
+                    width: Math.max(2, Math.min(30, size)),
+                    height: Math.max(2, Math.min(30, size)),
+                    background: color1,
+                    opacity: opacity / 100,
+                    filter: hardness < 100 ? `blur(${(Math.min(30, size) * (100 - hardness)) / 400}px)` : undefined,
+                  }}
+                />
+              </span>
+              <IBtn tip="Straight lines (or hold Shift)" on={straight} onClick={() => setStraight((v) => !v)}><Ruler /></IBtn>
+            </Group>
+            <Group label="Presets">{presetRow}</Group>
+            {penOpts}
+            <Group label="Colours">{colours}</Group>
+          </>
+        )}
+        {tab === "text" && (
+          <>
+            {textOpts}
+            <Group label="Colour">{colours}</Group>
+          </>
+        )}
+        {tab === "shapes" && (
+          <>
+            <Group label="Shapes"><div className="grid grid-cols-6 gap-0.5">{shapeTools}</div></Group>
+            <Group label="Style">{shapeStyle}</Group>
+            <Group label="Stickers">
+              <div className="grid grid-cols-8 gap-0.5">
+                {STICKERS.map((k) => (
+                  <button key={k} type="button" data-tip="Click, then click the canvas" onClick={() => (setSticker(k), setTool("sticker"))} className={`grid size-6 cursor-pointer place-items-center rounded-md text-[14px] hover:bg-white/[0.07] ${tool === "sticker" && sticker === k ? "bg-[color:var(--oc-sketch)]/20" : ""}`}>{k}</button>
+                ))}
+              </div>
+            </Group>
+            <Group label="Width">{sizeCtl}</Group>
+            <Group label="Colours">{colours}</Group>
+          </>
+        )}
+        {tab === "view" && (
+          <>
+            <Group label="Panels"><IBtn tip="Layers" on={showLayers} onClick={() => setShowLayers((v) => !v)}><Layers /></IBtn></Group>
+          </>
+        )}
+        <Group label="Zoom">
+          <IBtn tip="Zoom out (Ctrl+-)" onClick={() => setZoom((z) => Math.max(0.05, z / 1.25))}><ZoomOut /></IBtn>
+          <button type="button" data-tip="Actual size" onClick={() => setZoom(1)} className="h-7 w-12 cursor-pointer rounded-md text-[12px] tabular-nums text-neutral-300 hover:bg-white/[0.07]">{Math.round(zoom * 100)}%</button>
+          <IBtn tip="Zoom in (Ctrl+=)" onClick={() => setZoom((z) => Math.min(8, z * 1.25))}><ZoomIn /></IBtn>
+          <IBtn tip="Fit (Ctrl+0)" onClick={fitZoom}><Maximize /></IBtn>
+        </Group>
+      </div>
     </div>
   );
-  const optionsFor = SHAPE_KINDS.includes(tool) ? shapeStyle : tool === "text" ? textBar : tool === "pencil" || tool === "brush" ? inkBar : null;
 
   const layersPanel = (
     <LayersPanel
       doc={doc}
-      onSelect={(i) => (commitFloating(), bakeTexts(), (doc.active = i), rerender())}
-      onBlend={(b) => ((doc.layer.blend = b), changed())}
+      onSelect={(i) => ((doc.active = i), rerender())}
       onToggle={(i) => edit((d) => (d.layers[i].visible = !d.layers[i].visible))}
       onOpacity={(o) => ((doc.layer.opacity = o), changed())}
       onRename={(i, n) => ((doc.layers[i].name = n), rerender())}
@@ -850,6 +1118,7 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
           <div className="oc-docs-pop absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-xl" onClick={() => setMenu(false)}>
             <MItem label="New…" hint="Ctrl+N" onClick={() => setDialog("new")} />
             <MItem label="Open…" hint="Ctrl+O" onClick={() => void pickImage().then((p) => p && onOpen(p))} />
+            <MItem label="Import image…" onClick={importImage} />
             <MItem label="Save" hint="Ctrl+S" onClick={() => void save()} />
             <MItem label="Copy image (paste into Docs or notes)" onClick={() => void copyImage()} />
             <div className="my-1 h-px bg-white/[0.06]" />
@@ -861,13 +1130,40 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     </div>
   );
   const titleStrip = (
-    <div data-tauri-drag-region className="oc-docs-chrome oc-docs-enter flex h-10 shrink-0 items-center gap-1 pl-2">
+    <div data-tauri-drag-region className="oc-docs-chrome oc-docs-enter relative z-30 flex h-10 shrink-0 items-center gap-1 pl-2">
       <IBtn tip="Sketch Home" onClick={onHome}><House /></IBtn>
       <span className="mx-0.5 h-5 w-px bg-white/[0.08]" />
       {fileMenu}
       <IBtn tip="Save (Ctrl+S)" onClick={() => void save()}><Save /></IBtn>
       <IBtn tip="Undo (Ctrl+Z)" disabled={!doc.canUndo} onClick={() => (commitFloating(), doc.undo(), changed())}><Undo2 /></IBtn>
       <IBtn tip="Redo (Ctrl+Y)" disabled={!doc.canRedo} onClick={() => (doc.redo(), changed())}><Redo2 /></IBtn>
+      <div className="relative">
+        <IBtn tip="History" on={histOpen} disabled={!doc.canUndo} onClick={() => setHistOpen((v) => !v)}><History /></IBtn>
+        {histOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onMouseDown={() => setHistOpen(false)} />
+            <div className="oc-docs-pop absolute left-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-1 shadow-xl">
+              {doc.history.map((l, i, all) => ({ l, back: all.length - i - 1 })).reverse().map(({ l, back }, k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    commitFloating();
+                    for (let n = 0; n < back; n++) doc.undo();
+                    setHistOpen(false);
+                    changed();
+                  }}
+                  className={`flex h-7 w-full cursor-pointer items-center rounded-md px-2.5 text-left text-[12.5px] hover:bg-white/[0.06] ${back === 0 ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-200"}`}
+                >
+                  <span className="flex-1">{l}</span>
+                  {back === 0 && <span className="text-[10.5px] text-neutral-500">now</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {layout === "paint" && tabsBar}
       <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center gap-2 text-[13px]">
         <span className="truncate font-semibold text-neutral-100">{sketchTitle(path)}</span>
         <span className="text-neutral-500">·</span>
@@ -879,7 +1175,6 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
     </div>
   );
 
-  const box = floating ?? (selection && tool === "select" && selection.w > 1 && selection.h > 1 ? { ...selection, rot: 0 } : null);
   const canvasArea = (
     <div
       ref={viewRef}
@@ -895,82 +1190,115 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
           <div
             ref={stackRef}
             className={`oc-checker absolute inset-0 touch-none ${tool === "hand" ? "cursor-grab" : tool === "text" ? "cursor-text" : tool === "select" ? "cursor-default" : "cursor-crosshair"}`}
-            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto", cursor: ringCursor(), isolation: "isolate" }}
-            onPointerDown={onDown}
+            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto", cursor: ringCursor() }}
+            onPointerDown={(e) => (setDrawing(true), setPop(null), onDown(e))}
             onPointerMove={onMove}
-            onPointerUp={onUp}
-            onPointerCancel={onUp}
+            onPointerUp={(e) => (setDrawing(false), onUp(e))}
+            onPointerCancel={(e) => (setDrawing(false), onUp(e))}
             onPointerLeave={() => setCursor(null)}
             onContextMenu={(e) => e.preventDefault()}
           />
-          {grid && (
+          {/* Floating piece with resize + rotate handles */}
+          {floating && (
             <div
-              className="pointer-events-none absolute inset-0"
-              style={{ backgroundImage: "linear-gradient(rgb(120 120 140 / 0.35) 1px, transparent 1px), linear-gradient(90deg, rgb(120 120 140 / 0.35) 1px, transparent 1px)", backgroundSize: `${GRID * zoom}px ${GRID * zoom}px` }}
-            />
-          )}
-          {/* Selection / floating piece: one box, so handles survive the lift */}
-          {box && (
-            <>
-              <div
-                className="pointer-events-none absolute"
-                style={{ left: box.x * zoom, top: box.y * zoom, width: box.w * zoom, height: box.h * zoom, transform: `rotate(${box.rot}rad)` }}
-              >
-                {floating && (
-                  <canvas
-                    key={floating.k}
-                    ref={(c) => {
-                      if (c && !c.dataset.drawn) {
-                        c.width = floating.canvas.width;
-                        c.height = floating.canvas.height;
-                        ctx2d(c).drawImage(floating.canvas, 0, 0);
-                        c.dataset.drawn = "1";
-                      }
-                    }}
-                    className="absolute inset-0 h-full w-full"
-                    style={{ transform: `scale(${floating.fx}, ${floating.fy})` }}
-                  />
-                )}
-                {floating?.path ? (
-                  <svg className="absolute inset-0 h-full w-full overflow-visible" viewBox={`0 0 ${floating.canvas.width} ${floating.canvas.height}`} preserveAspectRatio="none" style={{ transform: `scale(${floating.fx}, ${floating.fy})` }}>
-                    <polygon points={floating.path.map((q) => `${q.x},${q.y}`).join(" ")} className="oc-ants" vectorEffect="non-scaling-stroke" />
-                  </svg>
-                ) : (
-                  <div className="oc-marquee absolute inset-0" />
-                )}
-                <span className="absolute -top-7 left-1/2 h-7 w-px -translate-x-1/2 bg-[color:var(--oc-sketch)]" />
-                <span onPointerDown={(e) => startXf(e, "rot")} onPointerMove={moveXf} onPointerUp={endXf} data-tip="Rotate (Shift snaps)" className="oc-sk-handle pointer-events-auto absolute -top-9 left-1/2 size-3.5 -translate-x-1/2 cursor-grab rounded-full" />
-                {HANDLES.map((h) => (
+              className="oc-marquee pointer-events-none absolute"
+              style={{ left: floating.x * zoom, top: floating.y * zoom, width: floating.w * zoom, height: floating.h * zoom, transform: `rotate(${floating.rot}rad)` }}
+            >
+              <canvas
+                ref={(c) => {
+                  if (!c) return;
+                  if (c.width !== floating.canvas.width || c.height !== floating.canvas.height) (c.width = floating.canvas.width), (c.height = floating.canvas.height);
+                  const g = ctx2d(c);
+                  g.clearRect(0, 0, c.width, c.height);
+                  g.drawImage(floating.canvas, 0, 0);
+                }}
+                className="absolute inset-0 h-full w-full"
+              />
+              {(["rot", [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]] as Handle[]).map((h, i) => {
+                const grab = (e: React.PointerEvent) => {
+                  e.stopPropagation();
+                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  const p = toCanvas(e);
+                  drag.current = { start: p, last: p, button: 0, color: "", id: e.pointerId, tool, xf: { h, from: floating } };
+                };
+                const at = h === "rot" ? { left: "50%", top: -26 } : h === "move" ? {} : { left: `${(h[0] + 1) * 50}%`, top: `${(h[1] + 1) * 50}%` };
+                const cur = typeof h === "string" ? "grab" : h[0] === 0 ? "ns-resize" : h[1] === 0 ? "ew-resize" : h[0] === h[1] ? "nwse-resize" : "nesw-resize";
+                return (
                   <span
-                    key={h}
-                    onPointerDown={(e) => startXf(e, h)}
-                    onPointerMove={moveXf}
-                    onPointerUp={endXf}
-                    className="oc-sk-handle pointer-events-auto absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-[3px]"
-                    style={{ left: h.includes("w") ? 0 : h.includes("e") ? "100%" : "50%", top: h.includes("n") ? 0 : h.includes("s") ? "100%" : "50%", cursor: `${h}-resize` }}
+                    key={i}
+                    onPointerDown={grab}
+                    onPointerMove={onMove}
+                    onPointerUp={onUp}
+                    className={`pointer-events-auto absolute size-2.5 -translate-x-1/2 -translate-y-1/2 border border-neutral-500 bg-white ${h === "rot" ? "rounded-full" : "rounded-sm"}`}
+                    style={{ ...at, cursor: cur }}
+                    data-tip={h === "rot" ? "Rotate (Shift snaps 15°)" : undefined}
                   />
-                ))}
-              </div>
-              {/* Action bar under the box */}
-              <div className="oc-sk-actions absolute z-10 flex items-center gap-0.5 rounded-lg p-0.5" style={{ left: box.x * zoom, top: (box.y + box.h) * zoom + 14 }} onPointerDown={(e) => e.stopPropagation()}>
-                <IBtn tip="Copy (Ctrl+C)" onClick={() => void copySel()}><Copy /></IBtn>
-                <IBtn tip="Duplicate (Ctrl+D)" onClick={duplicateFloat}><CopyPlus /></IBtn>
-                <IBtn tip="Flip horizontal" onClick={() => { const f = floating ?? (selection && lift(selection)); if (f) setFloating({ ...f, fx: f.fx === 1 ? -1 : 1 }); }}><FlipHorizontal /></IBtn>
-                <IBtn tip="Flip vertical" onClick={() => { const f = floating ?? (selection && lift(selection)); if (f) setFloating({ ...f, fy: f.fy === 1 ? -1 : 1 }); }}><FlipVertical /></IBtn>
-                <IBtn tip="Rotate 90°" onClick={() => { const f = floating ?? (selection && lift(selection)); if (f) setFloating({ ...f, rot: f.rot + Math.PI / 2 }); }}><RotateCw /></IBtn>
-                {!floating && <IBtn tip="Crop to selection" onClick={crop}><Crop /></IBtn>}
-                <IBtn tip="Delete (Del)" onClick={deleteSel}><Trash2 /></IBtn>
-                {floating && <IBtn tip="Done (Enter)" onClick={() => commitFloating()}><Check /></IBtn>}
-              </div>
-            </>
+                );
+              })}
+            </div>
           )}
-          {texts.map((t) =>
-            t.id === textSel ? (
-              <TextEditor key={t.id} t={t} zoom={zoom} toCanvas={toCanvas} onChange={(p) => patchText(t.id, p)} onDone={deselectText} />
-            ) : (
-              <TextPreview key={t.id} t={t} zoom={zoom} live={tool === "text"} onPick={() => setTextSel(t.id)} />
-            ),
+          {selection && !floating && (
+            <div className="oc-marquee pointer-events-none absolute" style={{ left: selection.x * zoom, top: selection.y * zoom, width: selection.w * zoom, height: selection.h * zoom }} />
           )}
+          {/* Text boxes */}
+          {texts.map((t) => {
+            const on = t.id === activeText;
+            const box = { left: t.x * zoom, top: t.y * zoom, width: t.w * zoom, fontFamily: FONTS[t.font], fontSize: t.size * zoom, fontWeight: t.b ? 700 : 400, fontStyle: t.i ? "italic" : "normal", color: t.color, lineHeight: 1.25, textAlign: t.align, textDecoration: t.u ? "underline" : undefined, background: t.bg ?? "transparent", padding: 4 * zoom, minHeight: t.size * 1.25 * zoom + 8 * zoom } as const;
+            const live = tool === "text" || tool === "select" || tool === "lasso";
+            if (on && editing)
+              return (
+                <textarea
+                  key={t.id}
+                  ref={textRef}
+                  value={t.value}
+                  onChange={(e) => patchText(t.id, { value: e.target.value })}
+                  onKeyDown={(e) => {
+                    const k = e.key.toLowerCase() as "b" | "i" | "u";
+                    if (e.key === "Escape") (e.preventDefault(), commitText());
+                    if (e.ctrlKey && (k === "b" || k === "i" || k === "u")) (e.preventDefault(), styleText({ [k]: !t[k] }));
+                    if (e.key === "Enter" && e.ctrlKey) commitText();
+                  }}
+                  className="absolute resize-none overflow-hidden border-0 outline outline-1 outline-dashed outline-[color:var(--oc-sketch)]"
+                  style={{ ...box, fieldSizing: "content" } as React.CSSProperties}
+                  placeholder="Type here"
+                />
+              );
+            return (
+              <div
+                key={t.id}
+                onPointerDown={(e) => {
+                  if (!live || e.button !== 0) return;
+                  e.stopPropagation();
+                  commitFloating();
+                  if (editing && !on) commitText();
+                  setActiveText(t.id);
+                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  const p = toCanvas(e);
+                  drag.current = { start: p, last: p, button: 0, color: "", id: e.pointerId, tool, textMove: { id: t.id, from: { x: t.x, y: t.y }, moved: false } };
+                }}
+                onPointerMove={onMove}
+                onPointerUp={onUp}
+                className={`absolute whitespace-pre-wrap break-words ${live ? "cursor-move" : "pointer-events-none"} ${on ? "outline outline-1 outline-dashed outline-[color:var(--oc-sketch)]" : live ? "hover:outline hover:outline-1 hover:outline-white/40" : ""}`}
+                style={box}
+              >
+                {t.value}
+                {on && (
+                  <span
+                    data-tip="Drag to change width"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                      const p = toCanvas(e);
+                      drag.current = { start: p, last: p, button: 0, color: "", id: e.pointerId, tool, textMove: { id: t.id, from: { x: t.w, y: 0 }, moved: false, width: true } };
+                    }}
+                    onPointerMove={onMove}
+                    onPointerUp={onUp}
+                    className="absolute -right-1.5 top-1/2 h-4 w-2.5 -translate-y-1/2 cursor-ew-resize rounded-sm border border-neutral-500 bg-white"
+                  />
+                )}
+              </div>
+            );
+          })}
           {/* Paint-style corner handle: drag to resize the canvas */}
           <span
             data-tip="Drag to resize the canvas"
@@ -991,68 +1319,97 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
   const statusBar = (
     <div className="oc-docs-status oc-docs-enter-up flex h-7 shrink-0 items-center gap-5 px-3 text-[11.5px] text-neutral-300">
       <span className="w-28 tabular-nums">{cursor ? `${cursor.x}, ${cursor.y}px` : ""}</span>
-      <span className="tabular-nums">{floating ? `${Math.round(floating.w)} × ${Math.round(floating.h)}px${floating.rot ? ` · ${Math.round((floating.rot * 180) / Math.PI) % 360}°` : ""}` : selection ? `${selection.w} × ${selection.h}px selected` : ""}</span>
+      <span className="tabular-nums">{selection ? `${selection.w} × ${selection.h}px selected` : ""}</span>
       <span className="tabular-nums">{doc.w} × {doc.h}px</span>
       <span className="flex-1" />
-      <button type="button" data-tip="Grid + snap" aria-pressed={grid} onClick={() => setGrid((v) => !v)} className={`flex cursor-pointer items-center gap-1 ${grid ? "text-[color:var(--oc-sketch-light)]" : "hover:text-white"}`}><Grid3x3 className="size-3.5" /> Grid</button>
       <button type="button" onClick={() => setZoom((z) => Math.max(0.05, z / 1.25))} className="cursor-pointer hover:text-white"><Minus className="size-3.5" /></button>
-      <Range min={5} max={800} value={Math.round(zoom * 100)} onChange={(v) => setZoom(v / 100)} suffix="%" className="w-32" />
+      <Slider value={Math.round(zoom * 100)} min={5} max={800} unit="%" width={128} onChange={(v) => setZoom(v / 100)} />
       <button type="button" onClick={() => setZoom((z) => Math.min(8, z * 1.25))} className="cursor-pointer hover:text-white"><Plus className="size-3.5" /></button>
-      <button type="button" data-tip="Fit (Ctrl+0)" onClick={fitZoom} className="w-12 cursor-pointer text-right hover:text-white">{Math.round(zoom * 100)}%</button>
+      <button type="button" data-tip="Fit (Ctrl+0)" onClick={fitZoom} className="cursor-pointer hover:text-white"><Maximize className="size-3.5" /></button>
     </div>
   );
+
+  const importDialog = imported && (
+    <Modal onClose={() => setImported(null)} className="w-[360px] p-5">
+      <h2 className="mb-4 text-[15px] font-semibold text-neutral-100">Import image</h2>
+      <div className="flex flex-col gap-2">
+        <ModalButton variant="primary" onClick={() => (pasteCanvas(imported), setImported(null))}>Insert into this canvas</ModalButton>
+        <ModalButton onClick={() => (onOpen(newSketch(imported.width, imported.height, imported)), setImported(null))}>Open as a new canvas</ModalButton>
+      </div>
+    </Modal>
+  );
+
+  if (isAndroid) {
+    // Touch: the canvas fills the screen; a glass dock floats at the bottom and hides while drawing or typing.
+    const toolIcon: Partial<Record<Tool, ReactNode>> = {
+      select: <MousePointer2 />, lasso: <LassoSelect />, pencil: <Pencil />, brush: <Brush />, marker: <Highlighter />, airbrush: <SprayCan />,
+      ...Object.fromEntries(SHAPES.map((x) => [x.kind, x.icon])),
+    };
+    const pop1 = (id: NonNullable<typeof pop>, button: ReactNode, body: ReactNode, cls = "") => (
+      <span className="relative flex">
+        {button}
+        {pop === id && <div className={`oc-dock-pop ${cls}`}>{body}</div>}
+      </span>
+    );
+    const group = (id: "draw" | "pick" | "shape", tools: Tool[], fallback: ReactNode, items: ReactNode) =>
+      pop1(id, <IBtn tip="" on={tools.includes(tool)} onClick={() => setPop(pop === id ? null : id)}>{tools.includes(tool) ? toolIcon[tool] : fallback}</IBtn>, <div className="flex items-center gap-1" onClick={() => setPop(null)}>{items}</div>);
+    return (
+      <div className="oc-sketch relative h-full" onMouseDown={(e) => editing && !(e.target as HTMLElement).closest("textarea") && !stackRef.current?.contains(e.target as Node) && commitText()}>
+        <div className="flex h-full">
+          {canvasArea}
+          {showLayers && !drawing && <aside className="oc-dock-layers scrollbar-thin">{layersPanel}</aside>}
+        </div>
+        <div className={`oc-dock ocm-liquid${drawing || editing ? " hide" : ""}`}>
+          <IBtn tip="Sketch Home" onClick={onHome}><House /></IBtn>
+          <IBtn tip="Undo" disabled={!doc.canUndo} onClick={() => (commitFloating(), doc.undo(), changed())}><Undo2 /></IBtn>
+          <IBtn tip="Redo" disabled={!doc.canRedo} onClick={() => (doc.redo(), changed())}><Redo2 /></IBtn>
+          <span className="h-6 w-px bg-white/[0.1]" />
+          {group("draw", ["pencil", "brush", "marker", "airbrush"], <Brush />, <><T t="pencil" icon={<Pencil />} label="Pencil" /><T t="brush" icon={<Brush />} label="Brush" /><T t="marker" icon={<Highlighter />} label="Marker" /><T t="airbrush" icon={<SprayCan />} label="Airbrush" /></>)}
+          <T t="eraser" icon={<Eraser />} label="Eraser" />
+          {group("pick", ["select", "lasso"], <MousePointer2 />, <><T t="select" icon={<MousePointer2 />} label="Select" /><T t="lasso" icon={<LassoSelect />} label="Lasso" /></>)}
+          {group("shape", SHAPE_KINDS as Tool[], <Square />, <>{shapeTools}{shapeStyle}</>)}
+          <T t="fill" icon={<PaintBucket />} label="Fill" />
+          <T t="picker" icon={<Pipette />} label="Colour picker" />
+          <T t="text" icon={<Type />} label="Text" />
+          <T t="hand" icon={<Hand />} label="Pan" />
+          <span className="h-6 w-px bg-white/[0.1]" />
+          {pop1("colour", (
+            <button type="button" aria-label="Colour" onClick={() => setPop(pop === "colour" ? null : "colour")} className="grid size-9 place-items-center">
+              <span className="size-6 rounded-full border-2 border-white/70" style={{ background: color1 }} />
+            </button>
+          ), colours)}
+          {pop1("size", (
+            <button type="button" aria-label="Size" onClick={() => setPop(pop === "size" ? null : "size")} className="grid size-9 place-items-center">
+              <span className="rounded-full bg-neutral-200" style={{ width: Math.max(3, Math.min(22, size / 2)), height: Math.max(3, Math.min(22, size / 2)) }} />
+            </button>
+          ), <div className="flex items-center gap-3">{sizeCtl}{optionsFor}</div>)}
+          <span className="h-6 w-px bg-white/[0.1]" />
+          <IBtn tip="Layers" on={showLayers} onClick={() => setShowLayers((v) => !v)}><Layers /></IBtn>
+          {pop1("file", <IBtn tip="More" on={pop === "file"} onClick={() => setPop(pop === "file" ? null : "file")}><Save /></IBtn>, (
+            <div className="w-52" onClick={() => setPop(null)}>
+              <MItem label="Save" onClick={() => void save()} />
+              <MItem label="Import image…" onClick={importImage} />
+              <MItem label="New canvas…" onClick={() => setDialog("new")} />
+              <MItem label="Fit to screen" onClick={fitZoom} />
+              <MItem label="Resize image…" onClick={() => setDialog("resize")} />
+              <MItem label="Copy image" onClick={() => void copyImage()} />
+            </div>
+          ), "end")}
+        </div>
+        {dialog === "new" && <NewCanvasDialog onClose={() => setDialog(null)} onCreate={(p) => (setDialog(null), onOpen(p))} />}
+        {dialog === "resize" && <ResizeDialog w={doc.w} h={doc.h} onClose={() => setDialog(null)} onApply={(w, h) => (setDialog(null), edit((d) => d.scaleImage(w, h)))} />}
+        {importDialog}
+      </div>
+    );
+  }
 
   return (
     <div className="oc-sketch relative flex h-full flex-col">
       {titleStrip}
       {layout === "paint" ? (
         <>
-          {/* Paint (Windows 11): one toolbar row of labelled groups */}
-          {/* Paint: tabs above one floating glass bar; each tab has its own tools */}
-          <div className="oc-docs-chrome oc-docs-enter shrink-0 px-3 pb-2">
-            <div className="relative mb-1.5 flex w-fit gap-0.5">
-              <SlidePill className="rounded-md !bg-[color:var(--oc-sketch)]/15" />
-              {(["draw", "shapes", "image", "edit"] as const).map((b) => (
-                <button key={b} type="button" aria-selected={barTab === b} onClick={() => setBarTab(b)} className={`relative z-[1] h-7 cursor-pointer rounded-md px-3 text-[12.5px] font-medium capitalize transition-colors ${barTab === b ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
-                  {b}
-                </button>
-              ))}
-            </div>
-            <div key={barTab} className="oc-sk-glass oc-fade-in flex min-h-[52px] flex-wrap items-center gap-2 rounded-2xl px-2 py-1.5">
-              {barTab === "draw" && (
-                <>
-                  <div className="relative flex gap-0.5"><SlidePill className="rounded-md" />{drawTools}</div>
-                  <Sep />
-                  {sizeCtl}
-                  {optionsFor && <><Sep />{optionsFor}</>}
-                  <Sep />
-                  {colours}
-                </>
-              )}
-              {barTab === "shapes" && (
-                <>
-                  <div className="relative flex gap-0.5"><SlidePill className="rounded-md" />{shapeTools}</div>
-                  <Sep />
-                  {shapeStyle}
-                  <Sep />
-                  {sizeCtl}
-                  <Sep />
-                  {colours}
-                </>
-              )}
-              {barTab === "image" && imageTools}
-              {barTab === "edit" && (
-                <>
-                  <IBtn big tip="Undo (Ctrl+Z)" disabled={!doc.canUndo} onClick={() => (commitFloating(), doc.undo(), changed())}><Undo2 /></IBtn>
-                  <IBtn big tip="Redo (Ctrl+Y)" disabled={!doc.canRedo} onClick={() => (doc.redo(), changed())}><Redo2 /></IBtn>
-                  <Sep />
-                  {clipboard}
-                  <IBtn big tip="Select all (Ctrl+A)" onClick={() => (setTool("select"), setSelection({ x: 0, y: 0, w: doc.w, h: doc.h }))}><MousePointer2 /></IBtn>
-                  <IBtn big tip="Delete selection (Del)" disabled={!selection && !floating} onClick={deleteSel}><Trash2 /></IBtn>
-                </>
-              )}
-            </div>
-          </div>
+          {/* Paint-style ribbon: tabs, then the tab's labelled groups */}
+          {ribbon}
           <div className="flex min-h-0 flex-1">
             {canvasArea}
             {showLayers && <aside className="oc-sketch-panel w-60 shrink-0 overflow-y-auto">{layersPanel}</aside>}
@@ -1090,44 +1447,40 @@ export function SketchEditor({ path, onOpen, onSavedAs, onHome, onClose }: { pat
       )}
       {statusBar}
       {dialog === "new" && <NewCanvasDialog onClose={() => setDialog(null)} onCreate={(p) => (setDialog(null), onOpen(p))} />}
-      {dialog === "resize" && <ResizeDialog w={doc.w} h={doc.h} onClose={() => setDialog(null)} onApply={(w, h) => (setDialog(null), edit((d) => d.scaleImage(w, h)))} />}
+      {dialog === "resize" && <ResizeDialog w={doc.w} h={doc.h} onClose={() => setDialog(null)} onApply={(w, h) => (setDialog(null), edit((d) => d.scaleImage(w, h), "Resize"))} />}
+      {importDialog}
     </div>
   );
 }
 
 /* ------------------------------------------------------------ pieces */
-function IBtn({ tip, on, big, disabled, onClick, children }: { tip: string; on?: boolean; big?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+function IBtn({ tip, on, disabled, onClick, children }: { tip: string; on?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
       data-tip={tip}
       disabled={disabled}
-      aria-pressed={on}
       onClick={onClick}
-      className={`oc-press relative z-[1] grid ${big ? "size-9 [&_svg]:!size-[19px]" : "size-8"} shrink-0 cursor-pointer place-items-center rounded-md transition-colors duration-150 disabled:cursor-default disabled:opacity-30 [&_svg]:size-[17px] ${on ? "bg-[color:var(--oc-sketch)]/20 text-[color:var(--oc-sketch-light)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--oc-sketch)_45%,transparent)]" : "text-neutral-300 hover:bg-white/[0.07] hover:text-neutral-100"}`}
+      className={`oc-press grid size-8 shrink-0 cursor-pointer place-items-center rounded-md transition-colors duration-150 disabled:cursor-default disabled:opacity-30 [&_svg]:size-[17px] ${on ? "bg-[color:var(--oc-sketch)]/20 text-[color:var(--oc-sketch-light)]" : "text-neutral-300 hover:bg-white/[0.07]"}`}
     >
       {children}
     </button>
   );
 }
-const Sep = () => <span className="mx-1 h-7 w-px shrink-0 bg-white/[0.09]" />;
-
-/** Slider: track fills up to the thumb; a value bubble rides the thumb while dragging. */
-function Range({ value, min, max, onChange, suffix = "", className = "" }: { value: number; min: number; max: number; onChange: (v: number) => void; suffix?: string; className?: string }) {
-  const p = ((value - min) / (max - min)) * 100;
+function Group({ label, grow, children }: { label: string; grow?: boolean; children: ReactNode }) {
   return (
-    <span className={`oc-range relative inline-flex items-center ${className}`} style={{ "--p": `${p}%`, "--f": p / 100 } as React.CSSProperties}>
-      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} onPointerUp={(e) => e.currentTarget.blur()} className="w-full" />
-      <span className="oc-range-bubble">{value}{suffix}</span>
-    </span>
+    <div className={`flex ${grow ? "min-w-fit flex-1" : "shrink-0"} flex-col justify-between rounded-lg bg-[var(--oc-raised)] px-2 pt-1.5`}>
+      <div className="flex flex-1 items-center gap-1">{children}</div>
+      <span className="py-0.5 text-center text-[10.5px] text-neutral-500">{label}</span>
+    </div>
   );
 }
-function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, ReactNode, string?][] }) {
+function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
-    <div className="relative flex rounded-md border border-white/[0.08] p-0.5">
+    <div className="flex rounded-md border border-white/[0.08] p-0.5">
       <SlidePill className="rounded !bg-[color:var(--oc-sketch)]/20" />
-      {options.map(([v, l, tip]) => (
-        <button key={v} type="button" data-tip={tip} aria-pressed={value === v} onClick={() => onChange(v)} className={`relative z-[1] grid h-7 cursor-pointer place-items-center rounded px-2 text-[11.5px] ${value === v ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
+      {options.map(([v, l]) => (
+        <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)} className={`h-6 cursor-pointer rounded px-2 text-[11.5px] ${value === v ? "text-[color:var(--oc-sketch-light)]" : "text-neutral-400 hover:text-neutral-200"}`}>
           {l}
         </button>
       ))}
@@ -1144,10 +1497,9 @@ function MItem({ label, hint, onClick }: { label: string; hint?: string; onClick
 }
 
 function LayersPanel({
-  doc, onSelect, onToggle, onOpacity, onBlend, onRename, onAction,
+  doc, onSelect, onToggle, onOpacity, onRename, onAction,
 }: {
   doc: SketchDoc;
-  onBlend: (b: Blend) => void;
   onSelect: (i: number) => void;
   onToggle: (i: number) => void;
   onOpacity: (o: number) => void;
@@ -1194,104 +1546,14 @@ function LayersPanel({
       </div>
       <label className="mt-3 flex items-center gap-2 text-[12px] text-neutral-400">
         <Droplet className="size-3.5" /> Opacity
-        <Range min={0} max={100} value={Math.round(doc.layer.opacity * 100)} onChange={(v) => onOpacity(v / 100)} suffix="%" className="flex-1" />
-        <span className="w-8 text-right tabular-nums">{Math.round(doc.layer.opacity * 100)}%</span>
-      </label>
-      <label className="mt-2 flex items-center gap-2 text-[12px] text-neutral-400">
-        Blend
-        <select value={doc.layer.blend} onChange={(e) => onBlend(e.target.value as Blend)} className="h-7 flex-1 cursor-pointer rounded-md border border-white/[0.1] bg-white/[0.04] px-1.5 text-[12px] text-neutral-100 outline-none">
-          {BLENDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        <span className="flex-1" />
+        <Slider value={Math.round(doc.layer.opacity * 100)} min={0} max={100} unit="%" width={110} onChange={(v) => onOpacity(v / 100)} />
       </label>
       <div className="mt-2 flex gap-1">
         <IBtn tip="Move layer up" onClick={() => onAction("up")}><ArrowUp /></IBtn>
         <IBtn tip="Move layer down" onClick={() => onAction("down")}><ArrowDown /></IBtn>
         <IBtn tip="Merge down" disabled={doc.active === 0} onClick={() => onAction("merge")}><Merge /></IBtn>
       </div>
-    </div>
-  );
-}
-
-/** A live text box, painted with the same code that bakes it. */
-function TextPreview({ t, zoom, live, onPick }: { t: TextObj; zoom: number; live: boolean; onPick: () => void }) {
-  const { w, h } = textBox(t);
-  const m = Math.ceil(t.size * 0.4);
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const r = Math.min(4, Math.max(1, zoom * devicePixelRatio));
-    c.width = Math.ceil((w + m * 2) * r);
-    c.height = Math.ceil((h + m * 2) * r);
-    const g = ctx2d(c);
-    g.scale(r, r);
-    g.translate(m - t.x, m - t.y);
-    drawText(g, t);
-  });
-  return (
-    <canvas
-      ref={ref}
-      onPointerDown={(e) => (e.stopPropagation(), e.preventDefault(), onPick())}
-      className={`absolute ${live ? "cursor-text rounded-sm outline-dashed outline-1 outline-transparent hover:outline-[color:var(--oc-sketch)]" : "pointer-events-none"}`}
-      style={{ left: (t.x - m) * zoom, top: (t.y - m) * zoom, width: (w + m * 2) * zoom, height: (h + m * 2) * zoom, padding: 0 }}
-    />
-  );
-}
-
-/** The selected text box: type in place, drag the grip to move, the corner to scale. */
-function TextEditor({ t, zoom, toCanvas, onChange, onDone }: { t: TextObj; zoom: number; toCanvas: (e: { clientX: number; clientY: number }) => Pt; onChange: (p: Partial<TextObj>) => void; onDone: () => void }) {
-  const { w, h } = textBox(t);
-  const pad = padOf(t);
-  const dragRef = useRef<{ mode: "move" | "scale"; start: Pt; o: TextObj; w: number } | null>(null);
-  const down = (mode: "move" | "scale") => (e: React.PointerEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { mode, start: toCanvas(e), o: t, w };
-  };
-  const move = (e: React.PointerEvent) => {
-    const s = dragRef.current;
-    if (!s) return;
-    const p = toCanvas(e);
-    if (s.mode === "move") onChange({ x: Math.round(s.o.x + p.x - s.start.x), y: Math.round(s.o.y + p.y - s.start.y) });
-    else onChange({ size: Math.max(6, Math.min(400, Math.round((s.o.size * (s.w + p.x - s.start.x)) / s.w))) });
-  };
-  const up = () => (dragRef.current = null);
-  return (
-    <div className="absolute" style={{ left: t.x * zoom, top: t.y * zoom }} onPointerDown={(e) => e.stopPropagation()}>
-      <textarea
-        ref={(el) => { if (el && !el.dataset.focused) (el.dataset.focused = "1"), el.focus(); }}
-        value={t.value}
-        wrap="off"
-        spellCheck={false}
-        onChange={(e) => onChange({ value: e.target.value })}
-        onKeyDown={(e) => (e.key === "Escape" || (e.key === "Enter" && e.ctrlKey)) && onDone()}
-        placeholder="Type…"
-        className="block resize-none overflow-hidden rounded-[3px] border-0 outline-dashed outline-1 outline-offset-2 outline-[color:var(--oc-sketch)] placeholder:text-neutral-400"
-        style={{
-          fontFamily: t.font,
-          fontSize: t.size * zoom,
-          fontWeight: t.bold ? 700 : 400,
-          fontStyle: t.italic ? "italic" : "normal",
-          width: w * zoom + 4,
-          height: h * zoom,
-          padding: `${pad * zoom}px`,
-          lineHeight: 1.25,
-          color: t.color,
-          textAlign: t.align,
-          textDecoration: t.underline ? "underline" : "none",
-          background: t.bg ?? "transparent",
-          borderRadius: t.bg ? t.size * 0.2 * zoom : 3,
-          WebkitTextStroke: t.outline ? `${Math.max(1, t.size / 8) * zoom}px ${t.outline}` : undefined,
-          paintOrder: "stroke fill",
-          textShadow: t.shadow ? `0 ${t.size * 0.06 * zoom}px ${t.size * 0.18 * zoom}px rgba(0,0,0,0.45)` : undefined,
-          caretColor: t.color,
-        }}
-      />
-      <span onPointerDown={down("move")} onPointerMove={move} onPointerUp={up} data-tip="Drag to move" className="oc-sk-handle absolute -left-7 top-0 grid size-5 cursor-move place-items-center rounded-md text-neutral-800 [&_svg]:size-3">
-        <Move />
-      </span>
-      <span onPointerDown={down("scale")} onPointerMove={move} onPointerUp={up} data-tip="Drag to resize" className="oc-sk-handle absolute -bottom-1.5 -right-1.5 size-3 cursor-nwse-resize rounded-[3px]" />
     </div>
   );
 }
@@ -1337,3 +1599,60 @@ function ResizeDialog({ w, h, onApply, onClose }: { w: number; h: number; onAppl
   );
 }
 
+
+/** Paint-style "Edit colours": spectrum picker plus a hex box; OK adds it to custom colours. */
+function EditColours({ start, onPick, onClose }: { start: string; onPick: (c: string) => void; onClose: () => void }) {
+  const [c, setC] = useState(start);
+  const [hex, setHex] = useState(start);
+  const ok = /^#[0-9a-f]{6}$/i.test(hex);
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onMouseDown={onClose} />
+      <div className="oc-docs-pop absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-white/[0.08] bg-[var(--oc-surface)] p-3 shadow-xl">
+        <input type="color" value={c} onChange={(e) => (setC(e.target.value), setHex(e.target.value))} className="h-24 w-full cursor-pointer rounded-md border-0 bg-transparent p-0" />
+        <label className="mt-2 flex items-center gap-2 text-[12px] text-neutral-400">Hex
+          <input value={hex} onChange={(e) => (setHex(e.target.value), /^#[0-9a-f]{6}$/i.test(e.target.value) && setC(e.target.value))} className="h-7 min-w-0 flex-1 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 font-mono text-[12px] text-neutral-100 outline-none" />
+        </label>
+        <div className="mt-3 flex justify-end gap-2">
+          <ModalButton onClick={onClose}>Cancel</ModalButton>
+          <ModalButton variant="primary" onClick={() => ok && onPick(hex.toLowerCase())}>OK</ModalButton>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Glass slider: filled track, click the value to type one, mouse wheel nudges (Shift = 10). */
+function Slider({ value, min, max, unit = "", width, onChange }: { value: number; min: number; max: number; unit?: string; width: number; onChange: (v: number) => void }) {
+  const [typing, setTyping] = useState<string | null>(null);
+  const clamp = (v: number) => Math.min(max, Math.max(min, Math.round(v)));
+  const done = () => (typing !== null && typing.trim() && !Number.isNaN(Number(typing)) && onChange(clamp(Number(typing))), setTyping(null));
+  return (
+    <span className="flex items-center gap-1.5">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onWheel={(e) => onChange(clamp(value + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 10 : 1)))}
+        className="oc-range"
+        style={{ width, ["--p" as string]: `${((value - min) / (max - min)) * 100}%` }}
+      />
+      {typing !== null ? (
+        <input
+          autoFocus
+          value={typing}
+          onChange={(e) => setTyping(e.target.value.replace(/[^0-9.]/g, ""))}
+          onBlur={done}
+          onKeyDown={(e) => (e.key === "Enter" ? done() : e.key === "Escape" && setTyping(null))}
+          className="h-5 w-10 rounded border border-[color:var(--oc-sketch)] bg-white/[0.06] px-1 text-right text-[11.5px] tabular-nums text-neutral-100 outline-none"
+        />
+      ) : (
+        <button type="button" data-tip="Click to type" onClick={(e) => (e.preventDefault(), setTyping(String(value)))} className="h-5 w-10 cursor-text rounded text-right text-[11.5px] tabular-nums text-neutral-300 hover:bg-white/[0.07]">
+          {value}{unit}
+        </button>
+      )}
+    </span>
+  );
+}

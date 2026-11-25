@@ -4,6 +4,7 @@ import { readFileBytes } from "../lib/fileIO";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "../lib/dialog";
 import { api } from "../data/api";
+import { isAndroid } from "../mobile/formFactor";
 import type { DocFile } from "../docs/store";
 
 /** Oceanic Sketch: real PNG/JPG files in a folder (Documents\Oceanic Sketch by default). */
@@ -23,14 +24,14 @@ export const useSketch = () =>
   );
 
 /* Like Paint: a new canvas lives in memory until its first save picks a file. */
-type Untitled = { name: string; w: number; h: number; dirty?: boolean };
+type Untitled = { name: string; w: number; h: number; dirty?: boolean; img?: HTMLCanvasElement };
 const untitled = new Map<string, Untitled>();
 let untitledN = 0;
 export const isUnsavedSketch = (path: string) => path.startsWith("new:");
 export const untitledSketch = (path: string) => untitled.get(path);
-export function newSketch(w: number, h: number) {
+export function newSketch(w: number, h: number, img?: HTMLCanvasElement) {
   const id = `new:${Date.now().toString(36)}`;
-  untitled.set(id, { name: `Untitled${++untitledN === 1 ? "" : ` ${untitledN}`}`, w, h });
+  untitled.set(id, { name: `Untitled${++untitledN === 1 ? "" : ` ${untitledN}`}`, w, h, img });
   return id;
 }
 export const markSketchDirty = (path: string) => {
@@ -97,7 +98,28 @@ export async function pickImage(): Promise<string | null> {
   return typeof f === "string" ? f : null;
 }
 
+/** Image import via the web file picker (works on Android too): the picked image as a canvas. */
+export const pickImageCanvas = () =>
+  new Promise<HTMLCanvasElement | null>((done) => {
+    const input = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return done(null);
+      const bmp = await createImageBitmap(f).catch(() => null);
+      if (!bmp) return done(null);
+      const c = Object.assign(document.createElement("canvas"), { width: bmp.width, height: bmp.height });
+      c.getContext("2d")!.drawImage(bmp, 0, 0);
+      done(c);
+    };
+    input.click();
+  });
+
 export async function pickSketchSavePath(name: string): Promise<string | null> {
+  // Android: no usable Save dialog; ask a name and save into the Sketch folder.
+  if (isAndroid) {
+    const n = prompt("Name this sketch", name)?.trim().replace(/[\\/:*?"<>|]/g, "");
+    return n && state.folder ? `${state.folder}/${n}.png` : null;
+  }
   const p = await save({
     title: "Save image",
     defaultPath: state.folder ? `${state.folder}\\${name}.png` : `${name}.png`,

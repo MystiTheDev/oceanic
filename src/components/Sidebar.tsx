@@ -18,6 +18,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
+import { motion } from "motion/react";
 import { buildPageTree, subtreeIds, type PageMeta, type PageNode } from "../data/workspace";
 import { SearchModal } from "./SearchModal";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
@@ -295,6 +296,15 @@ export function Sidebar({
         if (rest.length) onImport(rest);
       }}
       data-tour="sidebar"
+      onClickCapture={(e) => {
+        // Replay the clicked item's icon animation (CSS: .oc-clicked).
+        const el = (e.target as HTMLElement).closest<HTMLElement>("button, .oc-row");
+        if (!el) return;
+        el.classList.remove("oc-clicked");
+        void el.offsetWidth;
+        el.classList.add("oc-clicked");
+        window.setTimeout(() => el.classList.remove("oc-clicked"), 700);
+      }}
       className="oc-sidebar relative z-10 my-2 ml-2 flex h-[calc(100%-16px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.1] bg-[var(--oc-sidebar)] backdrop-blur"
     >
       {fileOver && (
@@ -379,8 +389,8 @@ export function Sidebar({
         </Collapse>
       </div>
 
-      {/* ---- Bottom: Trash + Import, like Notion ---- */}
-      <div className="flex flex-col gap-px px-2 pt-1">
+      {/* ---- Bottom: Trash + Import, like Notion; divider below, then More apps ---- */}
+      <div className="mx-2 mt-1 mb-1 flex flex-col gap-px border-b border-white/[0.06] pb-1.5">
         <NavRow
           icon={<TrashIcon className="size-4 oc-ic-trash" />}
           label="Trash"
@@ -390,11 +400,12 @@ export function Sidebar({
             setTrashAnchor((a) => (a ? null : el));
           }}
         >
-          {trashedPages.length > 0 && <span className="oc-keep oc-badge text-[11px] text-neutral-500">{trashedPages.length}</span>}
+          {trashedPages.length > 0 && <span className="oc-keep oc-badge rounded-full bg-white/[0.08] px-1.5 text-[11px] leading-[18px] tabular-nums text-neutral-400">{trashedPages.length}</span>}
         </NavRow>
         <NavRow
           icon={<ImportIcon className="size-4 oc-ic-import" />}
-          label="Import"
+          label={fileOver ? "Drop to import" : "Import"}
+          glow={fileOver}
           title="Markdown, Word, text, HTML or a Notion export (.zip). You can also drop files on the sidebar."
           onClick={() => onImport()}
         />
@@ -440,8 +451,8 @@ export function Sidebar({
 function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   return (
     <div
-      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        open ? "oc-col-open grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
       }`}
     >
       <div className="min-h-0 overflow-hidden">{children}</div>
@@ -537,7 +548,17 @@ type PageTreeRowProps = {
   onActivateKey: (key: string) => void;
 };
 
+/** Pages seen since launch; a row for an unseen page pops in (after the first second, so startup does not animate). */
+const seenPages = new Set<string>();
+let sidebarBooted = false;
+if (typeof window !== "undefined") window.setTimeout(() => (sidebarBooted = true), 1500);
+
 function PageTreeRow(props: PageTreeRowProps) {
+  const [isNew] = useState(() => {
+    const n = sidebarBooted && !seenPages.has(props.node.page.id);
+    seenPages.add(props.node.page.id);
+    return n;
+  });
   const {
     node,
     expanded,
@@ -594,7 +615,7 @@ function PageTreeRow(props: PageTreeRowProps) {
         }}
         onDragEnd={onDragEndRow}
         onContextMenu={(e) => !renaming && onRowContextMenu(e, page, expandKey)}
-        className={`oc-row group relative flex h-7 pointer-coarse:h-[34px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[14px] transition-colors duration-100 ${
+        className={`oc-row ${isNew ? "oc-row-new" : ""} group relative isolate flex h-7 pointer-coarse:h-[34px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[14px] transition-colors duration-100 ${
           dropZone === "inside"
             ? "bg-sky-500/15 text-neutral-100 ring-1 ring-inset ring-sky-500/60"
             : active
@@ -604,6 +625,7 @@ function PageTreeRow(props: PageTreeRowProps) {
                 : "text-neutral-300 hover:bg-white/5"
         } ${dragId === page.id ? "opacity-40 transition-opacity" : ""}`}
       >
+        {active && <motion.span layoutId="oc-nav-hl" className="oc-nav-hl pointer-events-none absolute inset-0 -z-10 rounded-md" transition={{ type: "spring", stiffness: 520, damping: 40 }} />}
         {/* Notion's blue insertion line for "drop above / below" */}
         {(dropZone === "before" || dropZone === "after") && (
           <span
@@ -615,7 +637,7 @@ function PageTreeRow(props: PageTreeRowProps) {
         {/* Icon slot: on hover the page icon swaps to the expand chevron */}
         <span className="relative grid size-5 shrink-0 place-items-center">
           <span
-            className={`leading-none transition-opacity duration-150 ${
+            className={`oc-page-ico inline-block leading-none transition-opacity duration-150 ${
               hasChildren ? "group-hover:opacity-0" : ""
             }`}
           >
@@ -771,8 +793,8 @@ function HoverAction({
 }
 
 /** Notion-style nav row: mono icon, 28px (34px on touch), gray hover. */
-function NavRow({ icon, label, title, active, open, onClick, children }: {
-  icon: ReactNode; label: string; title?: string; active?: boolean; open?: boolean;
+function NavRow({ icon, label, title, active, open, glow, onClick, children }: {
+  icon: ReactNode; label: string; title?: string; active?: boolean; open?: boolean; glow?: boolean;
   onClick: (e: MouseEvent) => void; children?: ReactNode;
 }) {
   return (
@@ -780,10 +802,11 @@ function NavRow({ icon, label, title, active, open, onClick, children }: {
       type="button"
       title={title}
       onClick={onClick}
-      className={`group relative flex h-7 pointer-coarse:h-[34px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 ${
-        active ? "oc-nav-active font-medium text-neutral-100" : open ? "bg-white/[0.07] text-neutral-200" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
+      className={`group relative isolate flex h-7 pointer-coarse:h-[34px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[14px] transition-colors duration-100 ${
+        glow ? "oc-drop-glow text-neutral-100" : active ? "oc-nav-active font-medium text-neutral-100" : open ? "bg-white/[0.07] text-neutral-200" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-300"
       }`}
     >
+      {active && <motion.span layoutId="oc-nav-hl" className="oc-nav-hl pointer-events-none absolute inset-0 -z-10 rounded-md" transition={{ type: "spring", stiffness: 520, damping: 40 }} />}
       <span className="grid size-5 shrink-0 place-items-center text-neutral-500">{icon}</span>
       <span className="flex-1 truncate text-left">{label}</span>
       {children}

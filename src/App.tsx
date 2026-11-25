@@ -100,7 +100,7 @@ import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell } from "./mobile/MobileShell";
-import { isAndroid, isTablet, usePhoneUI } from "./mobile/formFactor";
+import { isAndroid, isTablet, useLandscape, usePhoneUI } from "./mobile/formFactor";
 import { SyncTrustBanner } from "./components/SyncBackground";
 import { MobilePropChips } from "./mobile/MobileProps";
 import { attachBlocks, pickFiles, titleFor } from "./mobile/attach";
@@ -353,7 +353,7 @@ export default function App() {
       setSettings(next);
       loadConfirmDeleteSettings(stored);
       applyAccent(next.accent);
-      setAskName(!next.userName);
+      setAskName(!next.userName && localStorage.getItem("oc.setupSkipped") !== "1");
       setWorkspaces(wsList);
       setRecent(JSON.parse(stored.recentPages ?? "[]"));
       setRecentMaps(JSON.parse(stored.recentMindmaps ?? "[]"));
@@ -1508,6 +1508,9 @@ export default function App() {
   // Tablets swap phone UI (portrait) and desktop UI (landscape) on rotation.
   // The open page lives in App state; keep its editor scroll position across the swap.
   const phoneUI = usePhoneUI();
+  const landscape = useLandscape();
+  // Android Sketch: null = Notes, "" = Sketch Home, else the open image's path.
+  const [mobileSketch, setMobileSketch] = useState<string | null>(null);
   const editorScroll = useRef(0);
   const editorScroller = () => {
     let el = appRoot.current?.querySelector(".bn-editor")?.parentElement ?? null;
@@ -1525,12 +1528,22 @@ export default function App() {
     }, 300);
     return () => clearTimeout(t);
   }, [phoneUI]); // eslint-disable-line react-hooks/exhaustive-deps
-  const switchApp = (app: AppId) => {
+  const loaderFrom = useRef<DOMRect | null>(null);
+  const switchApp = (app: AppId, from?: DOMRect) => {
+    loaderFrom.current = from ?? null;
     const doc = activePageId?.startsWith("doc:") ? activePageId.slice(4) : null;
     if (doc && isDirtyUntitled(doc)) return setSavePrompt({ path: doc, proceed: () => go(app) });
     go(app);
   };
   const go = (app: AppId) => {
+    // Splash on every switch. The app mounts after the icon's fly-in so its first render doesn't stall it.
+    if (settings.appLoader) {
+      setAppLoading(app);
+      return void window.setTimeout(() => openApp(app), 700);
+    }
+    openApp(app);
+  };
+  const openApp = (app: AppId) => {
     setView("document");
     setActiveTabId(
       app === "notes" ? (lastNotesTab.current ?? HOME_TAB)
@@ -1538,7 +1551,6 @@ export default function App() {
       : app === "sketch" ? (lastSketchTab.current ?? SKETCH_HOME_TAB)
       : (lastMindmapTab.current ?? MM_HOME_TAB),
     );
-    if (settings.appLoader) setAppLoading(app);
   };
   const footerFor = (app: AppId) => (
     <>
@@ -1584,8 +1596,35 @@ export default function App() {
         const el = e.target as HTMLElement;
         if (el.querySelector(".bn-editor") && el.scrollHeight > el.clientHeight) editorScroll.current = el.scrollTop / (el.scrollHeight - el.clientHeight);
       } : undefined}>
-      {phoneUI ? (
+      {phoneUI && mobileSketch !== null ? (
+        <>
+        {/* Phones: Sketch is landscape-only; the hint covers it so nothing is lost on rotate. */}
+        {!isTablet && !landscape && (
+          <div className="oc-rotate-hint">
+            <p className="text-[17px] font-semibold">Rotate your phone</p>
+            <p className="text-[14px] opacity-70">Oceanic Sketch works only in landscape.</p>
+            <button type="button" className="ocm-liquid oc-sketch-back mx-auto" style={{ position: "static" }} onClick={() => setMobileSketch(null)}>Back to Notes</button>
+          </div>
+        )}
+        {mobileSketch ? (
+          <SketchEditor
+            key={mobileSketch}
+            path={mobileSketch}
+            onOpen={setMobileSketch}
+            onSavedAs={setMobileSketch}
+            onHome={() => setMobileSketch("")}
+            onClose={() => setMobileSketch("")}
+          />
+        ) : (
+          <div className="relative h-full overflow-y-auto">
+            <button type="button" className="ocm-liquid oc-sketch-back" onClick={() => setMobileSketch(null)}>‹ Notes</button>
+            <SketchHome onOpen={setMobileSketch} openNow={[]} onFocusTab={() => {}} onCloseTab={() => {}} />
+          </div>
+        )}
+        </>
+      ) : phoneUI ? (
         <MobileShell
+          onSketch={() => setMobileSketch("")}
           userName={settings.userName}
           avatar={settings.avatar}
           theme={resolvedTheme === "light" ? "light" : "dark"}
@@ -2193,7 +2232,7 @@ export default function App() {
           </div>
         </Modal>
       )}
-      {appLoading && <AppLoader app={appLoading} onLeave={() => {
+      {appLoading && <AppLoader app={appLoading} from={loaderFrom.current} onLeave={() => {
         setHomeKey((k) => k + 1);
         // Ease the app in under the fading splash instead of a hard cut.
         appRoot.current?.querySelectorAll<HTMLElement>(":scope > :not([data-app-loader])").forEach((el) =>
@@ -2252,6 +2291,7 @@ export default function App() {
             api.updateWorkspace(ws.id, name, icon, ws.color).catch(report("Save workspace"));
           }}
           onDone={() => (setAskName(false), setTimeout(startTour, 300))}
+          onSkip={() => (localStorage.setItem("oc.setupSkipped", "1"), setAskName(false))}
         />
       )}
       {!isAndroid && <Tour />}

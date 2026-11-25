@@ -565,35 +565,35 @@
 .ocm-export-list .ocm-item span { flex: none; }
 .ocm-share-go { justify-content: center; margin-top: 6px; font-weight: 600; color: var(--ocm-accent); background: rgba(var(--oc-ink), 0.05); }
 
-/* ---------- Open note: phone layout (Android polish) */
-.ocm-root { touch-action: pan-x pan-y; }
-.ocm-root * { -webkit-tap-highlight-color: transparent; }
-.ocm-editor .oc-banner { height: 140px; min-height: 0; max-height: none; }
-.ocm-editor .oc-banner-zone > div:first-child:not(.oc-banner) { padding: 8px 12px 0; }
-.ocm-editor .oc-page-font > .oc-banner-zone > div:last-child { padding-left: 12px; padding-right: 12px; padding-bottom: 96px; }
-.ocm-editor .oc-page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; }
-.ocm-editor .oc-page-head > button { flex: none; width: 40px; height: 40px; margin: 0; font-size: 30px; border-radius: 10px; }
-.ocm-editor .oc-page-head > input { flex: 1; min-width: 0; margin: 0; font-size: 26px; line-height: 1.2; }
-.ocm-editor .bn-editor { padding-inline: 0; font-size: 16px; line-height: 1.5; }
-.ocm-editor .bn-editor h1 { font-size: 22px; }
-.ocm-editor .bn-editor h2 { font-size: 19px; }
-.ocm-editor .bn-editor h3 { font-size: 17px; }
-.ocm-editor .bn-editor table, .ocm-editor .bn-editor pre { display: block; max-width: 100%; overflow-x: auto; }
-.ocm-editor .bn-editor :is(img, video, iframe) { max-width: 100%; height: auto; }
-.ocm-editor .bn-editor input[type="checkbox"] { width: 20px; height: 20px; }
-.ocm-editor .bn-side-menu button { min-width: 32px; min-height: 32px; }
+/* ---------- Open note: tablet layout (Android polish; phones keep the defaults) */
+.tablet .ocm-root { touch-action: pan-x pan-y; }
+.tablet .ocm-root * { -webkit-tap-highlight-color: transparent; }
+.tablet .ocm-editor .oc-banner { height: 140px; min-height: 0; max-height: none; }
+.tablet .ocm-editor .oc-banner-zone > div:first-child:not(.oc-banner) { padding: 8px 12px 0; }
+.tablet .ocm-editor .oc-page-font > .oc-banner-zone > div:last-child { max-width: 760px; margin-inline: auto; padding-left: 32px; padding-right: 32px; padding-bottom: 96px; }
+.tablet .ocm-editor .oc-page-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; }
+.tablet .ocm-editor .oc-page-head > button { flex: none; width: 40px; height: 40px; margin: 0; font-size: 30px; border-radius: 10px; }
+.tablet .ocm-editor .oc-page-head > input { flex: 1; min-width: 0; margin: 0; font-size: 26px; line-height: 1.2; }
+.tablet .ocm-editor .bn-editor { padding-inline: 0; font-size: 16px; line-height: 1.5; }
+.tablet .ocm-editor .bn-editor h1 { font-size: 22px; }
+.tablet .ocm-editor .bn-editor h2 { font-size: 19px; }
+.tablet .ocm-editor .bn-editor h3 { font-size: 17px; }
+.tablet .ocm-editor .bn-editor table, .tablet .ocm-editor .bn-editor pre { display: block; max-width: 100%; overflow-x: auto; }
+.tablet .ocm-editor .bn-editor :is(img, video, iframe) { max-width: 100%; height: auto; }
+.tablet .ocm-editor .bn-editor input[type="checkbox"] { width: 20px; height: 20px; }
+.tablet .ocm-editor .bn-side-menu button { min-width: 32px; min-height: 32px; }
 
 /* Top bar, home cards, lists and settings. */
-.ocm-pagebar { height: 56px; padding: 0 6px; gap: 2px; }
-.ocm-pagebar-title { font-size: 16px; text-align: center; }
-.ocm-note { height: 180px; padding: 14px; border-radius: 18px; }
-.ocm-note-icon { font-size: 24px; margin-bottom: 6px; }
-.ocm-note-preview { font-size: 13px; }
-.ocm-row { gap: 12px; min-height: 56px; padding: 12px 4px; align-items: center; }
-.ocm-row-icon { width: 28px; text-align: center; font-size: 22px; }
-.ocm-row-date { align-self: flex-start; }
-.ocm-item { min-height: 48px; }
-.ocm-editor .bn-block-content[data-content-type="heading"] { padding-top: 8px; }
+.tablet .ocm-pagebar { height: 56px; padding: 0 6px; gap: 2px; }
+.tablet .ocm-pagebar-title { font-size: 16px; text-align: center; }
+.tablet .ocm-note { height: 180px; padding: 14px; border-radius: 18px; }
+.tablet .ocm-note-icon { font-size: 24px; margin-bottom: 6px; }
+.tablet .ocm-note-preview { font-size: 13px; }
+.tablet .ocm-row { gap: 12px; min-height: 56px; padding: 12px 4px; align-items: center; }
+.tablet .ocm-row-icon { width: 28px; text-align: center; font-size: 22px; }
+.tablet .ocm-row-date { align-self: flex-start; }
+.tablet .ocm-item { min-height: 48px; }
+.tablet .ocm-editor .bn-block-content[data-content-type="heading"] { padding-top: 8px; }
 .ocm-prop-n { font-style: normal; margin-left: 2px; padding: 0 6px; border-radius: 999px; font-size: 11px; background: rgba(var(--oc-ink), 0.1); }
 
 /* ---------- Sailboat on the Home banner (dawn to dusk; position follows the clock) */
@@ -791,3 +791,118 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
   .tablet .ocm-sheet { width: min(520px, 90%); border-radius: 22px; padding-bottom: 16px; }
   .tablet .ocm-grab { display: none; }
 }
+
+/* ---------- Tablet: dock pill (icon + label), landscape columns, rotate fade. */
+.ocm-pill-label { display: none; }
+.tablet .ocm-root { font-size: 17px; }
+.tablet .ocm-nav { --h: 64px; }
+.tablet .ocm-pill, .tablet .ocm-plus { border-radius: 20px; }
+.tablet .ocm-pill button { display: flex; gap: 8px; width: auto; padding: 0 20px; font-weight: 600; }
+.tablet .ocm-pill-label { display: inline; position: relative; }
+.tablet .ocm-lens { inset: 8px 0; border-radius: 14px; }
+/* Slim banner: greeting, date and stats on one line. Airier cards. */
+.tablet .ocm-hero { padding: 20px 28px 36px; }
+.tablet .ocm-hero-row { align-items: center; }
+.tablet .ocm-hero-row > div { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 18px; }
+.tablet :is(.ocm-widget, .ocm-create, .ocm-note) { padding: 18px; border-radius: 24px; }
+.tablet .ocm-tiles:not(.ocm-tiles-3) { grid-template-columns: 1fr 1fr; }
+.tablet .ocm-widget-head, .tablet .ocm-create-head { font-size: 15px; margin-bottom: 10px; }
+@media (orientation: landscape) {
+  .tablet .ocm-scroll > * { max-width: 860px; }
+  .tablet .ocm-homeview { grid-auto-flow: dense; }
+  .tablet .ocm-homeview > :is(.ocm-create, .ocm-hs-today) { grid-column: 1; }
+  .tablet .ocm-homeview > :is(.ocm-hs-recent, .ocm-hs-week) { grid-column: 2; }
+  .tablet .ocm-homeview > .ocm-hs-tags { grid-column: 1 / -1; }
+  .tablet .ocm-homeview .ocm-cards { display: grid; grid-template-columns: 1fr 1fr; overflow: visible; }
+  .tablet .ocm-homeview .ocm-cards > :nth-child(n + 5) { display: none; }
+  .tablet .ocm-homeview { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; align-items: start; }
+  .tablet .ocm-homeview > :is(.ocm-hero, .ocm-find) { grid-column: 1 / -1; }
+  .tablet :not(.ocm-calview) > .ocm-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .tablet :not(.ocm-calview) > .ocm-list > .ocm-row { min-height: 120px; padding: 14px; border-radius: 18px; background: var(--oc-raised); }
+  .tablet .ocm-calview { display: grid; grid-template-columns: 1.2fr 1fr; column-gap: 32px; }
+  .tablet .ocm-calview > * { grid-column: 1; }
+  .tablet .ocm-calview > .ocm-cal-head { grid-column: 1 / -1; }
+  .tablet .ocm-calview > :is(.ocm-cal-label, .ocm-list) { grid-column: 2; grid-row: 2; }
+  .tablet .ocm-calview > .ocm-list { grid-row: 3 / span 9; }
+}
+.oc-rotate .ocm-root { animation: oc-rotate 0.25s ease-out; }
+@keyframes oc-rotate { from { opacity: 0; } }
+.ocm-pill button.ocm-pill-me { opacity: 1; }
+/* Tablet Pages + Calendar polish. */
+.tablet .ocm-title h1 { font-size: 32px; }
+.tablet .ocm-row { padding: 14px 12px; border-radius: 16px; }
+.tablet .ocm-cal-grid .ocm-cal-day { height: 58px; font-size: 17px; }
+@media (orientation: landscape) {
+  .tablet :not(.ocm-calview) > .ocm-list > .ocm-row { display: grid; grid-template-columns: auto 1fr; align-content: start; min-height: 160px; padding: 18px; border-radius: 24px; border: 1px solid var(--ocm-line); }
+  .tablet :not(.ocm-calview) > .ocm-list > .ocm-row .ocm-row-icon { font-size: 28px; }
+  .tablet :not(.ocm-calview) > .ocm-list > .ocm-row .ocm-row-preview { -webkit-line-clamp: 3; white-space: normal; }
+  .tablet :not(.ocm-calview) > .ocm-list > .ocm-row .ocm-row-date { grid-column: 1 / -1; align-self: end; }
+  .tablet .ocm-calview > .ocm-list { padding: 8px; border-radius: 24px; background: var(--oc-raised); border: 1px solid var(--ocm-line); align-self: start; }
+}
+.tablet .ocm-group { grid-column: 1 / -1; padding: 14px 4px 2px; }
+.tablet .ocm-cal-grid { gap: 0; }
+.tablet .ocm-cal-grid .ocm-cal-day { height: 72px; border-radius: 0; border-top: 1px solid var(--ocm-line); justify-content: flex-start; padding-top: 8px; }
+.tablet .ocm-cal-grid .ocm-cal-day.sel { border-radius: 14px; }
+.ocm-cal-task { max-width: 92%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+@media (orientation: landscape) {
+  .tablet :not(.ocm-calview) > .ocm-list { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+}
+.ocm-cal-day.sel .ocm-cal-task { color: inherit; opacity: 0.7; }
+/* Tablet open note: bigger top bar, centred toolbar; wider centred sheets. */
+.tablet .ocm-pagebar { height: 64px; padding: 0 12px; }
+.tablet .ocm-pagebar .ocm-icon { width: 52px; height: 52px; }
+.tablet .ocm-pagebar-title { font-size: 18px; }
+.tablet .ocme-bar { height: 64px; justify-content: center; gap: 6px; }
+.tablet .ocme-bar button { min-width: 52px; height: 48px; border-radius: 14px; }
+.tablet .ocm-sheet { width: min(640px, 90%); padding: 12px 20px 20px; }
+.tablet .ocm-sheet .ocm-item { min-height: 56px; font-size: 17px; }
+
+/* Oceanic Sketch on Android: floating glass tool dock (hides while drawing). */
+.oc-dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  z-index: 20;
+  transition: opacity 0.2s, transform 0.25s;
+}
+.oc-dock.hide { opacity: 0; transform: translate(-50%, 24px); pointer-events: none; }
+.oc-dock button { width: 40px; height: 40px; }
+.oc-dock-pop {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 14px);
+  transform: translateX(-50%);
+  padding: 8px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--oc-surface) 94%, transparent);
+  backdrop-filter: blur(30px) saturate(1.6);
+  border: 1px solid rgba(var(--oc-ink), 0.08);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+.oc-dock-pop.end { left: auto; right: 0; transform: none; }
+.oc-dock-pop button { width: auto; min-width: 40px; }
+.oc-dock-layers {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  right: 12px;
+  width: 240px;
+  max-height: calc(100% - 110px);
+  overflow-y: auto;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--oc-surface) 90%, transparent);
+  backdrop-filter: blur(30px);
+  border: 1px solid rgba(var(--oc-ink), 0.08);
+}
+/* Phones in portrait: Sketch is landscape-only. */
+.oc-rotate-hint { position: fixed; inset: 0; z-index: 60; display: grid; place-content: center; gap: 12px; text-align: center; padding: 24px; background: var(--oc-canvas); color: var(--oc-text-strong); }
+.oc-sketch-back { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 10px; z-index: 30; display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 999px; }
+.ocm-apps-wrap { position: relative; display: flex; }
+.ocm-apps-menu { right: auto; left: 50%; translate: -50% 0; transform-origin: 50% 100%; }
+.ocm-pill .ocm-apps-menu button { display: flex; width: auto; height: auto; opacity: 1; padding: 8px; border-radius: 14px; }

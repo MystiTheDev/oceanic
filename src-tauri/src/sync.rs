@@ -897,33 +897,42 @@ fn hotspot(app: &AppHandle) -> bool {
 fn swap_files(app: &AppHandle, ch: &mut Channel, first: bool) -> Res<()> {
     let dir = crate::assets_dir(app)?;
     let mine = list_files(&dir);
-    let hot = hotspot(app);
-    let hello = json!({ "files": mine, "hot": hot }).to_string();
-    let theirs: Value = if first {
-        ch.send(hello.as_bytes())?;
-        serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())?
-    } else {
-        let t = serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())?;
-        ch.send(hello.as_bytes())?;
-        t
-    };
-    let limit = {
-        let db = app.state::<Db>();
-        let conn = db.0.lock().unwrap();
-        let hot = hot || theirs["hot"].as_bool() == Some(true);
-        (hot && crate::db::read_setting(&conn, "syncHold").as_deref() != Some("0")).then(|| hold_mb(&conn) * 1024 * 1024)
-    };
-    let want: Vec<(String, u64)> = serde_json::from_value::<Vec<(String, u64)>>(theirs["files"].clone())
+    // The hotspot check runs only after the lists are swapped, and only when
+    // there is something to pull, so it can't hold up the other device.
+    let hello = json!({ "files": mine }).to_string();
+    let tag = |step: String| move |e: String| format!("Attachments ({step}, {}): {e}", if first { "started here" } else { "answering" });
+    let theirs: Value = (|| -> Res<Value> {
+        if first {
+            ch.send(hello.as_bytes())?;
+            serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())
+        } else {
+            let t = serde_json::from_slice(&ch.recv()?).map_err(|e| e.to_string())?;
+            ch.send(hello.as_bytes())?;
+            Ok(t)
+        }
+    })()
+    .map_err(tag("file list".into()))?;
+    let mut want: Vec<(String, u64)> = serde_json::from_value::<Vec<(String, u64)>>(theirs["files"].clone())
         .unwrap_or_default()
         .into_iter()
-        .filter(|(n, s)| !mine.iter().any(|(m, _)| m == n) && limit.is_none_or(|l| *s <= l))
+        .filter(|(n, _)| !mine.iter().any(|(m, _)| m == n))
         .collect();
+    if !want.is_empty() && hotspot(app) {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().unwrap();
+        if crate::db::read_setting(&conn, "syncHold").as_deref() != Some("0") {
+            let l = hold_mb(&conn) * 1024 * 1024;
+            want.retain(|(_, s)| *s <= l);
+        }
+    }
+    let pull = |ch: &mut Channel| pull_files(ch, &dir, &want).map_err(tag(format!("receiving {} files", want.len())));
+    let serve = |ch: &mut Channel| serve_files(ch, &dir, &mine).map_err(tag("sending files".into()));
     if first {
-        pull_files(ch, &dir, &want)?;
-        serve_files(ch, &dir, &mine)
+        pull(ch)?;
+        serve(ch)
     } else {
-        serve_files(ch, &dir, &mine)?;
-        pull_files(ch, &dir, &want)
+        serve(ch)?;
+        pull(ch)
     }
 }
 
