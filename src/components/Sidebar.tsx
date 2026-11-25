@@ -25,7 +25,7 @@ import { SearchModal } from "./SearchModal";
 import { PageMenu, type PageMenuAction } from "./PageMenu";
 import { VersionHistory } from "./VersionHistory";
 import { TrashPopover } from "./TrashPopover";
-import { ViewSwitcher, type AppView } from "./ViewSwitcher";
+import { ViewSwitcher, VIEWS, type AppView } from "./ViewSwitcher";
 import type { WorkspaceRecord } from "../data/api";
 import { openContextMenu } from "./ContextMenu";
 import { flashLanded, setDragGhost } from "../lib/dragGhost";
@@ -327,6 +327,7 @@ export function Sidebar({
           type="button"
           onClick={() => setSearchOpen(true)}
           title="Search (Ctrl+K)"
+          data-rail-search
           className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border border-white/[0.1] bg-white/[0.03] px-2.5 text-[13.5px] text-neutral-500 transition-[border-color,box-shadow,background-color] duration-150 hover:border-white/[0.16] hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--oc-brand-light)]/40"
         >
           <SearchIcon className="size-4 shrink-0 oc-ic-search" />
@@ -345,6 +346,21 @@ export function Sidebar({
 
       <div className="oc-rail-hide">
         <ViewSwitcher view={view} onChange={onChangeView} />
+      </div>
+
+      {/* ---- Collapsed rail only: new page, views, favorites ---- */}
+      <div className="oc-rail-only hidden flex-col gap-px px-2 pb-1">
+        <RailBtn title="New page (Ctrl+N)" onClick={() => onCreatePage(null)}><Plus className="size-4" /></RailBtn>
+        <div className="mx-2 my-1 border-t border-white/[0.06]" />
+        {VIEWS.map(({ id, label, icon: Icon }) => (
+          <RailBtn key={id} title={label} active={view === id} onClick={() => onChangeView(id)}><Icon className="size-4" /></RailBtn>
+        ))}
+        {pinned.length > 0 && <div className="mx-2 my-1 border-t border-white/[0.06]" />}
+        {pinned.slice(0, 8).map((p) => (
+          <RailBtn key={p.id} title={p.title || "Untitled"} active={p.id === activePageId} onClick={() => onOpenPage(p.id)}>
+            <span className="oc-keep text-[15px] leading-none">{p.icon || (p.title || "U")[0].toUpperCase()}</span>
+          </RailBtn>
+        ))}
       </div>
 
       {/* ---- Scrollable body: Favorites + Private page tree ---- */}
@@ -791,6 +807,16 @@ function HoverAction({
       data-row-key={rowKey}
       className="grid size-5 cursor-pointer place-items-center rounded text-neutral-500 transition-colors duration-100 hover:bg-white/10 hover:text-neutral-200"
     >
+      {children}
+    </button>
+  );
+}
+
+/** Icon-only button for the collapsed rail; App turns `title` into the hover tip. */
+function RailBtn({ title, active, onClick, children }: { title: string; active?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" title={title} aria-label={title} onClick={onClick}
+      className={`grid h-8 w-full cursor-pointer place-items-center rounded-md transition-colors duration-100 ${active ? "bg-white/[0.08] text-[var(--oc-brand-light)]" : "text-neutral-500 hover:bg-white/5 hover:text-neutral-300"}`}>
       {children}
     </button>
   );

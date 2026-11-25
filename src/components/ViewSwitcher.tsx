@@ -2,7 +2,7 @@ import { CalendarDays, FileText, Network } from "lucide-react";
 
 export type AppView = "document" | "atlas" | "calendar";
 
-const VIEWS = [
+export const VIEWS = [
   { id: "document", label: "Document view", icon: FileText },
   { id: "atlas", label: "Atlas", icon: Network },
   { id: "calendar", label: "Calendar view", icon: CalendarDays },
