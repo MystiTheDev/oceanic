@@ -906,6 +906,7 @@ pub fn run() {
             ai::ai_chat,
             #[cfg(desktop)]
             ai::ai_stop,
+            #[cfg(desktop)]
             ai::ai_embed,
             #[cfg(desktop)]
             ai::ai_set_key,
