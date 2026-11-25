@@ -4,6 +4,14 @@ import { Modal } from "./Modal";
 import type { PageMeta } from "../data/workspace";
 import { openContextMenu } from "./ContextMenu";
 
+/** Days a page stays in Trash before it is deleted for good. */
+export const TRASH_DAYS = 30;
+const DAY = 864e5;
+const groupOf = (t = 0) => {
+  const start = new Date().setHours(0, 0, 0, 0);
+  return t >= start ? "Today" : t >= start - 6 * DAY ? "This week" : "Older";
+};
+
 type TrashPopoverProps = {
   anchor: HTMLElement;
   pages: PageMeta[];
@@ -15,6 +23,8 @@ type TrashPopoverProps = {
 };
 
 /** Trash: centred glass dialog with search, Restore and Delete forever. */
+const daysLeft = (t = Date.now()) => Math.max(0, Math.ceil(TRASH_DAYS - (Date.now() - t) / DAY));
+
 export function TrashPopover({
   pages,
   onRestore,
@@ -72,8 +82,11 @@ export function TrashPopover({
             </p>
           </div>
         ) : (
-          shown.map((page) =>
-            confirmId === page.id ? (
+          shown.map((page, i) => <div key={page.id}>
+            {groupOf(page.trashedAt) !== groupOf(shown[i - 1]?.trashedAt) || i === 0 ? (
+              <p className="px-2 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{groupOf(page.trashedAt)}</p>
+            ) : null}
+            {confirmId === page.id ? (
               <div
                 key={page.id}
                 className="oc-fade-in flex h-12 items-center gap-2 rounded-lg bg-red-500/10 px-3 text-[13px]"
@@ -117,13 +130,13 @@ export function TrashPopover({
                 <span className="w-5 shrink-0 text-center leading-none">{page.icon}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{page.title || "Untitled"}</span>
-                  {page.trashedAt ? <span className="block text-[11.5px] text-neutral-500">Deleted {ago(page.trashedAt)}</span> : null}
+                  {page.trashedAt ? <span className="block text-[11.5px] text-neutral-500">Deleted {ago(page.trashedAt)} · gone in {daysLeft(page.trashedAt)} days</span> : null}
                 </span>
                 <button
                   type="button"
                   title="Restore"
                   onClick={() => onRestore(page.id)}
-                  className="grid size-6 cursor-pointer place-items-center rounded text-neutral-500 transition-colors duration-100 hover:bg-white/[0.08] hover:text-neutral-200"
+                  className="hidden size-6 cursor-pointer place-items-center rounded text-neutral-500 transition-colors duration-100 hover:bg-white/[0.08] hover:text-neutral-200 group-hover:grid"
                 >
                   <Undo2 className="size-3.5" />
                 </button>
@@ -131,13 +144,13 @@ export function TrashPopover({
                   type="button"
                   title="Delete forever"
                   onClick={() => setConfirmId(page.id)}
-                  className="grid size-6 cursor-pointer place-items-center rounded text-neutral-500 transition-colors duration-100 hover:bg-red-500/15 hover:text-red-400"
+                  className="hidden size-6 cursor-pointer place-items-center rounded text-neutral-500 transition-colors duration-100 hover:bg-red-500/15 hover:text-red-400 group-hover:grid"
                 >
                   <Trash2 className="size-3.5" />
                 </button>
               </div>
-            ),
-          )
+            )}
+          </div>)
         )}
       </div>
 
@@ -202,7 +215,7 @@ export function TrashPopover({
       )}
 
       <p className="border-t border-white/[0.06] px-5 py-2.5 text-[11.5px] text-neutral-500">
-        Deleting forever can't be undone.
+        Pages stay here for {TRASH_DAYS} days, then are deleted for good. Deleting forever can't be undone.
       </p>
     </Modal>
   );

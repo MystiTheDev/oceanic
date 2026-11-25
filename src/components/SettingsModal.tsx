@@ -339,12 +339,8 @@ const PAGES: Page[] = [
     label: "Study dashboard",
     icon: <GraduationCap />,
     color: "#bf5af2",
-    blurb: "Focus timer and flashcards.",
+    blurb: "Flashcards. Timer sounds live in Timers → Settings.",
     groups: [
-      {
-        heading: "Focus timer",
-        rows: [{ title: "Play a chime", description: "A soft two-note chime when a focus session or break ends.", keywords: "sound timer pomodoro", control: ({ settings, onChange }) => <Switch on={settings.studyChime} onChange={(studyChime) => onChange({ studyChime })} /> }],
-      },
       {
         heading: "Flashcards",
         rows: [{ title: "New cards per day", description: "How many never-reviewed cards join your reviews each day.", keywords: "flashcards srs spaced repetition limit", control: () => <NewPerDay /> }],

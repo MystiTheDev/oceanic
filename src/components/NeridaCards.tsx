@@ -6,7 +6,7 @@ import { builtin, engine, MODEL_NAMES, modelLabel, nerida, useNerida } from "../
 import { gatherText, generateCards, saveCards, setScience, stopGenerating, whyNoFacts, type CardStyle, type Difficulty, type GenCard } from "../lib/neridaStudy";
 import { Modal, ModalButton } from "./Modal";
 import { neridaNote, pdfPages } from "../lib/neridaPdf";
-import { BetaPill, NeridaMark } from "./NeridaOrb";
+import { NeridaMark } from "./NeridaOrb";
 
 /** `pdf`: cards from a PDF (or a selection in it), saved to a "<PDF> flashcards" note. */
 type Req = { pageId: string; selection?: string; pdf?: { docId: string; name: string } };
@@ -71,7 +71,7 @@ function NeridaCards({ pageId, selection, pdf, onClose }: Req & { onClose: () =>
     <Modal onClose={close} className="w-[560px]">
       <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-5 py-3.5">
         <NeridaMark size={22} busy={busy} />
-        <h2 className="flex-1 text-[15px] font-semibold text-neutral-100">Make flashcards{selection ? " from selection" : pdf ? " from PDF" : ""}<BetaPill /></h2>
+        <h2 className="flex-1 text-[15px] font-semibold text-neutral-100">Make flashcards{selection ? " from selection" : pdf ? " from PDF" : ""}</h2>
         <span className="text-[12px] text-neutral-500">{modelLabel(model)}</span>
       </div>
 

@@ -916,6 +916,11 @@ fn swap_files(app: &AppHandle, ch: &mut Channel, first: bool) -> Res<()> {
         .unwrap_or_default()
         .into_iter()
         .filter(|(n, _)| !mine.iter().any(|(m, _)| m == n))
+        // Only attachment types Oceanic itself stores (others would be .bin), within a sane size.
+        .filter(|(n, s)| {
+            let ext = std::path::Path::new(n).extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
+            *s <= MAX_SYNC_FILE && (ext == "bin" || crate::UPLOAD_EXT.contains(&ext.as_str()))
+        })
         .collect();
     if !want.is_empty() && hotspot(app) {
         let db = app.state::<Db>();
@@ -929,12 +934,30 @@ fn swap_files(app: &AppHandle, ch: &mut Channel, first: bool) -> Res<()> {
     let serve = |ch: &mut Channel| serve_files(ch, &dir, &mine).map_err(tag("sending files".into()));
     if first {
         pull(ch)?;
-        serve(ch)
+        serve(ch)?;
     } else {
         serve(ch)?;
-        pull(ch)
+        pull(ch)?;
     }
+    // Virus-scan what arrived (like any other import); a flagged file is deleted.
+    for (name, _) in &want {
+        let p = dir.join(name);
+        let Ok(meta) = std::fs::metadata(&p) else { continue };
+        if meta.len() <= MAX_SCAN {
+            if let Ok(data) = std::fs::read(&p) {
+                if crate::amsi::check(app, name, &data).is_err() {
+                    let _ = std::fs::remove_file(&p);
+                }
+            }
+        }
+    }
+    Ok(())
 }
+
+/// Largest attachment accepted from the other device.
+const MAX_SYNC_FILE: u64 = 512 * 1024 * 1024;
+/// Larger files skip the in-memory virus scan.
+const MAX_SCAN: u64 = 64 * 1024 * 1024;
 
 fn pull_files(ch: &mut Channel, dir: &std::path::Path, want: &[(String, u64)]) -> Res<()> {
     let e = |e: std::io::Error| e.to_string();

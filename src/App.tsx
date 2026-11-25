@@ -2,7 +2,8 @@ import { ASSIGNMENT, EXAM, loadStudy } from "./lib/study";
 import { SIDEBAR_ITEMS, sidebarPalette } from "./components/SettingsModal";
 import { loadSrs, scanAll, syncPage } from "./lib/srs";
 import { rebuildMerged, RESTORE_VERSION, ydocFor, type RestoreDetail } from "./lib/ydoc";
-import { parseImports, pickImportFiles, type ImportedPage, type ImportFailure } from "./lib/importNotes";
+import { parseImports, type ImportedPage, type InFile } from "./lib/importNotes";
+import { ImportDialog, type ImportDest, type ImportState } from "./components/ImportDialog";
 import { importOmap } from "./lib/omapFile";
 import { MalwareAlert } from "./components/MalwareAlert";
 import { StudyHome } from "./components/StudyHome";
@@ -26,7 +27,7 @@ import {
 } from "lucide-react";
 import { TitleBar, type TabInfo } from "./components/TitleBar";
 import { PageHeader } from "./components/PageHeader";
-import { NeridaDownloadPill, NeridaPanel, NeridaRestartDialog } from "./components/NeridaPanel";
+import { NERIDA_DONE, NeridaDownloadPill, NeridaPanel, NeridaRestartDialog } from "./components/NeridaPanel";
 import { HomeSwitch, NeridaSidebar } from "./components/NeridaHome";
 import { NeridaCardsHost } from "./components/NeridaCards";import { ReviewHost } from "./components/ReviewModal";import { StudyPlanHost } from "./components/StudyPlanHost";import { NeridaEditUI } from "./components/NeridaEditUI";
 import { NeridaOutlineUI } from "./components/NeridaOutlineUI";
@@ -41,6 +42,7 @@ import { TestSetup } from "./components/TestSetup";
 import { engine, nerida, useNerida } from "./lib/nerida";
 import { PageEditor } from "./components/PageEditor";
 import { Toast } from "./components/Toast";
+import { TRASH_DAYS } from "./components/TrashPopover";
 import { SpatialCanvas } from "./components/SpatialCanvas";
 import { OPEN_ATLAS } from "./components/PromoteDialog";
 import { OPEN_CONCEPT, setPendingConcept } from "./data/atlas";
@@ -100,6 +102,11 @@ import { SEND_TO_NOTE, type SendToNote } from "./pdf/PdfRef";
 import { ConfirmDialogHost, ask } from "./components/ConfirmDialog";
 import { neridaSafeMarkdown } from "./lib/neridaSafe";
 import { MobileShell } from "./mobile/MobileShell";
+import { TimersPanel } from "./timers/TimersPanel";
+import { OPEN_LENS, openLens } from "./atlas/lenses";
+import { TimerWidget } from "./timers/TimerWidget";
+import { StudyPrompts } from "./timers/StudyUI";
+import { setNoteSink } from "./timers/study";
 import { isAndroid, isTablet, useLandscape, usePhoneUI } from "./mobile/formFactor";
 import { SyncTrustBanner } from "./components/SyncBackground";
 import { MobilePropChips } from "./mobile/MobileProps";
@@ -261,6 +268,7 @@ export default function App() {
   const [pageFonts, setPageFonts] = useState<Record<string, string>>({});
   const [tagColorMap, setTagColorMap] = useState<Record<string, string>>({});
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [timersOpen, setTimersOpen] = useState(false);
   const [savePrompt, setSavePrompt] = useState<{ path: string; proceed: () => void } | null>(null);
   const [tagLibrary, setTagLibrary] = useState<string[]>([]);
   const [metaAsk, setMetaAsk] = useState<{ titles: string[]; existingTags: string[]; newTags: string[]; resolve: (c: MetaChoice) => void } | null>(null);
@@ -288,7 +296,7 @@ export default function App() {
   }, []);
   const [notice, setNotice] = useState<{ text: string; key: number; action?: { label: string; run: () => void } } | null>(null);
   /** Files an import couldn't read, listed in a small dialog. */
-  const [importFailures, setImportFailures] = useState<{ count: number; failed: ImportFailure[] } | null>(null);
+  const [imp, setImp] = useState<ImportState | null>(null);
   const [prefersDark, setPrefersDark] = useState(systemDark);
   const resolvedTheme = settings.theme === "system" ? (prefersDark ? "dark" : "light") : settings.theme;
   useEffect(() => {
@@ -703,13 +711,18 @@ export default function App() {
   /** Import notes (picker or dropped files); Notion exports keep their page tree. */
   const allLivePagesRef = useRef<PageMeta[]>([]);
   /** `fromExplorer`: a double-clicked .ocean — an existing page with that title just opens. */
+  /** No files: open the Import dialog. Dropped / opened files: import into the current workspace. */
   const importNotes = async (dropped?: File[], fromExplorer = false) => {
+    void fromExplorer;
+    if (!dropped) return setImp({ stage: "pick" });
+    const files = await Promise.all(dropped.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
+    if (files.length) await runImport(files, { workspaceId: activeWorkspaceId, parentId: null });
+  };
+  const runImport = async (files: InFile[], dest: ImportDest) => {
     try {
-      const files = dropped
-        ? await Promise.all(dropped.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
-        : await pickImportFiles();
-      if (!files.length) return;
-      const { pages: parsed, failed } = await parseImports(files);
+      setImp({ stage: "run", done: 0, total: files.length, label: "Reading files…" });
+      const { pages: parsed, failed } = await parseImports(files, (i, name) => setImp({ stage: "run", done: i, total: files.length, label: `Reading ${name}` }));
+      const total = (function n(ps: ImportedPage[]): number { return ps.reduce((t, p) => t + 1 + n(p.children), 0); })(parsed);
       // .ocean notes with date/status/tags: always ask what to bring in.
       const tags = new Set<string>();
       let hasMeta = false;
@@ -725,7 +738,7 @@ export default function App() {
         const fresh = [...tags].filter((t) => !tagLibrary.includes(t));
         const choice = await new Promise<MetaChoice>((resolve) => setMetaAsk({ titles: parsed.map((p) => p.title), existingTags: existing, newTags: fresh, resolve }));
         setMetaAsk(null);
-        if (!choice) return;
+        if (!choice) return setImp(null);
         if (choice.meta) {
           const colors = Object.assign({}, ...parsed.map((p) => p.tagColors ?? {})) as Record<string, string>;
           choice.newTags.forEach((t) => createTag(t, colors[t] ?? "gray"));
@@ -734,7 +747,8 @@ export default function App() {
       }
       let count = 0;
       const create = async (p: ImportedPage, parentId: string | null): Promise<string> => {
-        const rec = await api.createPage(parentId, activeWorkspaceId, null);
+        const rec = await api.createPage(parentId, dest.workspaceId, null);
+        setImp({ stage: "run", done: count, total, label: `Creating ${p.title || "Untitled"}` });
         await api.savePage(rec.id, p.title, JSON.stringify(p.blocks), []);
         // Seed the open-document cache too, so the page shows its content at once
         // (and the normal save path re-saves it).
@@ -747,6 +761,7 @@ export default function App() {
         return rec.id;
       };
       let first: string | null = null;
+      const roots: string[] = [];
       // Same title + same content already exists: ask what to do.
       const norm = (t: string) => t.trim().toLowerCase();
       const body = (b: unknown) => JSON.stringify(b, (k, v) => (k === "id" ? undefined : v));
@@ -762,18 +777,17 @@ export default function App() {
           if (c !== "copy" && c !== "replace") continue;
           if (c === "replace") trashPage(existing.id);
         }
-        const id = await create(p, null);
+        const id = await create(p, dest.parentId);
         first ??= id;
+        roots.push(id);
       }
-      void fromExplorer;
-      const list = await api.getPages();
-      setPages(list.map(toMeta));
-      if (first ?? opened) openPage((first ?? opened)!);
-      if (count) setNotice({ text: `Imported ${count} page${count === 1 ? "" : "s"}`, key: Date.now() });
-      if (failed.length) setImportFailures({ count, failed });
+      const list = (await api.getPages()).map(toMeta);
+      setPages(list);
+      if (dest.workspaceId === activeWorkspaceId && (first ?? opened)) openPage((first ?? opened)!);
+      setImp({ stage: "done", created: roots.map((id) => list.find((p) => p.id === id)).filter((p): p is PageMeta => !!p), failed });
     } catch (e) {
       report("Import")(e);
-      setImportFailures({ count: 0, failed: [{ name: "Import", reason: e instanceof Error ? e.message : String(e) }] });
+      setImp({ stage: "done", created: [], failed: [{ name: "Import", reason: e instanceof Error ? e.message : String(e) }] });
     }
   };
 
@@ -791,6 +805,9 @@ export default function App() {
       report("Create page")(e);
     }
   };
+
+  // Study session notes from Timers become tagged notes.
+  setNoteSink((title, text) => void createTagged(title, ["study"], null, text.split("\n").map((t) => ({ type: "paragraph", content: t }))));
 
   /** Sidebar Home row: show Home in the active tab, like Notion. */
   const goHome = () => {
@@ -1064,6 +1081,28 @@ export default function App() {
     api.deletePageForever(pageId).catch(report("Delete forever"));
   };
 
+  // A Nerida reply finished while its chat wasn't on screen.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { id, title } = (e as CustomEvent<{ id: string; title: string }>).detail;
+      setNotice({ text: `Nerida finished replying: “${title || "Chat"}”`, key: Date.now(), action: { label: "Open", run: () => nerida.set({ activeId: id, open: true }) } });
+    };
+    window.addEventListener(NERIDA_DONE, on);
+    return () => window.removeEventListener(NERIDA_DONE, on);
+  }, []);
+
+  /** Trash keeps pages 30 days, then deletes them for good (checked once after load). */
+  const purged = useRef(false);
+  useEffect(() => {
+    if (!loaded || purged.current) return;
+    purged.current = true;
+    const old = pages.filter((p) => p.trashedAt && Date.now() - p.trashedAt > TRASH_DAYS * 864e5);
+    const nested = new Set(old.flatMap((t) => [...subtreeIds(pages, t.id)].filter((id) => id !== t.id)));
+    const roots = old.filter((p) => !nested.has(p.id));
+    roots.forEach((p) => deleteForever(p.id));
+    if (roots.length) setNotice({ text: `Deleted ${roots.length} page${roots.length === 1 ? "" : "s"} left in Trash over ${TRASH_DAYS} days`, key: Date.now() });
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const restoreAll = () => pages.filter((p) => p.trashedAt).forEach((p) => restorePage(p.id));
 
   /** Empty Trash. Pages nested under another trashed page go with it, so only the roots are deleted. */
@@ -1237,11 +1276,12 @@ export default function App() {
     window.addEventListener(OPEN_CONCEPT, on);
     return () => window.removeEventListener(OPEN_CONCEPT, on);
   }, []);
-  // "Send to Atlas" toast → switch to the Atlas view.
+  // "Send to Atlas" toast, or a lens opened from Home / a note / a nudge → switch to the Atlas view.
   useEffect(() => {
     const on = () => setView("atlas");
     window.addEventListener(OPEN_ATLAS, on);
-    return () => window.removeEventListener(OPEN_ATLAS, on);
+    window.addEventListener(OPEN_LENS, on);
+    return () => (window.removeEventListener(OPEN_ATLAS, on), window.removeEventListener(OPEN_LENS, on));
   }, []);
   // Flashcard "Open in note": open the page; PageEditor scrolls to the block.
   useEffect(() => {
@@ -1440,6 +1480,15 @@ export default function App() {
   /** The sidebar tree and the canvas only show the active workspace. */
   allLivePagesRef.current = allLivePages;
   const livePages = allLivePages.filter((p) => p.workspaceId === activeWorkspaceId);
+  // Atlas nudge: after 3 new notes in this session (made or imported), offer to link them. Once per session.
+  const sessionStart = useRef(new Date().toISOString());
+  const nudged = useRef(false);
+  const freshNotes = livePages.filter((p) => (p.createdAt ?? "") >= sessionStart.current).length;
+  useEffect(() => {
+    if (nudged.current || freshNotes < 3 || view === "atlas") return;
+    nudged.current = true;
+    setNotice({ text: `${freshNotes} new notes. Link them in Atlas?`, key: Date.now(), action: { label: "Show links", run: () => openLens("suggest") } });
+  }, [freshNotes]);
   const trashedPages = pages
     .filter((p) => p.trashedAt)
     .sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0));
@@ -1560,7 +1609,6 @@ export default function App() {
   );
   // Preferences read outside props (calendar maths, timer chime, editor CSS).
   prefs.weekStart = settings.weekStart === "monday" ? 1 : 0;
-  prefs.chime = settings.studyChime;
   useEffect(() => void (document.documentElement.dataset.editorSize = settings.editorSize), [settings.editorSize]);
   useEffect(() => {
     const pal = sidebarPalette(settings);
@@ -1590,6 +1638,59 @@ export default function App() {
     />
   );
 
+  /** Global right-click menu; Home reuses its navigation part. */
+  const navMenu = (): MenuItem[] => [
+    { label: "Search", icon: <Search className="size-4" />, hint: "Ctrl+K", onSelect: () => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT)) },
+    { label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: <PanelLeft className="size-4" />, hint: "Ctrl+\\", onSelect: () => setSidebarCollapsed((v) => !v) },
+    "divider",
+    { label: "Back", icon: <ArrowLeft className="size-4" />, hint: "Alt+←", disabled: !activeTab || activeTab.index === 0, onSelect: () => step(-1) },
+    { label: "Forward", icon: <ArrowRight className="size-4" />, hint: "Alt+→", disabled: !activeTab || activeTab.index >= activeTab.history.length - 1, onSelect: () => step(1) },
+  ];
+  const appMenu = (): MenuItem[] => [
+    {
+      label: "New page",
+      icon: <Plus className="size-4" />,
+      hint: "Ctrl+T",
+      onSelect: () => createPage(null),
+    },
+    {
+      label: "Search",
+      icon: <Search className="size-4" />,
+      hint: "Ctrl+K",
+      onSelect: () => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT)),
+    },
+    "divider",
+    {
+      label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar",
+      icon: <PanelLeft className="size-4" />,
+      hint: "Ctrl+\\",
+      onSelect: () => setSidebarCollapsed((v) => !v),
+    },
+    {
+      label: "View",
+      icon: <FileText className="size-4" />,
+      children: [
+        { label: "Document", icon: <FileText className="size-4" />, checked: view === "document", onSelect: () => setView("document") },
+        { label: "Atlas", icon: <Network className="size-4" />, checked: view === "atlas", onSelect: () => setView("atlas") },
+        { label: "Calendar", icon: <CalendarDays className="size-4" />, checked: view === "calendar", onSelect: () => setView("calendar") },
+      ],
+    },
+    "divider",
+    {
+      label: "Back",
+      icon: <ArrowLeft className="size-4" />,
+      hint: "Alt+←",
+      disabled: !activeTab || activeTab.index === 0,
+      onSelect: () => step(-1),
+    },
+    {
+      label: "Forward",
+      icon: <ArrowRight className="size-4" />,
+      hint: "Alt+→",
+      disabled: !activeTab || activeTab.index >= activeTab.history.length - 1,
+      onSelect: () => step(1),
+    },
+  ];
   return (
     <div ref={appRoot} className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-900 text-neutral-100"
       onScrollCapture={isTablet ? (e) => {
@@ -1633,6 +1734,7 @@ export default function App() {
           workspaces={workspaces}
           workspaceId={activeWorkspaceId}
           onSettings={() => setSettingsOpen(true)}
+          onTimers={() => setTimersOpen(true)}
           onTags={() => setTagsOpen(true)}
           onToggleTheme={() => changeSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" })}
           onWorkspace={selectWorkspace}
@@ -1806,6 +1908,7 @@ export default function App() {
                 setLibraryOpen(true);
               }}
               onOpenTags={() => setTagsOpen(true)}
+              onOpenTimers={() => setTimersOpen(true)}
               onImport={(files) => void importNotes(files)}
               footer={footerFor("notes")}
               trashedPages={trashedPages}
@@ -1976,6 +2079,7 @@ export default function App() {
             ) : (
             <HomeView
               key={homeKey}
+              workspaceId={activeWorkspaceId}
               userName={settings.userName}
               pages={allLivePages}
               recent={recent}
@@ -1989,6 +2093,15 @@ export default function App() {
               onImport={() => void importNotes()}
               onNewSketch={() => openPage(sketchEntry(newSketch(1280, 720)))}
               onChangeView={setView}
+              onOpenInNewTab={openInNewTab}
+              onTogglePin={togglePin}
+              onRenamePage={changeTitle}
+              onDuplicatePage={(id) => void duplicatePage(id)}
+              onTrashPage={askTrashPage}
+              onForget={(id) => setRecent((prev) => { const next = prev.filter((x) => x !== id); api.setSetting("recentPages", JSON.stringify(next)).catch(() => {}); return next; })}
+              onRefresh={() => setHomeKey((k) => k + 1)}
+              navMenu={navMenu}
+              onNewDoc={() => openPage(docEntry(newUntitled()))}
             />
             )}
             </div>
@@ -2104,51 +2217,7 @@ export default function App() {
         fallback={(e): MenuItem[] => {
           if (isTextField(e.target)) return textFieldMenu(e.target);
           // Everywhere else: app-level commands.
-          return [
-            {
-              label: "New page",
-              icon: <Plus className="size-4" />,
-              hint: "Ctrl+T",
-              onSelect: () => createPage(null),
-            },
-            {
-              label: "Search",
-              icon: <Search className="size-4" />,
-              hint: "Ctrl+K",
-              onSelect: () => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT)),
-            },
-            "divider",
-            {
-              label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar",
-              icon: <PanelLeft className="size-4" />,
-              hint: "Ctrl+\\",
-              onSelect: () => setSidebarCollapsed((v) => !v),
-            },
-            {
-              label: "View",
-              icon: <FileText className="size-4" />,
-              children: [
-                { label: "Document", icon: <FileText className="size-4" />, checked: view === "document", onSelect: () => setView("document") },
-                { label: "Atlas", icon: <Network className="size-4" />, checked: view === "atlas", onSelect: () => setView("atlas") },
-                { label: "Calendar", icon: <CalendarDays className="size-4" />, checked: view === "calendar", onSelect: () => setView("calendar") },
-              ],
-            },
-            "divider",
-            {
-              label: "Back",
-              icon: <ArrowLeft className="size-4" />,
-              hint: "Alt+←",
-              disabled: !activeTab || activeTab.index === 0,
-              onSelect: () => step(-1),
-            },
-            {
-              label: "Forward",
-              icon: <ArrowRight className="size-4" />,
-              hint: "Alt+→",
-              disabled: !activeTab || activeTab.index >= activeTab.history.length - 1,
-              onSelect: () => step(1),
-            },
-          ];
+          return appMenu();
         }}
       />
 
@@ -2184,6 +2253,9 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {timersOpen && <TimersPanel onClose={() => setTimersOpen(false)} />}
+      <TimerWidget onOpen={() => setTimersOpen(true)} />
+      <StudyPrompts />
       {tagsOpen && (
         <TagsPanel
           pages={allLivePages}
@@ -2213,24 +2285,11 @@ export default function App() {
           </div>
         </Modal>
       )}
-      {importFailures && (
-        <Modal onClose={() => setImportFailures(null)} className="w-[440px] p-5">
-          <h2 className="text-[15px] font-semibold text-neutral-100">
-            {importFailures.count ? `Imported ${importFailures.count} page${importFailures.count === 1 ? "" : "s"}` : "Nothing was imported"}
-          </h2>
-          <p className="mt-1 text-[13px] text-neutral-400">Couldn't import:</p>
-          <ul className="scrollbar-thin mt-2 max-h-60 overflow-y-auto rounded-lg border border-white/[0.06] bg-white/[0.02]">
-            {importFailures.failed.map((f, i) => (
-              <li key={i} className="flex gap-2 border-b border-white/[0.04] px-3 py-2 text-[13px] last:border-b-0">
-                <span className="min-w-0 truncate font-medium text-neutral-200">{f.name}</span>
-                <span className="ml-auto shrink-0 text-neutral-500">{f.reason}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-4 flex justify-end">
-            <ModalButton variant="primary" onClick={() => setImportFailures(null)}>OK</ModalButton>
-          </div>
-        </Modal>
+      {imp && !metaAsk && !dupAsk && (
+        <ImportDialog state={imp} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} pages={allLivePages}
+          onStart={(files, dest) => void runImport(files, dest)}
+          onOpen={(id) => { const p = allLivePages.find((x) => x.id === id); if (p && p.workspaceId !== activeWorkspaceId) selectWorkspace(p.workspaceId); openPage(id); }}
+          onClose={() => setImp(null)} />
       )}
       {appLoading && <AppLoader app={appLoading} from={loaderFrom.current} onLeave={() => {
         setHomeKey((k) => k + 1);

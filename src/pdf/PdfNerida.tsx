@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Square, X } from "lucide-react";
-import { BetaPill, NeridaMark } from "../components/NeridaOrb";
+import { NeridaMark } from "../components/NeridaOrb";
 import { Markdown } from "../components/NeridaPanel";
 import { stopEdit } from "../lib/neridaEdit";
 import { neridaNote, summarizePdf } from "../lib/neridaPdf";
@@ -43,7 +43,7 @@ export function PdfSummaryDialog({ docId, name, pageCount, onClose }: { docId: s
       <div className="w-[480px] max-w-[calc(100vw-32px)] rounded-2xl border border-white/[0.1] bg-[var(--oc-surface)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.55)]" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center gap-2">
           <NeridaMark size={18} busy={phase === "run"} />
-          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-neutral-100">Summarize {name}<BetaPill /></span>
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-neutral-100">Summarize {name}</span>
           <button type="button" onClick={close} className="cursor-pointer text-neutral-500 hover:text-neutral-200"><X className="size-4" /></button>
         </div>
         {phase === "ask" ? (

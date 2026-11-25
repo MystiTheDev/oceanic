@@ -131,7 +131,7 @@ struct AudioAsset {
 const AUDIO_EXT: &[&str] = &["mp3", "m4a", "wav", "ogg", "aac", "flac", "webm", "opus"];
 
 /// Extensions kept as-is for files added to notes (media and documents). Anything else is saved as `.bin`.
-const UPLOAD_EXT: &[&str] = &[
+pub(crate) const UPLOAD_EXT: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "tif", "tiff", "heic",
     "mp3", "m4a", "wav", "ogg", "aac", "flac", "webm", "opus",
     "mp4", "mov", "m4v", "mkv", "avi",
@@ -307,7 +307,7 @@ fn docs_free_path(scope: State<Scope>, dir: String, name: String) -> Result<Stri
 }
 
 fn free_path(base: PathBuf, name: &str) -> String {
-    let name: String = name.chars().filter(|c| !r#"<>:"/|?*"#.contains(*c)).collect();
+    let name: String = name.chars().filter(|c| !r#"<>:"/\|?*"#.contains(*c)).collect();
     let mut n = 1;
     loop {
         let file = if n == 1 { format!("{name}.docx") } else { format!("{name} {n}.docx") };
@@ -653,6 +653,10 @@ struct ApkUpdater(tauri::plugin::PluginHandle<tauri::Wry>);
 #[tauri::command]
 #[allow(unused_variables)]
 async fn apk_install(app: AppHandle, url: String, on_progress: tauri::ipc::Channel<serde_json::Value>) -> Result<(), String> {
+    // Only Oceanic's own GitHub release assets.
+    if !url.starts_with("https://github.com/MystiTheDev/oceanic/releases/download/") || url.contains("..") || !url.ends_with(".apk") {
+        return Err("Updates only come from Oceanic's GitHub releases".into());
+    }
     #[cfg(target_os = "android")]
     return app
         .state::<ApkUpdater>()

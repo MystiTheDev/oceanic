@@ -118,8 +118,8 @@ export const nerida = {
     void api.setSetting("neridaStyle", style).catch(() => {});
   },
   subscribe: (l: () => void) => (listeners.add(l), () => listeners.delete(l)),
-  upsert(chat: Chat, save = true) {
-    state = { ...state, activeId: chat.id, chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)] };
+  upsert(chat: Chat, save = true, focus = true) {
+    state = { ...state, activeId: focus ? chat.id : state.activeId, chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)] };
     emit();
     if (save) persist();
   },

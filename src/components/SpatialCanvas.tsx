@@ -54,6 +54,8 @@ import { mapChecks, OPEN_CONCEPT, pendingConcept, setPendingConcept, isConceptId
 type CardFilters = { tags: string[]; tagMode: "all" | "any"; states: Concept["state"][]; groups: string[] };
 const NO_FILTERS: CardFilters = { tags: [], tagMode: "any", states: [], groups: [] };
 import { ConceptInspector } from "./ConceptInspector";
+import { LensPanel, LENSES } from "../atlas/LensPanel";
+import { OPEN_LENS, pendingLens, setPendingLens, pairKey, type Lens } from "../atlas/lenses";
 import { AtlasLegend } from "./AtlasLegend";
 import { MUTED_STROKE, PALETTE, REL_COLORS } from "../data/atlas";
 import type { PageMeta } from "../data/workspace";
@@ -221,6 +223,14 @@ export function SpatialCanvas({
   const [pathFor, setPathFor] = useState<string | null>(null);
   /** Card filters (tags, learning state, group); cards that don't match fade. Kept in settings. */
   const [filters, setFilters] = useState<CardFilters>(NO_FILTERS);
+  /** Active lens (Study, Exam map, Suggest, Cleanup) and the cards it keeps bright. */
+  const [lens, setLens] = useState<Lens | null>(() => (pendingLens ? (setPendingLens(null), pendingLens) : null));
+  const [lensBright, setLensBright] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => (setPendingLens(null), setLens((e as CustomEvent<Lens>).detail));
+    window.addEventListener(OPEN_LENS, on);
+    return () => window.removeEventListener(OPEN_LENS, on);
+  }, []);
   useEffect(() => {
     api
       .getSettings()
@@ -1169,7 +1179,7 @@ export function SpatialCanvas({
   const inTrace = traceAB ? new Set(traceSteps ? [traceAB.a, ...traceSteps.map((s) => s.to)] : [traceAB.a, traceAB.b]) : null;
   const traceKeys = new Set((traceSteps ?? []).map((s) => [s.edge.sourceId, s.edge.targetId].sort().join("|")));
   /** Cards kept bright: a trace wins over the pathway, which wins over Focus View. */
-  const bright = inTrace ?? inPath ?? inFocus;
+  const bright = inTrace ?? inPath ?? (lens ? lensBright : null) ?? inFocus;
   /** Cards that don't match the card filters (they fade). */
   const filterCount = filters.tags.length + filters.states.length + filters.groups.length + hiddenTypes.size;
   const filteredOut = (id: string) => {
@@ -1732,6 +1742,31 @@ export function SpatialCanvas({
         ) : null;
       })()}
 
+      {lens && (
+        <>
+          <LensPanel
+            right={concepts.some((c) => c.id === selected) || traceAB ? 324 : 12}
+            key={lens}
+            lens={lens}
+            pages={pageList}
+            concepts={concepts}
+            edges={canvasEdges}
+            links={docLinks}
+            connected={new Set(edges.map((e) => pairKey(e.source, e.target)))}
+            degree={degree}
+            onPan={panTo}
+            onOpen={onOpenPage}
+            onState={(id, state) => {
+              const c = concepts.find((x) => x.id === id);
+              if (c) saveConcept(id, { title: c.title, description: c.description, tags: c.tags, state });
+            }}
+            onConnect={connect}
+            onBright={setLensBright}
+            onClose={() => setLens(null)}
+          />
+        </>
+      )}
+
       {/* Toolbar: search, filter, focus trail */}
       <div onPointerDown={(e) => e.stopPropagation()} className="absolute left-4 top-3 z-10 flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
@@ -1796,6 +1831,14 @@ export function SpatialCanvas({
             <Filter className="size-3.5" />
             {filterCount > 0 && <span>Filter · {filterCount}</span>}
           </button>
+          <div role="group" aria-label="Lenses" className="flex h-8 items-center gap-0.5 rounded-lg border border-white/[0.08] bg-neutral-800/90 px-0.5 backdrop-blur">
+            {LENSES.map(([id, name, icon, tip]) => (
+              <button key={id} type="button" data-tip={tip} aria-pressed={lens === id} onClick={() => setLens((l) => (l === id ? null : id))}
+                className={`flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors duration-100 ${lens === id ? "bg-sky-500/20 text-sky-200" : "text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"}`}>
+                {icon}<span className="max-[900px]:hidden">{name}</span>
+              </button>
+            ))}
+          </div>
           {findings.length > 0 && (
             <button
               type="button"

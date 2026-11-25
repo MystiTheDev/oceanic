@@ -13,7 +13,7 @@ import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, us
 import {
   ArrowUpLeft, CalendarDays, Camera, SlidersHorizontal, ImagePlus, Paperclip, Check, Clock, CheckSquare, ChevronLeft, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
   RotateCcw, Search, Settings, Sun, Tag, Trash2, X, LayoutGrid,
-  History,
+  History, AlarmClock,
 } from "lucide-react";
 import { api, type SearchHit, type WorkspaceRecord } from "../data/api";
 import { Highlight } from "../components/SearchModal";
@@ -61,6 +61,7 @@ type Props = {
   onCreateWith: (kind: AttachKind) => void;
   visitedAt: Record<string, number>;
   onSettings: () => void;
+  onTimers: () => void;
   onTags: () => void;
   onToggleTheme: () => void;
   onWorkspace: (id: string) => void;
@@ -592,6 +593,9 @@ export function MobileShell(p: Props) {
                 </button>
                 <button className="ocm-item" onClick={() => run(p.onToggleTheme)}>
                   {p.theme === "dark" ? <Sun size={20} /> : <MoonStar size={20} />} {p.theme === "dark" ? "Light mode" : "Dark mode"}
+                </button>
+                <button className="ocm-item" onClick={() => run(p.onTimers)}>
+                  <AlarmClock size={20} /> Timers
                 </button>
                 <button className="ocm-item" onClick={() => run(p.onSettings)}>
                   <Settings size={20} /> Settings

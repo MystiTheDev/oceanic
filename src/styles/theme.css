@@ -1617,11 +1617,14 @@
 .oc-ico .door { transform-origin: 10px 21px; }
 .oc-ico .tag { transform-origin: 8px 8px; }
 .oc-ico .lid { transform-origin: 20.5px 7.5px; }
-.oc-sidebar :hover > .oc-ico .door { transform: scaleX(.3); }
+:is(button, .oc-row):hover .oc-ico .door { transform: scaleX(.3); }
 .oc-ico .book { transform-origin: 20.8px 20.3px; }
-.oc-sidebar :hover > .oc-ico .book { transform: rotate(12deg); }
-.oc-sidebar :hover > .oc-ico .tag { transform: rotate(-12deg); }
-.oc-sidebar :hover > .oc-ico .lens { animation: oc-sweep 420ms ease-in-out; }
+:is(button, .oc-row):hover .oc-ico .book { transform: rotate(12deg); }
+:is(button, .oc-row):hover .oc-ico .tag { transform: rotate(-12deg); }
+:is(button, .oc-row):hover .oc-ico .lid, .oc-nav-active .oc-ico .lid { animation: oc-lid-open 600ms cubic-bezier(.3,.7,.3,1); }
+@keyframes oc-lid-open { 35%, 65% { transform: translateY(-2px) rotate(16deg); } }
+:is(button, .oc-row):hover .oc-ico .arrow, .oc-nav-active .oc-ico .arrow { animation: oc-drop 320ms cubic-bezier(.3,.7,.3,1); }
+:is(button, .oc-row):hover .oc-ico .lens { animation: oc-sweep 420ms ease-in-out; }
 @keyframes oc-drop { from { transform: translateY(-5px); opacity: 0; } }
 @keyframes oc-sweep { 25% { transform: translate(-1.2px, -1px); } 50% { transform: translate(1px, -1.4px); } 75% { transform: translate(1.2px, .8px); } }
 @keyframes oc-pop-in {
@@ -2751,10 +2754,25 @@
 
 /* Sidebar icon hover animations (one per meaning) */
 .oc-sidebar svg path, .oc-sidebar svg line, .oc-sidebar svg circle, .oc-sidebar svg rect { transform-box: fill-box; }
-.oc-sidebar :hover > .oc-ic-home { animation: oc-home 450ms ease; }
-.oc-sidebar :hover > .oc-ic-library { animation: oc-tilt 500ms ease; }
-.oc-sidebar :hover > .oc-ic-tags { animation: oc-swing 600ms ease; transform-origin: 20% 20%; }
-.oc-sidebar :hover > .oc-ic-search { animation: oc-wiggle 500ms ease; }
+:is(button, .oc-row):hover .oc-ic-home, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-home { animation: oc-home 450ms ease; }
+:is(button, .oc-row):hover .oc-ic-library, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-library { animation: oc-tilt 500ms ease; }
+:is(button, .oc-row):hover .oc-ic-search, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-search { animation: oc-wiggle 500ms ease; }
+:is(button, .oc-row):hover .oc-ic-page, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-page { animation: oc-pop 380ms cubic-bezier(.3,1.6,.5,1); }
+:is(button, .oc-row):hover .oc-ic-updown, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-updown { animation: oc-bob 500ms ease; }
+:is(button, .oc-row):hover .oc-ic-plus, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-plus { animation: oc-spin 450ms ease; }
+:is(button, .oc-row):hover .oc-ic-sun, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-sun { animation: oc-spin 700ms ease; }
+:is(button, .oc-row):hover .oc-ic-moon, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-moon { animation: oc-tilt 500ms ease; }
+:is(button, .oc-row):hover .oc-ic-gear, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-gear { animation: oc-spin 700ms ease; }
+:is(button, .oc-row):hover .oc-ic-keys, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-keys { animation: oc-tap 400ms ease; }
+:is(button, .oc-row):hover .oc-ic-help, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-help { animation: oc-wiggle 500ms ease; }
+:is(button, .oc-row):hover .oc-ic-tags, :is(.oc-nav-active, [aria-pressed="true"]) .oc-ic-tags { animation: oc-swing 600ms ease; transform-origin: 20% 20%; }
+:is(button, .oc-row):hover .oc-ic-chev { animation: oc-chev-nudge 450ms ease; }
+@keyframes oc-spin { to { transform: rotate(180deg); } }
+@keyframes oc-flip { 50% { transform: rotateX(70deg); } }
+@keyframes oc-bob { 30% { transform: translateY(-2px); } 65% { transform: translateY(2px); } }
+@keyframes oc-tap { 40% { transform: translateY(1.5px) scale(.92); } }
+@keyframes oc-chev-nudge { 40% { translate: 2px 0; } }
+@media (prefers-reduced-motion: reduce) { [class*="oc-ic-"], [class*="oc-ic-"] * { animation: none !important; } }
 @keyframes oc-home { 30% { transform: translateY(-3px) scaleY(1.08); } 60% { transform: translateY(0) scaleY(.94); } }
 @keyframes oc-tilt { 35% { transform: rotate(-12deg); } 70% { transform: rotate(5deg); } }
 @keyframes oc-swing { 25% { transform: rotate(14deg); } 50% { transform: rotate(-10deg); } 75% { transform: rotate(5deg); } }
@@ -2767,10 +2785,16 @@
 :root[data-theme="light"] .oc-sidebar { background-color: color-mix(in srgb, var(--oc-brand) 5%, var(--oc-sidebar)); border-color: color-mix(in srgb, var(--oc-brand) 22%, transparent); }
 
 /* Home | Dashboard | Nerida switch: the leading edge moves first, the trailing edge catches up (stretch). */
-.oc-switch-pill { position: absolute; top: 2px; bottom: 2px; border-radius: 9999px; background: rgb(255 255 255 / 0.12); transition: left 250ms cubic-bezier(.3,.9,.3,1), right 250ms cubic-bezier(.3,.9,.3,1), background 250ms, box-shadow 250ms; }
+/* Liquid glass track + glass highlight. */
+.oc-home-switch { background: rgb(38 38 42 / 0.92); border: 1px solid rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 10px 30px -14px rgb(0 0 0 / 0.6); }
+@supports (backdrop-filter: blur(1px)) { .oc-home-switch { background: rgb(255 255 255 / 0.06); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%); } }
+@media (prefers-reduced-transparency: reduce) { .oc-home-switch { background: rgb(38 38 42); backdrop-filter: none; } }
+.oc-home-switch > button { height: 28px; }
+.oc-switch-spark { color: #a5b4fc; }
+.oc-switch-pill { position: absolute; top: 3px; bottom: 3px; border-radius: 9999px; background: rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 2px 8px -2px rgb(0 0 0 / 0.4); transition: left 250ms cubic-bezier(.3,.9,.3,1), right 250ms cubic-bezier(.3,.9,.3,1), background 250ms, box-shadow 250ms; }
 .oc-switch-pill[data-dir="1"] { transition-delay: 70ms, 0ms, 0ms, 0ms; }
 .oc-switch-pill[data-dir="-1"] { transition-delay: 0ms, 70ms, 0ms, 0ms; }
-.oc-switch-nerida { background: linear-gradient(90deg, rgb(56 189 248 / 0.28), rgb(139 92 246 / 0.32)); box-shadow: 0 0 14px -2px rgb(139 92 246 / 0.55); }
+.oc-switch-nerida { background: linear-gradient(90deg, rgb(56 189 248 / 0.16), rgb(139 92 246 / 0.22)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), inset 0 0 0 1px rgb(165 180 252 / 0.18), 0 0 16px -4px rgb(139 92 246 / 0.55); }
 .oc-nudge { animation: oc-nudge 300ms cubic-bezier(.3,1.6,.5,1); }
 @keyframes oc-nudge { 40% { transform: translateY(-2px) scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .oc-switch-pill, .oc-nudge { transition: none; animation: none; } }
@@ -2924,3 +2948,83 @@ html.tablet { -webkit-tap-highlight-color: transparent; }
 .oc-ld-ripple { position: absolute; left: 50%; top: calc(50% - 40px); width: 260vmax; height: 260vmax; border-radius: 9999px; border: 3px solid var(--tone); box-shadow: 0 0 60px color-mix(in srgb, var(--tone) 40%, transparent), inset 0 0 60px color-mix(in srgb, var(--tone) 25%, transparent); pointer-events: none; animation: oc-ld-ripple 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 @media (prefers-reduced-motion: reduce) { .oc-ld-fly, .oc-ld-draw, .oc-ld-pop, .oc-ld-unfold, .oc-ld-line, .oc-ld-bubble, .oc-ld-ripple { animation: none !important; stroke-dashoffset: 0; opacity: 1; } .oc-ld-ripple { display: none; } }
 .oc-ld-edge { stroke-width: 2; opacity: 0.7; }
+
+/* Timers: ringing card pulses; the widget alarm icon wiggles on hover. */
+@keyframes oc-ring-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(56 189 248 / 0.45), 0 20px 25px -5px rgb(0 0 0 / 0.5); } 50%% { box-shadow: 0 0 0 8px rgb(56 189 248 / 0), 0 20px 25px -5px rgb(0 0 0 / 0.5); } }
+@keyframes oc-ring-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+.oc-timer-ring { animation: oc-ring-in 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.oc-timer-ring.oc-ringing { animation: oc-ring-in 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards, oc-ring-pulse 1.4s ease-in-out infinite; }
+.oc-sidebar :is(button, .oc-row):hover .oc-ic-timer { animation: oc-wiggle 540ms cubic-bezier(0.34, 1.3, 0.64, 1); }
+/* Floating timer widget: glass cards, hover-only actions, digit tick, corner snap, shake while ringing. */
+.oc-tw-card {
+  background: rgb(23 23 23 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 18px 40px -16px rgb(0 0 0 / 0.65), 0 0 28px -10px var(--tw-accent, transparent);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .oc-tw-card { background: rgb(28 28 30 / 0.55); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%); }
+}
+@media (prefers-reduced-transparency: reduce) { .oc-tw-card { background: rgb(23 23 23 / 0.97); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.oc-timer-widget.oc-tw-glide { transition: left 320ms cubic-bezier(0.22, 1, 0.36, 1), top 320ms cubic-bezier(0.22, 1, 0.36, 1); }
+.oc-tw-row .oc-tw-act { opacity: 0; transform: translateX(4px); transition: opacity 160ms, transform 160ms; }
+.oc-tw-row:is(:hover, :focus-within) .oc-tw-act { opacity: 1; transform: none; }
+@media (hover: none) { .oc-tw-row .oc-tw-act { opacity: 1; transform: none; } }
+.oc-tw-ring circle:last-child { transition: stroke-dashoffset 220ms linear; }
+@keyframes oc-digit { from { transform: translateY(-45%); opacity: 0; } }
+.oc-digit { display: inline-block; animation: oc-digit 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes oc-tw-in { from { opacity: 0; transform: translateY(10px) scale(0.96); } }
+.oc-tw-in { animation: oc-tw-in 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+@keyframes oc-shake { 0%, 100% { transform: none; } 15%, 45% { transform: translateX(-3px) rotate(-1deg); } 30%, 60% { transform: translateX(3px) rotate(1deg); } 75% { transform: none; } }
+.oc-timer-widget.oc-tw-shake { animation: oc-shake 900ms ease-in-out infinite; }
+@keyframes oc-tab-in { from { opacity: 0; transform: translateX(calc(var(--dir, 1) * 24px)); } }
+.oc-tab-in { animation: oc-tab-in 280ms cubic-bezier(0.22, 1, 0.36, 1); overflow-x: hidden; }
+/* Timers window: sliding tab pill, glass buttons, press bounce, icon motion, slider, tooltips. */
+.oc-tab-pill { background: rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14); transition: left 320ms cubic-bezier(0.34, 1.25, 0.64, 1); }
+.oc-press { transition: transform 260ms cubic-bezier(0.34, 1.6, 0.64, 1), background-color 160ms, border-color 160ms, color 160ms, filter 160ms; }
+.oc-press:active:not(:disabled) { transform: scale(0.93); transition-duration: 80ms; }
+.oc-gbtn { background: rgb(243 238 227 / 0.1); border: 1px solid rgb(243 238 227 / 0.2); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), inset 0 -8px 18px rgb(0 0 0 / 0.1), 0 10px 30px -14px rgb(0 0 0 / 0.5); }
+.oc-gbtn:hover:not(:disabled) { background: rgb(243 238 227 / 0.17); border-color: rgb(243 238 227 / 0.4); }
+.oc-gbtn--sky { background: rgb(14 165 233 / 0.75); border-color: rgb(125 211 252 / 0.5); }
+.oc-gbtn--sky:hover:not(:disabled) { background: rgb(14 165 233 / 0.92); border-color: rgb(186 230 253 / 0.7); }
+.oc-ic-hover svg { transition: transform 300ms cubic-bezier(0.34, 1.5, 0.64, 1); }
+.oc-ic-hover:hover svg { transform: scale(1.12); }
+.oc-ic-hover:hover svg.oc-ic-spin { transform: rotate(-200deg); }
+.oc-trange { appearance: none; -webkit-appearance: none; height: 22px; background: transparent; cursor: pointer; position: relative; }
+.oc-trange::-webkit-slider-runnable-track { height: 6px; border-radius: 99px; background: linear-gradient(90deg, rgb(56 189 248) var(--v, 50%), rgb(255 255 255 / 0.1) var(--v, 50%)); }
+.oc-trange::-moz-range-track { height: 6px; border-radius: 99px; background: linear-gradient(90deg, rgb(56 189 248) var(--v, 50%), rgb(255 255 255 / 0.1) var(--v, 50%)); }
+.oc-trange::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgb(56 189 248 / 0.25), 0 2px 6px rgb(0 0 0 / 0.4); transition: transform 200ms cubic-bezier(0.34, 1.6, 0.64, 1), box-shadow 200ms; }
+.oc-trange::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgb(56 189 248 / 0.25), 0 2px 6px rgb(0 0 0 / 0.4); }
+.oc-trange:is(:hover, :focus-visible)::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgb(56 189 248 / 0.3), 0 0 14px rgb(56 189 248 / 0.6); }
+.oc-trange:active::-webkit-slider-thumb { transform: scale(1.25); }
+.oc-trange:focus-visible { outline: none; }
+@keyframes oc-ttip-in { from { opacity: 0; transform: translate(-50%, calc(-100% + 4px)) scale(0.94); } }
+.oc-tip {
+  position: fixed; z-index: 200; pointer-events: none; transform: translate(-50%, calc(-100% - 8px));
+  padding: 4px 9px; border-radius: 8px; font-size: 11.5px; font-weight: 500; color: #f5f5f5; white-space: nowrap;
+  background: rgb(30 30 32 / 0.92); border: 1px solid rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 8px 20px -8px rgb(0 0 0 / 0.6);
+  animation: oc-ttip-in 160ms cubic-bezier(0.22, 1, 0.36, 1) 250ms backwards;
+}
+@media (prefers-reduced-motion: reduce) { .oc-tab-pill, .oc-press, .oc-ic-hover svg, .oc-tip { transition: none !important; animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .oc-timer-ring, .oc-timer-ring.oc-ringing, .oc-ic-timer, .oc-digit, .oc-tw-in, .oc-tab-in, .oc-timer-widget { animation: none !important; transition: none !important; } }
+
+/* Home dashboard: gradient greeting, button system (glass-tinted primary, ghost secondary), card fade-in. */
+.oc-hello { background: linear-gradient(100deg, #f5f5f5 30%, #7dd3fc 75%, #a5b4fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+:root[data-theme="light"] .oc-hello { background-image: linear-gradient(100deg, #111827 30%, #0369a1 80%); }
+.oc-hbtn { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 10px; border: 1px solid transparent; transition: transform 240ms cubic-bezier(0.34, 1.6, 0.64, 1), background-color 160ms, border-color 160ms, color 160ms, box-shadow 160ms; }
+.oc-hbtn:active:not(:disabled) { transform: scale(0.94); transition-duration: 80ms; }
+.oc-hbtn:focus-visible { outline: 2px solid rgb(56 189 248 / 0.9); outline-offset: 2px; }
+.oc-hbtn--ghost:hover { background: rgb(255 255 255 / 0.07); border-color: rgb(255 255 255 / 0.1); color: #f5f5f5; }
+.oc-hbtn--ghost { color: rgb(212 212 212); }
+.oc-hbtn--glass {
+  color: #fff; background: rgb(14 165 233 / 0.32); border-color: rgb(125 211 252 / 0.45);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), inset 0 -8px 18px rgb(0 0 0 / 0.12), 0 10px 26px -12px rgb(14 165 233 / 0.7);
+  -webkit-backdrop-filter: blur(24px) saturate(185%); backdrop-filter: blur(24px) saturate(185%);
+}
+.oc-hbtn--glass:hover { background: rgb(14 165 233 / 0.45); border-color: rgb(186 230 253 / 0.65); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 12px 30px -10px rgb(14 165 233 / 0.85); }
+:root[data-theme="light"] .oc-hbtn--glass { color: #0c4a6e; background: rgb(14 165 233 / 0.18); }
+:root[data-theme="light"] .oc-hbtn--ghost { color: rgb(64 64 64); }
+:root[data-theme="light"] .oc-hbtn--ghost:hover { background: rgb(0 0 0 / 0.05); border-color: rgb(0 0 0 / 0.08); color: #111; }
+@keyframes oc-card-in { from { opacity: 0; transform: translateY(12px) scale(0.985); } }
+.oc-card-in { animation: oc-card-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+@media (prefers-reduced-motion: reduce) { .oc-hbtn, .oc-card-in { animation: none !important; transition: none !important; } }
+.oc-fill > section { overflow-x: hidden; } /* the corner doodle must not add a sideways scrollbar */

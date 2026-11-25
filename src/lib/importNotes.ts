@@ -180,10 +180,11 @@ const reasonOf = (name: string, e: unknown) => {
   return m || "unreadable";
 };
 
-export async function parseImports(files: InFile[]): Promise<{ pages: ImportedPage[]; failed: ImportFailure[] }> {
+export async function parseImports(files: InFile[], onFile?: (i: number, name: string) => void): Promise<{ pages: ImportedPage[]; failed: ImportFailure[] }> {
   const out: ImportedPage[] = [];
   const failed: ImportFailure[] = [];
-  for (const f of files) {
+  for (const [i, f] of files.entries()) {
+    onFile?.(i, f.name);
     try {
       if (!f.bytes.length) throw new Error("the file is empty");
       await assertClean(f.name, f.bytes); // dropped files never went through the Rust read, which scans too

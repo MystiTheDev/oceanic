@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { runTools, searchWeb } from "../lib/neridaTools";
 import { SourceBook, type SourceRef } from "../lib/neridaGuard";
 import { forget as forgetIndex, noteChars, refresh as refreshIndex, searchNotes as searchIndex } from "../lib/noteIndex";
@@ -226,6 +226,39 @@ function RestartReminder() {
 /* ------------------------------------------------------------------ panel */
 type Step = { label: string; done: boolean };
 
+/** The reply being generated lives outside the panel, so switching tabs or closing the side chat doesn't lose it. */
+type Run = { chatId: string | null; busy: boolean; draft: string; steps: Step[]; actions: AgentLog[]; stepsOpen: boolean };
+let run: Run = { chatId: null, busy: false, draft: "", steps: [], actions: [], stepsOpen: true };
+const runSubs = new Set<() => void>();
+const setRun = (p: Partial<Run>) => ((run = { ...run, ...p }), runSubs.forEach((f) => f()));
+const upd = <T,>(k: "steps" | "actions" | "draft" | "busy" | "stepsOpen") => (v: T | ((x: T) => T)) =>
+  setRun({ [k]: typeof v === "function" ? (v as (x: T) => T)(run[k] as T) : v });
+const useRun = () => useSyncExternalStore((f) => (runSubs.add(f), () => void runSubs.delete(f)), () => run);
+/** Chats shown in an open panel right now (a reply finishing elsewhere gets a toast). */
+const watching = new Map<string, number>();
+/** "my note Features to add" → the note whose title words the message uses most (most of its words, at least 2, or the whole title). */
+const STOP = new Set(["the", "and", "for", "my", "note", "notes", "page", "with", "about", "from", "this", "that", "what", "tell", "search"]);
+const words = (t: string) => t.toLowerCase().match(/[a-z0-9]{3,}/g)?.filter((w) => !STOP.has(w)) ?? [];
+function namedNote<P extends { id: string; title: string; trashedAt?: number }>(text: string, pages: P[]): P | null {
+  const said = new Set(words(text));
+  const low = text.toLowerCase();
+  let best: P | null = null, top = 0;
+  for (const p of pages) {
+    if (p.trashedAt || !p.title.trim()) continue;
+    const w = [...new Set(words(p.title))];
+    const hit = w.filter((x) => said.has(x)).length;
+    const whole = low.includes(p.title.trim().toLowerCase()) && p.title.trim().length >= 4 && (w.length > 1 || NOTE_ASK.test(text));
+    const score = whole ? 2 : w.length && hit >= Math.min(2, w.length) && hit / w.length >= 0.6 ? hit / w.length : 0;
+    if (score > top) (top = score), (best = p);
+  }
+  return best;
+}
+/** Asks about the user's own notes. */
+const NOTE_ASK = /\b(my|in (the|this|that)|from (the|this|that))\s+(notes?|pages?)\b|\bnotes?\s+(called|named|titled)\b/i;
+const WEB_ASK = /\b(search (the )?(web|internet|online)|look (it |this |that )?up|google|news)\b/i;
+/** Toast with an "Open" button, shown by App. */
+export const NERIDA_DONE = "oc-nerida-done";
+
 /** "/" menu. `note`: needs a note (@ or the open one) before it runs. */
 type Cmd = { k: string; label: string; note: boolean; prompt: string; tool?: boolean };
 const CMD_ICON: Record<string, typeof X> = { quiz: CircleHelp, flashcards: Layers, summarize: AlignLeft, explain: Lightbulb, review: RotateCcw, plan: CalendarDays, mindmap: Network };
@@ -254,12 +287,15 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const [notes, setNotes] = useState<ContextNote[]>([]);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [steps, setSteps] = useState<Step[]>([]);
-  const [stepsOpen, setStepsOpen] = useState(true);
+  const { busy, steps, stepsOpen, actions, draft, chatId: runChat } = useRun();
+  const [setSteps, setStepsOpen, setActions, setDraft] = [upd<Step[]>("steps"), upd<boolean>("stepsOpen"), upd<AgentLog[]>("actions"), upd<string>("draft")];
+  const live = busy && runChat === (chat?.id ?? null);
+  useEffect(() => {
+    if (!chat) return;
+    watching.set(chat.id, (watching.get(chat.id) ?? 0) + 1);
+    return () => void watching.set(chat.id, (watching.get(chat.id) ?? 1) - 1);
+  }, [chat?.id]);
   /** Agent mode: this reply's activity log, live. */
-  const [actions, setActions] = useState<AgentLog[]>([]);
-  const [draft, setDraft] = useState("");
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -516,7 +552,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     nerida.upsert({ ...base, messages, updatedAt: Date.now() });
     const draft = detectTask(text);
     if (draft) return setTask({ draft, base: { ...base, messages } });
-    setBusy(true);
+    setRun({ busy: true, chatId: base.id });
     setDraft("");
     setStepsOpen(true);
     let used = sendList;
@@ -582,6 +618,13 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       // "this note / the picture / here": only the open note, no other notes from the search.
       const local = !!pageId && !home && ABOUT_OPEN_NOTE.test(text);
       if (local) used = used.filter((n) => n.why !== "found");
+      // A note named in the message: read it first (whole, when it fits).
+      const named = !pdf ? namedNote(text, [...pages.entries()].map(([id, p]) => ({ ...p, id }))) : null;
+      const noteAsk = !pdf && (!!named || NOTE_ASK.test(text));
+      if (named && !used.some((n) => n.id === named.id)) {
+        mark(`Reading “${named.title}”`);
+        used = [{ id: named.id, title: named.title || "Untitled", icon: named.icon, why: "mention" as const, pinned: true }, ...used].slice(0, MAX_NOTES);
+      }
       // Search every note for the exact question (the live search may lag the last keystrokes); removed notes stay out.
       if (!pdf && !files.length && !local && !isFeaturesQuestion(text)) {
         const hits = await searchIndex(text, 3, new Set([...used.map((n) => n.id), ...excluded]), true).catch(() => []);
@@ -628,7 +671,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         mark(`Reading ${files.length} file${files.length > 1 ? "s" : ""}`);
         context = [context, attachmentsContext(files, book, text)].filter(Boolean).join("\n\n");
       }
-      if ((online && b === "plus") || /\b(search (the )?(web|internet|online)|look (it |this |that )?up|google|latest|news)\b/i.test(text)) {
+      // Notes first: a question about notes searches the web only when asked, or (web on) when it needs outside facts.
+      if (noteAsk ? WEB_ASK.test(text) || (online && b === "plus" && /\b(compare|versus|vs\.?|online|internet|current(ly)?|today)\b/i.test(text)) : (online && b === "plus") || WEB_ASK.test(text) || /\blatest\b/i.test(text)) {
         mark("Searching the web");
         try {
           const hits = await searchWeb(text);
@@ -681,10 +725,9 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     if (reply) reply += book.footer(reply);
     const sources = book.refs();
     if (!reply && log.length) reply = "Stopped.";
-    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }), ...(log.length && { actions: log }) }], updatedAt: Date.now() });
-    setActions([]);
-    setDraft("");
-    setBusy(false);
+    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }), ...(log.length && { actions: log }) }], updatedAt: Date.now() }, true, nerida.get().activeId === base.id);
+    setRun({ busy: false, chatId: null, actions: [], draft: "" });
+    if (reply && !watching.get(base.id)) window.dispatchEvent(new CustomEvent(NERIDA_DONE, { detail: { id: base.id, title: base.title } }));
   };
 
   const retry = () => {
@@ -1003,7 +1046,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               nerida.upsert({ ...base, messages: [...base.messages, { role: "assistant", content: summary ?? "Okay, I didn't add anything." }], updatedAt: Date.now() });
             }} />
         )}
-        {busy && (
+        {live && (
           <div className="mt-4">
             {steps.length > 0 && (
               <div className="mb-2">

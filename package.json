@@ -40,7 +40,7 @@
     "emojibase-data": "^16.0.3",
     "fflate": "^0.8.3",
     "html-to-image": "1.11",
-    "katex": "^0.16.47",
+    "katex": "^0.19.1",
     "lucide-react": "^1.65.0",
     "mammoth": "^1.8.0",
     "motion": "^14.14.0",

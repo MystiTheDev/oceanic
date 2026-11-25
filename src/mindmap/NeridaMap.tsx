@@ -3,7 +3,6 @@ import { Plus, Square, X } from "lucide-react";
 import { api } from "../data/api";
 import type { PageMeta } from "../data/workspace";
 import { docText, engine, nerida } from "../lib/nerida";
-import { BetaPill } from "../components/NeridaOrb";
 
 /* Nerida for mindmaps: suggests subtopics as chips, you pick and add your own,
  * choose a depth, then preview the branches and remove any before adding. */
@@ -83,7 +82,7 @@ export function NeridaMapDialog({ topic: start, pages, onAdd, onClose }: { topic
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-[440px] max-w-[92vw] rounded-xl border border-white/[0.1] bg-neutral-900 p-4 shadow-2xl" onKeyDown={(e) => e.stopPropagation()}>
-        <p className="mb-3 text-[15px] font-semibold text-neutral-100">Mindmap with Nerida<BetaPill /></p>
+        <p className="mb-3 text-[15px] font-semibold text-neutral-100">Mindmap with Nerida</p>
         {busy ? (
           <div className="flex items-center justify-between py-6 text-[13px] text-neutral-400">
             {busy}

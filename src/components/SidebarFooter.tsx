@@ -46,7 +46,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
       >
         {active && <WorkspaceIcon ws={active} />}
         <span className="flex-1 truncate text-left font-medium">{active?.name ?? "Workspace"}</span>
-        <ChevronsUpDown className="oc-rail-hide size-3.5 shrink-0 text-neutral-500" />
+        <ChevronsUpDown className="oc-ic-updown oc-rail-hide size-3.5 shrink-0 text-neutral-500" />
       </button>
 
       <div className="flex items-center gap-1">
@@ -79,16 +79,16 @@ export function SidebarFooter(props: SidebarFooterProps) {
           </div>
           <div className="my-1 h-px bg-white/[0.06]" />
           <MenuRow
-            icon={theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            icon={theme === "dark" ? <Sun className="size-4 oc-ic-sun" /> : <Moon className="size-4 oc-ic-moon" />}
             onClick={() => (setOpen(null), props.onToggleTheme())}
           >
             {theme === "dark" ? "Light mode" : "Dark mode"}
           </MenuRow>
           {(
             [
-              ["Settings", <Settings className="size-4" />, undefined],
-              ["Keyboard shortcuts", <Keyboard className="size-4" />, "shortcuts"],
-              ["Help & About", <HelpCircle className="size-4" />, "about"],
+              ["Settings", <Settings className="size-4 oc-ic-gear" />, undefined],
+              ["Keyboard shortcuts", <Keyboard className="size-4 oc-ic-keys" />, "shortcuts"],
+              ["Help & About", <HelpCircle className="size-4 oc-ic-help" />, "about"],
             ] as const
           ).map(([label, icon, page]) => (
             <MenuRow key={label} icon={icon} onClick={() => (setOpen(null), props.onOpenSettings(page))}>
@@ -175,7 +175,7 @@ function WorkspaceList({
         </div>
       ))}
       <div className="my-1 h-px bg-white/[0.06]" />
-      <MenuRow icon={<Plus className="size-4" />} onClick={() => (onDone(), onNewWorkspace())}>
+      <MenuRow icon={<Plus className="size-4 oc-ic-plus" />} onClick={() => (onDone(), onNewWorkspace())}>
         New workspace
       </MenuRow>
     </>

@@ -1,8 +1,7 @@
-/** App-wide preferences read outside React props (calendar maths, timer chime). App keeps them in sync with Settings. */
+/** App-wide preferences read outside React props (calendar maths). App keeps them in sync with Settings. */
 export const prefs = {
   /** 0 = Sunday, 1 = Monday. */
   weekStart: 0 as 0 | 1,
-  chime: true,
 };
 
 /** Start of the week containing `d`, honouring Settings → Preferences → Start week on. */

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { House,MessageSquare, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { House, MessageSquare, Pencil, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { chatGroups, nerida, useNerida } from "../lib/nerida";
-import { BetaPill, NeridaMark } from "./NeridaOrb";
+import { NeridaMark } from "./NeridaOrb";
 import { openContextMenu } from "./ContextMenu";
 
 const ROW = "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13.5px] transition-colors";
@@ -29,10 +29,10 @@ export function HomeSwitch() {
     </button>
   );
   return (
-    <div ref={box} className="absolute right-4 top-3 z-10 flex items-center gap-0.5 rounded-full border border-white/[0.08] bg-neutral-900/80 p-0.5 backdrop-blur">
+    <div ref={box} className="oc-home-switch absolute right-4 top-3 z-10 flex items-center gap-0.5 rounded-full p-[3px]">
       <span aria-hidden className={`oc-switch-pill ${homeMode === "nerida" ? "oc-switch-nerida" : ""}`} data-dir={pill?.dir ?? 0} style={pill ? { left: pill.l, right: pill.r } : { opacity: 0 }} />
       {btn("home", <House className="size-3.5" />, "Home")}
-      {btn("nerida", <NeridaMark size={14} />, <>Nerida<BetaPill /></>)}
+      {btn("nerida", <Sparkles className="oc-switch-spark size-3.5" />, "Nerida")}
     </div>
   );
 }
@@ -58,7 +58,7 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
       <div className="flex h-14 items-center gap-2.5 px-3 pt-1">
         <NeridaMark size={30} />
         {!collapsed && <span className="bg-gradient-to-r from-white via-sky-200 to-violet-300 bg-clip-text text-[18px] font-extrabold tracking-tight text-transparent">Nerida</span>}
-        {!collapsed && <BetaPill />}
+
       </div>
       <div className="flex flex-col gap-1 px-2 pb-1">
         <button type="button" title="New chat" onClick={() => nerida.set({ activeId: null })} className={`${ROW} text-neutral-300 hover:bg-white/5`}>

@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Upload, CalendarDays, Clock, Network, Plus, Sparkles, PenTool, Star, ListTodo, ArrowUp, ChevronDown, Check, Layers } from "lucide-react";
+import { useEffect, useState, type ReactNode, type MouseEvent } from "react";
+import { Upload, CalendarDays, Clock, Network, Plus, Sparkles, PenTool, Star, ListTodo, ArrowUp, ChevronDown, Check, Layers, FileText, AppWindow, PenLine, Copy, Trash2, EyeOff, RotateCw, LayoutGrid, ExternalLink } from "lucide-react";
+import { openContextMenu, type MenuItem } from "./ContextMenu";
+import { Modal, ModalButton } from "./Modal";
 import { dueCards, openReview, useSrs } from "../lib/srs";
 import { isAndroid } from "../mobile/formFactor";
 import { nerida, useNerida, modelLabel, setDefaultModel } from "../lib/nerida";
@@ -14,6 +16,7 @@ import { ScrollRow } from "./ScrollRow";
 import { bannerBg, useBanner } from "../lib/banners";
 import { TagChip } from "./PageProperties";
 import type { AppView } from "./ViewSwitcher";
+import { HomeAtlas } from "../atlas/HomeAtlas";
 
 type HomeViewProps = {
   userName: string;
@@ -30,7 +33,24 @@ type HomeViewProps = {
   onImport: () => void;
   onNewSketch: () => void;
   onChangeView: (view: AppView) => void;
+  /** Active workspace (Atlas chip). */
+  workspaceId?: string;
+  onNewDoc: () => void;
+  onOpenInNewTab: (id: string) => void;
+  onTogglePin: (id: string) => void;
+  onRenamePage: (id: string, title: string) => void;
+  onDuplicatePage: (id: string) => void;
+  onTrashPage: (id: string) => void;
+  /** Drop a page from "Recently visited". */
+  onForget: (id: string) => void;
+  onRefresh: () => void;
+  /** Search, sidebar, back / forward from the app menu. */
+  navMenu: () => MenuItem[];
 };
+
+type Section = "tasks" | "favorites" | "recent";
+const HIDDEN_KEY = "oceanic.homeHidden";
+const SECTIONS: [Section, string][] = [["tasks", "Tasks"], ["favorites", "Favorites"], ["recent", "Recently visited"]];
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -60,8 +80,54 @@ export function HomeView(props: HomeViewProps) {
   const favs = pages.filter((p) => p.pinned).slice(0, 8);
   const dueN = dueCards(useSrs().cards).length;
   const tasks = [...pending].sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")).slice(0, 6);
+  const [hidden, setHidden] = useState<Set<Section>>(() => new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]")));
+  const [renaming, setRenaming] = useState<PageMeta | null>(null);
+  const toggleSection = (k: Section) => {
+    const next = new Set(hidden);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+    setHidden(next);
+  };
+  const show = (k: Section) => !hidden.has(k);
+
+  const bgMenu = (e: MouseEvent) => {
+    // Text fields keep the copy / paste menu from the app.
+    if ((e.target as HTMLElement).closest("input, textarea, [contenteditable=true]")) return;
+    openContextMenu(e, [
+      { label: "New page", icon: <Plus className="size-4" />, hint: "Ctrl+T", onSelect: onNewPage },
+      { label: "New mindmap", icon: <Sparkles className="size-4" />, onSelect: props.onNewMindmap },
+      { label: "New doc", icon: <FileText className="size-4" />, onSelect: props.onNewDoc },
+      { label: "New sketch", icon: <PenTool className="size-4" />, onSelect: props.onNewSketch },
+      { label: "Import…", icon: <Upload className="size-4" />, onSelect: props.onImport },
+      "divider",
+      {
+        label: "Show on Home",
+        icon: <LayoutGrid className="size-4" />,
+        children: SECTIONS.filter(([k]) => glass || k === "recent").map(([k, label]) => ({ label, checked: show(k), onSelect: () => toggleSection(k) })),
+      },
+      { label: "Refresh", icon: <RotateCw className="size-4" />, onSelect: props.onRefresh },
+      "divider",
+      ...props.navMenu(),
+    ]);
+  };
+
+  const cardMenu = (e: MouseEvent, p: PageMeta, inRecent: boolean) =>
+    openContextMenu(e, [
+      { label: "Open", icon: <ExternalLink className="size-4" />, onSelect: () => onOpenPage(p.id) },
+      { label: "Open in new tab", icon: <AppWindow className="size-4" />, onSelect: () => props.onOpenInNewTab(p.id) },
+      "divider",
+      { label: p.pinned ? "Remove from Favorites" : "Add to Favorites", icon: <Star className="size-4" />, onSelect: () => props.onTogglePin(p.id) },
+      { label: "Rename", icon: <PenLine className="size-4" />, onSelect: () => setRenaming(p) },
+      { label: "Duplicate", icon: <Copy className="size-4" />, onSelect: () => props.onDuplicatePage(p.id) },
+      ...(inRecent ? [{ label: "Remove from Recent", icon: <EyeOff className="size-4" />, onSelect: () => props.onForget(p.id) }] : []),
+      "divider",
+      { label: "Move to Trash", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => props.onTrashPage(p.id) },
+    ]);
+
   return (
-    <div className={`oc-page-in scrollbar-thin relative h-full overflow-y-auto ${glass ? "oc-home-glass" : ""}`}>
+    <div onContextMenu={bgMenu} className={`oc-page-in scrollbar-thin relative h-full overflow-y-auto ${glass ? "oc-home-glass" : ""}`}>
+      {renaming && <RenameDialog page={renaming} onSave={(t) => props.onRenamePage(renaming.id, t)} onClose={() => setRenaming(null)} />}
       <div className="mx-auto flex w-full max-w-[1024px] flex-col gap-6 px-8 pb-24 pt-[14vh]">
         {/* ---- Brand + greeting ---- */}
         <div className="oc-home-brand flex flex-col items-center gap-3 text-center">
@@ -92,6 +158,7 @@ export function HomeView(props: HomeViewProps) {
                   <Layers className="size-3.5" /> {dueN} card{dueN === 1 ? "" : "s"} due
                 </button>
               )}
+              {props.workspaceId && <HomeAtlas pages={pages.filter((p) => p.workspaceId === props.workspaceId)} workspaceId={props.workspaceId} />}
               <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
             </div>
             <div className={`mt-3 gap-2 ${glass ? "grid grid-cols-3" : "flex flex-wrap"}`}>
@@ -103,35 +170,35 @@ export function HomeView(props: HomeViewProps) {
               <ActionPill tone="#f472b6" icon={<PenTool className="size-3.5" />} label="Sketch" onClick={props.onNewSketch} />
             </div>
           </div>
-          {glass && <HomeList icon={<ListTodo className="size-3.5" />} className="min-[900px]:order-1" title="Tasks" empty="Nothing due. Nice." items={tasks} today={today} onOpen={onOpenPage} />}
-          {glass && <HomeList icon={<Star className="size-3.5" />} className="min-[900px]:order-3" title="Favorites" empty="Star a page to pin it here." items={favs} today={today} onOpen={onOpenPage} />}
+          {glass && show("tasks") && <HomeList icon={<ListTodo className="size-3.5" />} className="min-[900px]:order-1" title="Tasks" empty="Nothing due. Nice." items={tasks} today={today} onOpen={onOpenPage} onMenu={(e, p) => cardMenu(e, p, false)} />}
+          {glass && show("favorites") && <HomeList icon={<Star className="size-3.5" />} className="min-[900px]:order-3" title="Favorites" empty="Star a page to pin it here." items={favs} today={today} onOpen={onOpenPage} onMenu={(e, p) => cardMenu(e, p, false)} />}
         </div>
 
         {/* ---- Recently visited ---- */}
-        <section className="min-w-0">
+        {show("recent") && <section className="min-w-0">
           <SectionTitle icon={<Clock className="size-3.5" />}>Recently visited</SectionTitle>
           {!visited.length ? <Empty icon={<Clock className="size-4" />} action={{ label: "New page", onClick: onNewPage }}>Pages you open will show up here.</Empty>
           : glass ? (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-              {visited.slice(0, 6).map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />)}
+              {visited.slice(0, 6).map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} onMenu={(e) => cardMenu(e, p, true)} />)}
             </div>
           ) : (
             <ScrollRow deps={visited.length}>
-              {visited.map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} />)}
+              {visited.map((p, i) => <RecentCard key={p.id} page={p} delay={i * 40} onOpen={() => onOpenPage(p.id)} onMenu={(e) => cardMenu(e, p, true)} />)}
             </ScrollRow>
           )}
-        </section>
+        </section>}
       </div>
     </div>
   );
 }
 
-function HomeList({ className = "", icon, title, empty, items, today, onOpen }: { className?: string; icon: ReactNode; title: string; empty: string; items: PageMeta[]; today: string; onOpen: (id: string) => void }) {
+function HomeList({ className = "", icon, title, empty, items, today, onOpen, onMenu }: { className?: string; icon: ReactNode; title: string; empty: string; items: PageMeta[]; today: string; onOpen: (id: string) => void; onMenu: (e: MouseEvent, p: PageMeta) => void }) {
   return (
     <section className={`oc-home-pane oc-home-card scrollbar-thin min-w-0 overflow-y-auto rounded-2xl p-3 min-[900px]:max-h-[148px] ${className}`}>
       <SectionTitle icon={icon}>{title}</SectionTitle>
       {items.length ? items.map((p) => (
-        <button key={p.id} type="button" onClick={() => onOpen(p.id)} className="oc-glass-inset mb-1.5 flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] text-neutral-200">
+        <button key={p.id} type="button" onClick={() => onOpen(p.id)} onContextMenu={(e) => onMenu(e, p)} className="oc-glass-inset mb-1.5 flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] text-neutral-200">
           <span>{p.icon}</span>
           <span className="min-w-0 flex-1 truncate">{p.title || "Untitled"}</span>
           {p.dueDate && <span className={`text-[11px] ${p.dueDate < today ? "text-red-400" : p.dueDate === today ? "text-[color:var(--oc-brand-light)]" : "text-neutral-500"}`}>{parseIsoDate(p.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}
@@ -315,7 +382,7 @@ function useSnippet(id: string, updatedAt?: string) {
 }
 
 /** Notion-style cards: tinted cover, icon over the edge, title, snippet, tags, time. */
-export function RecentCard({ page, delay, onOpen }: { page: PageMeta; delay: number; onOpen: () => void }) {
+export function RecentCard({ page, delay, onOpen, onMenu }: { page: PageMeta; delay: number; onOpen: () => void; onMenu?: (e: MouseEvent) => void }) {
   const snippet = useSnippet(page.id, page.updatedAt);
   const tint = tagColor(page.tags?.[0] ?? page.id).solid;
   const banner = useBanner(page.id);
@@ -323,6 +390,7 @@ export function RecentCard({ page, delay, onOpen }: { page: PageMeta; delay: num
     <button
       type="button"
       onClick={onOpen}
+      onContextMenu={onMenu}
       style={{ animationDelay: `${delay}ms` }}
       className="oc-home-card group flex h-[214px] w-[260px] shrink-0 [.oc-home-glass_&]:w-full cursor-pointer flex-col overflow-hidden oc-glass oc-glass-hover text-left"
     >
@@ -340,3 +408,22 @@ export function RecentCard({ page, delay, onOpen }: { page: PageMeta; delay: num
   );
 }
 
+
+/** Small dialog to rename a page from its Home card. */
+function RenameDialog({ page, onSave, onClose }: { page: PageMeta; onSave: (title: string) => void; onClose: () => void }) {
+  const [title, setTitle] = useState(page.title);
+  const save = () => (onSave(title.trim()), onClose());
+  return (
+    <Modal onClose={onClose}>
+      <div className="flex flex-col gap-3 p-5">
+        <h2 className="text-[15px] font-semibold text-neutral-100">Rename page</h2>
+        <input autoFocus value={title} placeholder="Untitled" onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
+          className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[14px] text-neutral-100 outline-none focus:border-[color:var(--oc-brand)]" />
+        <div className="flex justify-end gap-2">
+          <ModalButton onClick={onClose}>Cancel</ModalButton>
+          <ModalButton variant="primary" onClick={save}>Rename</ModalButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}

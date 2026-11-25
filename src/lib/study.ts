@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { PageMeta } from "../data/workspace";
 import { api } from "../data/api";
 import { isoDate } from "./colors";
-import { prefs } from "./prefs";
+import * as Timers from "../timers/store";
 
 /** Student tags: pages tagged these show in Home's widgets and on the Calendar. */
 export const ASSIGNMENT = "Assignment";
@@ -13,19 +13,11 @@ export const studyKind = (p: PageMeta): "assignment" | "exam" | null =>
 /* ------------------------------------------------------------------ state */
 export type ClassSlot = { id: string; day: number; subject: string; start: string; end: string; room: string; color: string };
 export type Todo = { id: string; text: string; done: boolean };
-/** Durations are in minutes and may be fractional (seconds = minutes × 60). */
-export type TimerPreset = { id: string; name: string; minutes: number; breakMinutes?: number };
 /** 3725 → "1:02:05", 90 → "1:30". */
 export const clock = (secs: number) => {
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), sec = secs % 60;
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
 };
-/** Short label for a preset duration: 25m, 1h 30m, 2m 15s. */
-export const durationLabel = (minutes: number) => {
-  const t = Math.round(minutes * 60), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
-  return [h && `${h}h`, m && `${m}m`, sec && `${sec}s`].filter(Boolean).join(" ") || "0s";
-};
-export type RunningTimer = { name: string; phase: "focus" | "break"; total: number; endsAt: number | null; remaining: number; preset: TimerPreset };
 
 type Study = {
   timetable: ClassSlot[];
@@ -33,11 +25,8 @@ type Study = {
   /** "list" = typed on Home; "page" = checklist of a note. */
   todoSource: { mode: "list" | "page"; pageId: string | null };
   subjects: string[];
-  timers: TimerPreset[];
-  /** Focus minutes per day (YYYY-MM-DD). */
+  /** Focus minutes per day (YYYY-MM-DD), from finished Timers focus runs. */
   focusLog: Record<string, number>;
-  sessions: number;
-  timer: RunningTimer | null;
   /** Class details per subject tag. */
   classes: Record<string, ClassInfo>;
   links: QuickLink[];
@@ -56,11 +45,10 @@ export const DEFAULT_LAYOUT: GridCard[] = [
 export type ClassInfo = { teacher: string; room: string; art: string };
 /** `icon`: "favicon" (site's /favicon.ico) or an emoji. `color`: a COLORS id. */
 export type QuickLink = { id: string; label: string; url: string; icon?: string; color?: string };
-const KEYS = { timetable: "studyTimetable", todos: "studyTodos", todoSource: "studyTodoSource", subjects: "studySubjects", timers: "studyTimers", focusLog: "studyFocusLog", classes: "studyClasses", links: "studyLinks", layout: "studyLayout" } as const;
-const POMODORO: TimerPreset = { id: "pomodoro", name: "Pomodoro", minutes: 25, breakMinutes: 5 };
+const KEYS = { timetable: "studyTimetable", todos: "studyTodos", todoSource: "studyTodoSource", subjects: "studySubjects", focusLog: "studyFocusLog", classes: "studyClasses", links: "studyLinks", layout: "studyLayout" } as const;
 
 // Dev hot reload re-runs this module; keep loaded state so a drag can't save defaults over the real layout.
-let state: Study = import.meta.hot?.data.state ?? { timetable: [], todos: [], todoSource: { mode: "list", pageId: null }, subjects: [], timers: [POMODORO], focusLog: {}, sessions: 0, timer: null, classes: {}, links: [], layout: DEFAULT_LAYOUT };
+let state: Study = import.meta.hot?.data.state ?? { timetable: [], todos: [], todoSource: { mode: "list", pageId: null }, subjects: [], focusLog: {}, classes: {}, links: [], layout: DEFAULT_LAYOUT };
 import.meta.hot?.dispose((d) => (d.state = state));
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -84,7 +72,6 @@ export function loadStudy(stored: Record<string, string>) {
     todos: read(KEYS.todos, []),
     todoSource: read(KEYS.todoSource, { mode: "list", pageId: null }),
     subjects: read(KEYS.subjects, []),
-    timers: read(KEYS.timers, [POMODORO]),
     focusLog: read(KEYS.focusLog, {}),
     classes: read(KEYS.classes, {}),
     links: read(KEYS.links, []),
@@ -108,69 +95,25 @@ export function setStudy<K extends keyof typeof KEYS>(key: K, value: Study[K]) {
 }
 export const uid = () => Math.random().toString(36).slice(2, 9);
 
-/* ------------------------------------------------------------------ focus timer (survives navigation) */
-let tick = 0;
-const setTimer = (timer: RunningTimer | null) => {
-  state = { ...state, timer };
-  emit();
-};
-export function startPreset(p: TimerPreset, phase: "focus" | "break" = "focus") {
-  const secs = Math.round((phase === "focus" ? p.minutes : (p.breakMinutes ?? 5)) * 60);
-  setTimer({ name: phase === "focus" ? p.name : "Break", phase, total: secs, endsAt: Date.now() + secs * 1000, remaining: secs, preset: p });
-  run();
-}
-export function pauseTimer() {
-  const t = state.timer;
-  if (!t?.endsAt) return;
-  setTimer({ ...t, endsAt: null, remaining: Math.max(0, Math.round((t.endsAt - Date.now()) / 1000)) });
-}
-export function resumeTimer() {
-  const t = state.timer;
-  if (!t || t.endsAt) return;
-  setTimer({ ...t, endsAt: Date.now() + t.remaining * 1000 });
-  run();
-}
-export const stopTimer = () => setTimer(null);
-function run() {
-  window.clearInterval(tick);
-  tick = window.setInterval(() => {
-    const t = state.timer;
-    if (!t?.endsAt) return window.clearInterval(tick);
-    const remaining = Math.max(0, Math.round((t.endsAt - Date.now()) / 1000));
-    if (remaining > 0) return setTimer({ ...t, remaining });
-    window.clearInterval(tick);
-    finished(t);
-  }, 500);
-}
-function finished(t: RunningTimer) {
-  chime();
-  if (t.phase === "focus") {
-    const day = isoDate(new Date());
-    state = { ...state, sessions: state.sessions + 1 };
-    setStudy("focusLog", { ...state.focusLog, [day]: (state.focusLog[day] ?? 0) + Math.round(t.total / 60) });
-    // Presets with a break roll straight into it (Pomodoro).
-    if (t.preset.breakMinutes) return startPreset(t.preset, "break");
+/* ------------------------------------------------------------------ focus log (from Timers) */
+/** Finished Pomodoro focus phases and finished countdowns add their minutes to today's study log. */
+let seen = new Map<string, Timers.Timer>();
+Timers.subscribe(() => {
+  const now = Timers.getTimers().timers;
+  let mins = 0;
+  for (const t of now) {
+    const was = seen.get(t.id);
+    if (!was || !was.track) continue; // "Don't track" timers stay out of the streak
+    if (t.kind === "pomodoro" && was.phase === "work" && t.phase !== "work" && t.round === was.round && Date.now() >= was.at - 1500) mins += was.total / 60e3;
+    if (t.kind === "countdown" && was.running && !t.running && t.left === 0) mins += was.total / 60e3;
   }
-  setTimer(null);
-}
-/** Soft two-note chime (no sound files). */
-function chime() {
-  if (!prefs.chime) return;
-  try {
-    const ctx = new AudioContext();
-    [660, 880].forEach((f, i) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.25);
-      g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + i * 0.25 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.25 + 0.6);
-      o.connect(g).connect(ctx.destination);
-      o.start(ctx.currentTime + i * 0.25);
-      o.stop(ctx.currentTime + i * 0.25 + 0.65);
-    });
-  } catch {}
-}
+  seen = new Map(now.map((t) => [t.id, t]));
+  if (mins > 0) {
+    const day = isoDate(new Date());
+    setStudy("focusLog", { ...state.focusLog, [day]: (state.focusLog[day] ?? 0) + Math.round(mins) });
+  }
+});
+
 
 /** Consecutive study days ending today (or yesterday, if today hasn't started). */
 export function streak(log: Record<string, number>) {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Extension, type Editor } from "@tiptap/core";
 import { ListTree, MessageSquareText, PenLine, RotateCcw, Square, Wand2, X } from "lucide-react";
-import { BetaPill, NeridaMark } from "../components/NeridaOrb";
+import { NeridaMark } from "../components/NeridaOrb";
 import { Markdown } from "../components/NeridaPanel";
 import { openNeridaOutline } from "../components/NeridaOutlineUI";
 import { mdToHtml, openNeridaEdit, runFeedback, stopEdit } from "../lib/neridaEdit";
@@ -112,7 +112,7 @@ export function FeedbackDrawer({ editor, onClose }: { editor: Editor; onClose: (
     <div className="absolute inset-y-0 right-0 z-40 flex w-[340px] max-w-full flex-col border-l border-white/[0.08] bg-[var(--oc-surface)] shadow-[-12px_0_30px_rgba(0,0,0,0.35)]">
       <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
         <NeridaMark size={16} busy={busy} />
-        <span className="flex-1 text-[13px] font-medium text-neutral-100">Essay feedback<BetaPill /></span>
+        <span className="flex-1 text-[13px] font-medium text-neutral-100">Essay feedback</span>
         {busy ? (
           <button type="button" title="Stop" onClick={stopEdit} className="cursor-pointer rounded p-1 text-neutral-400 hover:bg-white/[0.08]"><Square className="size-3.5 shrink-0" fill="currentColor" strokeWidth={0} /></button>
         ) : (

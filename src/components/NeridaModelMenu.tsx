@@ -6,7 +6,7 @@ import {
   engine, nerida, isCloud, listModels, MODEL_NAMES, modelLabel, OLLAMA_URL, openNeridaSettings, setDefaultModel, useNerida,
   type AiStatus, type ModelId, type ModelRef,
 } from "../lib/nerida";
-import { BetaPill, NeridaMark } from "./NeridaOrb";
+import { NeridaMark } from "./NeridaOrb";
 
 const ABOUT: Record<ModelId, string> = { plus: "Smart · runs on this PC" };
 
@@ -101,7 +101,7 @@ export function ModelMenu({ disabled, inSettings, agent: showAgent }: { disabled
       {open && createPortal(
         <div ref={menu} role="menu" onKeyDown={onKey} style={{ position: "fixed", ...pos }}
           className="oc-pop-in oc-glass-float z-[1000] max-h-[60vh] w-[288px] overflow-y-auto rounded-2xl p-1.5 scrollbar-thin">
-          <Group label="Nerida" extra={<BetaPill />} />
+          <Group label="Nerida" />
           {(["plus"] as ModelId[]).map((m) => {
             const installed = !!status?.server && !!status.models.find((x) => x.id === m)?.installed;
             const badge: Badge = !status ? { text: ABOUT[m], tone: "gray" }

@@ -11,8 +11,10 @@ import { colorOf, isoDate, parseIsoDate, tagColor, COLORS, COLOR_IDS, type Color
 import { EmojiPicker } from "./EmojiPicker";
 import { openContextMenu } from "./ContextMenu";
 import {
-  ASSIGNMENT, DEFAULT_LAYOUT, EXAM, type GridCard, pauseTimer, resumeTimer, clock, durationLabel, setStudy, startPreset, stopTimer, streak, uid, useStudy, type ClassSlot, type QuickLink, type TimerPreset,
+  ASSIGNMENT, DEFAULT_LAYOUT, EXAM, type GridCard, setStudy, streak, uid, useStudy, type ClassSlot, type QuickLink,
 } from "../lib/study";
+import * as Timers from "../timers/store";
+import * as Study from "../timers/study";
 import { Modal, ModalButton } from "./Modal";
 import { Empty, RecentCard, SectionTitle, StatusPill } from "./HomeView";
 import { ScrollRow } from "./ScrollRow";
@@ -61,12 +63,12 @@ export function StudyHome(props: {
 
   return (
     <div className="oc-page-in scrollbar-thin h-full overflow-y-auto">
-      <div className="oc-stagger mx-auto flex w-full max-w-6xl flex-col gap-6 px-8 pb-24 pt-10">
+      <div className="oc-stagger mx-auto flex w-full max-w-6xl flex-col gap-6 px-8 pb-24 pt-14">
         {/* ---- Compact hero ---- */}
         <div className="flex flex-wrap items-center gap-4">
           <img src={logoRaw} alt="Oceanic" className="oc-logo-float size-12 rounded-xl object-contain" />
           <div className="min-w-0 flex-1">
-            <h1 className="text-[24px] font-bold tracking-tight text-neutral-100">
+            <h1 className="oc-hello text-[30px] font-bold leading-tight tracking-tight">
               {hello}
               {props.userName ? `, ${props.userName}` : ""}
             </h1>
@@ -74,9 +76,10 @@ export function StudyHome(props: {
               {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
               {next && <span className="text-neutral-200"> · Next: {next}</span>}
               <StatusPill pages={pending} today={today} overdue={overdue.length} dueToday={dueToday.length} onOpen={onOpenPage} />
+              <StudyChip />
             </p>
           </div>
-          <button type="button" title={editing ? "Done customizing" : "Customize dashboard"} onClick={() => setEditing((v) => !v)} className={`grid size-9 cursor-pointer place-items-center rounded-xl border transition-colors ${editing ? "border-sky-500 bg-sky-600 text-white" : "border-white/[0.12] text-neutral-300 hover:bg-white/[0.07] hover:text-white"}`}>
+          <button type="button" data-tip={editing ? "Done customizing" : "Customize dashboard"} aria-label={editing ? "Done customizing" : "Customize dashboard"} aria-pressed={editing} onClick={() => setEditing((v) => !v)} className={`oc-hbtn size-9 ${editing ? "oc-hbtn--glass" : "oc-hbtn--ghost"}`}>
             {editing ? <Check className="size-4" /> : <LayoutGrid className="size-4" />}
           </button>
           <CreateMenu {...props} />
@@ -136,7 +139,7 @@ function CreateMenu(props: HomeProps) {
   ];
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-4 text-[13.5px] font-semibold text-white shadow-lg hover:brightness-110">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="oc-hbtn oc-hbtn--glass h-9 gap-1.5 px-4 text-[13.5px] font-semibold">
         <Plus className="size-4" /> Create
       </button>
       {open && (
@@ -176,14 +179,31 @@ function Card({ title, icon, tone, action, children }: { title: string; icon: Re
         <h2 className="flex-1 text-[14px] font-semibold text-neutral-100">{title}</h2>
         {action}
       </div>
-      <div className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{children}</div>
     </section>
   );
 }
-const Small = ({ children }: { children: ReactNode }) => <p className="py-2 text-[13px] text-neutral-500">{children}</p>;
+const Small = ({ children }: { children: ReactNode }) => (
+  <div className="flex h-full min-h-20 flex-col items-center justify-center gap-2 py-3 text-center">
+    <span className="grid size-9 place-items-center rounded-full bg-white/[0.05] text-neutral-500"><Sparkles className="size-4" /></span>
+    <p className="max-w-72 text-[12.5px] text-neutral-500">{children}</p>
+  </div>
+);
+/** Today's study minutes and goal streak from Timers. */
+function StudyChip() {
+  const st = Study.useStudy();
+  const today = Study.days(1)[0].total;
+  const streak = Study.streak();
+  if (!today && !streak) return null;
+  return (
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-sky-400/25 bg-sky-400/10 px-2.5 text-[12px] font-medium text-sky-300">
+      <Timer className="size-3.5" />{Math.round(today)} / {st.goal} min{streak ? <> · <Flame className="size-3.5 text-amber-300" />{streak}</> : null}
+    </span>
+  );
+}
 function IconBtn({ tip, onClick, children }: { tip: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" title={tip} onClick={onClick} className="grid size-7 cursor-pointer place-items-center rounded-md text-neutral-400 transition-colors hover:bg-white/[0.07] hover:text-neutral-100 [&_svg]:size-4">
+    <button type="button" data-tip={tip} aria-label={tip} onClick={onClick} className="oc-hbtn oc-hbtn--ghost size-7 text-neutral-400 [&_svg]:size-4">
       {children}
     </button>
   );
@@ -236,121 +256,55 @@ function TodayWidget({ pages, today, onOpen }: { pages: PageMeta[]; today: strin
   );
 }
 
-/* ------------------------------------------------------------ Focus timer */
+/* ------------------------------------------------------------ Focus timer (uses Timers) */
 function FocusWidget() {
-  const { timer, timers, sessions } = useStudy();
-  const [editing, setEditing] = useState<TimerPreset | null>(null);
-  const pct = timer ? 1 - timer.remaining / timer.total : 0;
-  const mm = timer ? clock(timer.remaining) : "";
+  const s = Timers.useTimers();
+  const { focusLog } = useStudy();
+  // The Pomodoro or countdown that ends soonest.
+  const t = s.timers.filter((x) => (x.kind === "pomodoro" || x.kind === "countdown") && (x.running || x.left > 0)).sort((a, b) => Timers.valueOf(a, s.now) - Timers.valueOf(b, s.now))[0];
+  const v = t ? Timers.valueOf(t, s.now) : 0;
+  const pct = t && t.total ? 1 - v / t.total : 0;
+  const brk = t?.kind === "pomodoro" && t.phase !== "work";
+  const today = focusLog[isoDate(new Date())] ?? 0;
   const R = 46;
   return (
-    <Card
-      title="Focus timer"
-      icon={<Timer className="size-4" />}
-      tone="#f472b6"
-      action={<IconBtn tip="New timer" onClick={() => setEditing({ id: uid(), name: "", minutes: 30 })}><Plus /></IconBtn>}
-    >
+    <Card title="Focus timer" icon={<Timer className="size-4" />} tone="#f472b6" action={<IconBtn tip="Start a Pomodoro" onClick={Timers.addPomodoro}><Plus /></IconBtn>}>
       <div className="flex items-center gap-5">
         <div className="relative grid size-[110px] shrink-0 place-items-center">
           <svg viewBox="0 0 110 110" className="absolute inset-0 -rotate-90">
             <circle cx="55" cy="55" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
-            <circle
-              cx="55" cy="55" r={R} fill="none" stroke={timer?.phase === "break" ? "#4ade80" : "#f472b6"} strokeWidth="8" strokeLinecap="round"
-              strokeDasharray={2 * Math.PI * R} strokeDashoffset={2 * Math.PI * R * (1 - pct)} className="transition-[stroke-dashoffset] duration-500"
-            />
+            <circle cx="55" cy="55" r={R} fill="none" stroke={brk ? "#4ade80" : "#f472b6"} strokeWidth="8" strokeLinecap="round"
+              strokeDasharray={2 * Math.PI * R} strokeDashoffset={2 * Math.PI * R * (1 - pct)} className="transition-[stroke-dashoffset] duration-500" />
           </svg>
           <div className="text-center">
-            <p className="text-[22px] font-bold tabular-nums text-neutral-100">{timer ? mm : "—"}</p>
-            <p className="max-w-[86px] truncate text-[11px] text-neutral-400">{timer ? timer.name : "Pick a timer"}</p>
+            <p className="text-[22px] font-bold tabular-nums text-neutral-100">{t ? Timers.fmt(v) : "—"}</p>
+            <p className="max-w-[86px] truncate text-[11px] text-neutral-400">{t ? (t.kind === "pomodoro" ? Timers.phaseName[t.phase] : t.label) : "Pick a timer"}</p>
           </div>
         </div>
         <div className="min-w-0 flex-1">
-          {timer ? (
+          {t && (
             <div className="mb-3 flex gap-2">
-              <button type="button" onClick={timer.endsAt ? pauseTimer : resumeTimer} className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-pink-500/20 px-3 text-[13px] text-pink-300 hover:bg-pink-500/30">
-                {timer.endsAt ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} {timer.endsAt ? "Pause" : "Resume"}
+              <button type="button" onClick={() => Timers.toggle(t.id)} className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-pink-500/20 px-3 text-[13px] text-pink-300 hover:bg-pink-500/30">
+                {t.running ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} {t.running ? "Pause" : "Resume"}
               </button>
-              <IconBtn tip="Restart" onClick={() => startPreset(timer.preset, timer.phase)}><RotateCcw /></IconBtn>
-              <IconBtn tip="Stop" onClick={stopTimer}><Square /></IconBtn>
+              <IconBtn tip="Restart" onClick={() => Timers.reset(t.id)}><RotateCcw /></IconBtn>
+              <IconBtn tip="Stop" onClick={() => Timers.remove(t.id)}><Square /></IconBtn>
             </div>
-          ) : null}
+          )}
           <div className="flex flex-wrap gap-1.5">
-            {timers.map((p) => (
-              <span key={p.id} className="group flex items-center rounded-full border border-white/[0.08] bg-white/[0.04]">
-                <button type="button" onClick={() => startPreset(p)} className="cursor-pointer py-1 pl-3 pr-2 text-[12px] text-neutral-200 hover:text-white">
-                  {p.name} · {durationLabel(p.minutes)}
-                </button>
-                <button type="button" title="Edit" onClick={() => setEditing(p)} className="hidden cursor-pointer pr-2 text-neutral-500 hover:text-neutral-200 group-hover:block">
-                  <Pencil className="size-3" />
-                </button>
-              </span>
+            <button type="button" onClick={Timers.addPomodoro} className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-[12px] text-neutral-200 hover:text-white">
+              Pomodoro · {s.settings.work}m
+            </button>
+            {s.presets.map((p) => (
+              <button key={p.id} type="button" onClick={() => Timers.addCountdown(p.ms, p.label)} className="cursor-pointer rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-[12px] text-neutral-200 hover:text-white">
+                {p.label} · {Timers.fmt(p.ms)}
+              </button>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-neutral-500">{sessions} session{sessions === 1 ? "" : "s"} finished this run</p>
+          <p className="mt-2 text-[11px] text-neutral-500">{today ? `${today} min focused today` : "Presets and sounds are in Timers."}</p>
         </div>
       </div>
-      {editing && <TimerDialog preset={editing} onClose={() => setEditing(null)} />}
     </Card>
-  );
-}
-/** Hours : minutes : seconds boxes over a value in seconds (max 23:59:59). */
-function HmsInput({ value, onChange }: { value: number; onChange: (secs: number) => void }) {
-  const parts = [Math.floor(value / 3600), Math.floor((value % 3600) / 60), value % 60];
-  const max = [23, 59, 59];
-  const set = (i: number, n: number) => {
-    const next = [...parts];
-    next[i] = Math.min(max[i], Math.max(0, Math.floor(n) || 0));
-    onChange(next[0] * 3600 + next[1] * 60 + next[2]);
-  };
-  return (
-    <div className="mt-1 flex items-center gap-1.5">
-      {["h", "m", "s"].map((unit, i) => (
-        <label key={unit} className="flex h-8 flex-1 items-center rounded-md border border-white/[0.1] bg-white/[0.04] pr-2 focus-within:border-pink-400/50">
-          <input
-            type="number" min={0} max={max[i]} value={parts[i]}
-            onChange={(e) => set(i, Number(e.target.value))}
-            onFocus={(e) => e.target.select()}
-            className="w-full min-w-0 bg-transparent px-2 text-[13px] tabular-nums text-neutral-100 outline-none"
-          />
-          <span className="text-[12px] text-neutral-500">{unit}</span>
-        </label>
-      ))}
-    </div>
-  );
-}
-
-function TimerDialog({ preset, onClose }: { preset: TimerPreset; onClose: () => void }) {
-  const { timers } = useStudy();
-  const [name, setName] = useState(preset.name);
-  const [focus, setFocus] = useState(() => Math.round(preset.minutes * 60));
-  const [brk, setBrk] = useState(() => Math.round((preset.breakMinutes ?? 0) * 60));
-  const exists = timers.some((t) => t.id === preset.id);
-  const field = "mt-1 h-8 w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-2 text-[13px] text-neutral-100 outline-none";
-  const save = (start: boolean) => {
-    const p: TimerPreset = { id: preset.id, name: name.trim() || "Focus", minutes: Math.max(1, focus) / 60, breakMinutes: brk > 0 ? brk / 60 : undefined };
-    setStudy("timers", exists ? timers.map((t) => (t.id === p.id ? p : t)) : [...timers, p]);
-    if (start) startPreset(p);
-    onClose();
-  };
-  return (
-    <Modal onClose={onClose} className="w-[400px] p-5">
-      <h2 className="mb-4 text-[15px] font-semibold text-neutral-100">{exists ? "Edit timer" : "New timer"}</h2>
-      <label className="text-[12px] text-neutral-400">Name<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Maths revision" className={field} /></label>
-      <p className="mt-3 text-[12px] text-neutral-400">Focus</p>
-      <HmsInput value={focus} onChange={setFocus} />
-      <p className="mt-3 text-[12px] text-neutral-400">Break after <span className="text-neutral-500">(0 = none)</span></p>
-      <HmsInput value={brk} onChange={setBrk} />
-      <div className="mt-5 flex items-center gap-2">
-        {exists && (
-          <button type="button" onClick={() => (setStudy("timers", timers.filter((t) => t.id !== preset.id)), onClose())} className="mr-auto flex cursor-pointer items-center gap-1 text-[13px] text-red-400 hover:text-red-300">
-            <Trash2 className="size-3.5" /> Delete
-          </button>
-        )}
-        <span className="flex-1" />
-        <ModalButton onClick={() => save(false)}>Save</ModalButton>
-        <ModalButton variant="primary" onClick={() => save(true)}>Save & start</ModalButton>
-      </div>
-    </Modal>
   );
 }
 
@@ -944,19 +898,22 @@ function PlannerTabs({ pages, today, onOpen, onSetStatus }: { pages: PageMeta[];
   const upcoming = items.filter((p) => p.dueDate! >= today).sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
   return (
     <section className="oc-card relative overflow-hidden rounded-2xl p-4" style={{ "--tone": "#5aa2e9" } as React.CSSProperties}>
-      <div className="mb-3 flex items-center gap-1">
-        <h2 className="mr-3 text-[17px] font-semibold text-neutral-100">Assignments &amp; Exams</h2>
-        {(["week", "month", "upcoming"] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setTab(t)} className={`relative h-7 cursor-pointer rounded-md px-2.5 text-[12.5px] ${tab === t ? "bg-white/[0.08] text-neutral-100" : "text-neutral-400 hover:text-neutral-200"}`}>
-            {t === "week" ? "This week" : t === "month" ? "This month" : "Upcoming"}
-          </button>
-        ))}
-        <span className="flex-1" />
+      <div className="mb-3 flex flex-nowrap items-center gap-2 overflow-hidden">
+        <h2 className="mr-1 shrink-0 whitespace-nowrap text-[15px] font-semibold text-neutral-100">Assignments &amp; Exams</h2>
+        <div role="tablist" className="relative flex shrink-0 items-center rounded-lg bg-white/[0.05] p-0.5">
+          <SlidePill className="rounded-md" />
+          {(["week", "month", "upcoming"] as const).map((t) => (
+            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`oc-hbtn relative h-7 whitespace-nowrap rounded-md px-2.5 text-[12px] ${tab === t ? "text-neutral-100" : "text-neutral-400 hover:text-neutral-200"}`}>
+              {t === "week" ? "Week" : t === "month" ? "Month" : "Upcoming"}
+            </button>
+          ))}
+        </div>
+        <span className="min-w-0 flex-1" />
         {tab !== "upcoming" && (
           <>
-            <span className="mr-1 text-[12.5px] text-neutral-400">{cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
+            <span className="mr-1 truncate whitespace-nowrap text-[12.5px] text-neutral-400">{cursor.toLocaleDateString(undefined, { month: "short", year: "numeric" })}</span>
             <IconBtn tip="Previous" onClick={() => shift(-1)}><ChevronLeft /></IconBtn>
-            <button type="button" onClick={() => setCursor(new Date())} className="h-7 cursor-pointer rounded-md px-2 text-[12px] text-neutral-300 hover:bg-white/[0.06]">Today</button>
+            <button type="button" data-tip="Jump to today" onClick={() => setCursor(new Date())} className="oc-hbtn oc-hbtn--ghost h-7 shrink-0 px-2.5 text-[12px] text-neutral-300">Today</button>
             <IconBtn tip="Next" onClick={() => shift(1)}><ChevronRight /></IconBtn>
           </>
         )}
@@ -999,8 +956,8 @@ const CARD_NAMES: Record<string, string> = {
   quick: "Quick capture", nav: "Navigation", links: "Quick links", classes: "Classes", planner: "Assignments & Exams", today: "Today",
   focus: "Focus timer", exams: "Exam countdown", todo: "To-do", timetable: "Weekly timetable", stats: "Study streak", tests: "Tests", recent: "Recently visited",
 };
-const ROW = 36; // px per grid row (24px + 12px gap)
-const GAP = 12;
+const ROW = 40; // px per grid row (24px + 16px gap)
+const GAP = 16;
 const overlaps = (a: GridCard, b: GridCard) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 /** Keep `moved` where it is; push anything it overlaps (and so on) straight down. */
 function settle(cards: GridCard[], moved: GridCard): GridCard[] {
@@ -1100,14 +1057,14 @@ function DashboardGrid({ cards, editing, onDone }: { cards: Record<string, React
       </div>
       <div
         ref={gridRef}
-        className={`oc-freegrid relative grid gap-3 ${editing ? "oc-grid-lines" : ""}`}
+        className={`oc-freegrid relative grid gap-4 ${editing ? "oc-grid-lines" : ""}`}
         style={{ gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gridAutoRows: `${ROW - GAP}px`, minHeight: rows * ROW }}
       >
         {shown.map((c, i) => (
           <div
             key={c.id}
-            className={`relative min-w-0 transition-[transform] ${editing ? "oc-jiggle rounded-2xl ring-1 ring-dashed ring-white/15" : ""} ${live && live !== layout ? "duration-150" : ""}`}
-            style={{ gridColumn: `${c.x + 1} / span ${c.w}`, gridRow: `${c.y + 1} / span ${c.h}`, animationDelay: editing ? `${(i % 4) * -0.08}s` : undefined }}
+            className={`relative min-w-0 transition-[transform] ${editing ? "" : "oc-card-in"} ${editing ? "oc-jiggle rounded-2xl ring-1 ring-dashed ring-white/15" : ""} ${live && live !== layout ? "duration-150" : ""}`}
+            style={{ gridColumn: `${c.x + 1} / span ${c.w}`, gridRow: `${c.y + 1} / span ${c.h}`, animationDelay: editing ? `${(i % 4) * -0.08}s` : `${i * 70}ms` }}
           >
             <div className={`oc-fill h-full ${editing ? "pointer-events-none select-none" : ""}`}>{cards[c.id]}</div>
             {editing && (

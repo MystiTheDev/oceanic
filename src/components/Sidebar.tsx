@@ -17,6 +17,7 @@ import {
   Plus,
   Star,
   Trash2,
+  AlarmClock,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { buildPageTree, subtreeIds, type PageMeta, type PageNode } from "../data/workspace";
@@ -45,6 +46,7 @@ type SidebarProps = {
   libraryActive: boolean;
   onLibrary: () => void;
   onOpenTags: () => void;
+  onOpenTimers: () => void;
   /** Import notes: the picker (no files) or files dropped on the sidebar. */
   onImport: (files?: File[]) => void;
   trashedPages: PageMeta[];
@@ -104,6 +106,7 @@ export function Sidebar({
   libraryActive,
   onLibrary,
   onOpenTags,
+  onOpenTimers,
   onImport,
 }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -337,6 +340,7 @@ export function Sidebar({
         <NavRow icon={<HomeIcon className="size-4 oc-ic-home" />} label="Home" active={homeActive} onClick={onHome} />
         <NavRow icon={<LibraryIcon className="size-4 oc-ic-library" />} label="Library" active={libraryActive} onClick={onLibrary} />
         <NavRow icon={<TagsIcon className="size-4 oc-ic-tags" />} label="Tags & status" onClick={onOpenTags} />
+        <NavRow icon={<AlarmClock className="size-4 oc-ic-timer" />} label="Timers" onClick={onOpenTimers} />
       </div>
 
       <div className="oc-rail-hide">
@@ -504,7 +508,7 @@ function SectionHeader({
           <span className="font-normal text-neutral-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100">· {count}</span>
         )}
         <ChevronRight
-          className={`size-3 opacity-0 transition-[opacity,transform] duration-200 group-hover:opacity-100 ${
+          className={`oc-ic-chev size-3 opacity-0 transition-[opacity,transform] duration-200 group-hover:opacity-100 ${
             open ? "rotate-90" : ""
           }`}
         />
@@ -637,7 +641,7 @@ function PageTreeRow(props: PageTreeRowProps) {
         {/* Icon slot: on hover the page icon swaps to the expand chevron */}
         <span className="relative grid size-5 shrink-0 place-items-center">
           <span
-            className={`oc-page-ico inline-block leading-none transition-opacity duration-150 ${
+            className={`oc-page-ico oc-ic-page inline-block leading-none transition-opacity duration-150 ${
               hasChildren ? "group-hover:opacity-0" : ""
             }`}
           >
@@ -654,7 +658,7 @@ function PageTreeRow(props: PageTreeRowProps) {
               className="absolute inset-0 grid cursor-pointer place-items-center rounded text-neutral-400 opacity-0 transition-opacity duration-150 hover:bg-white/10 group-hover:opacity-100"
             >
               <ChevronRight
-                className={`size-3.5 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                className={`oc-ic-chev size-3.5 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
               />
             </button>
           )}

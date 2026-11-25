@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import {
   ArrowRightToLine, ChevronLeft, ChevronRight, CornerDownLeft, Languages, Maximize2, Minimize2, Mic2, PenLine, Replace, RotateCcw, Sparkles, SpellCheck, Square, Wand2, X, Feather,
 } from "lucide-react";
-import { BetaPill, NeridaMark } from "./NeridaOrb";
+import { NeridaMark } from "./NeridaOrb";
 import {
   LANGUAGES, NERIDA_EDIT, TONES, fixSpelling, isShort, runContinue, runEdit, runPrompt, stopEdit, synonyms, warnMode, type EditAction, type NeridaEditDetail,
 } from "../lib/neridaEdit";
@@ -129,7 +129,7 @@ export function NeridaEditUI() {
       >
         <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2">
           <NeridaMark size={15} />
-          <span className="flex-1 text-[12.5px] text-neutral-400">{title}<BetaPill /></span>
+          <span className="flex-1 text-[12.5px] text-neutral-400">{title}</span>
           <button type="button" aria-label="Close" onClick={close} className="cursor-pointer rounded text-neutral-500 hover:text-neutral-200"><X className="size-3.5" /></button>
         </div>
 

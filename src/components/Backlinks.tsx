@@ -2,6 +2,8 @@ import { Fragment, useEffect, useState } from "react";
 import { ArrowUpRight, ChevronRight, Network } from "lucide-react";
 import { api, type Backlink } from "../data/api";
 import { usePageDirectory } from "../editor/pageDirectory";
+import { OPEN_CONCEPT } from "../data/atlas";
+import { setPendingLens } from "../atlas/lenses";
 
 /**
  * Notion's backlinks line under the title: a quiet "3 backlinks" toggle that
@@ -35,19 +37,31 @@ export function Backlinks({ pageId, version }: { pageId: string; version: number
     else prev.canvasLabel = canvasLabel;
   }
   const visible = [...merged.values()];
-  if (!visible.length) return null;
+  const ws = pages.get(pageId)?.workspaceId;
+  // Atlas entry: centre this note on the map; a note with no links opens Suggest instead.
+  const toAtlas = () => {
+    if (!visible.length) setPendingLens("suggest");
+    window.dispatchEvent(new CustomEvent(OPEN_CONCEPT, { detail: { id: pageId, workspaceId: ws } }));
+  };
+  const chip = "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-neutral-500 transition-colors duration-100 hover:bg-white/[0.05] hover:text-neutral-300";
 
   return (
     <div className="oc-fade-in mb-1 text-[13px]">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-1.5 -ml-1.5 text-neutral-500 transition-colors duration-100 hover:bg-white/[0.05] hover:text-neutral-300"
-      >
-        <ArrowUpRight className="size-3.5" />
-        {visible.length} backlink{visible.length === 1 ? "" : "s"}
-        <ChevronRight className={`size-3 transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
-      </button>
+      <div className="-ml-1.5 flex items-center gap-1">
+        {visible.length > 0 && (
+          <button type="button" onClick={() => setOpen((v) => !v)} className={chip}>
+            <ArrowUpRight className="size-3.5" />
+            {visible.length} backlink{visible.length === 1 ? "" : "s"}
+            <ChevronRight className={`size-3 transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
+          </button>
+        )}
+        {ws && (
+          <button type="button" onClick={toAtlas} title={visible.length ? "Show this note and its links in Atlas" : "This note isn't linked yet: see suggested links in Atlas"} className={chip}>
+            <Network className="size-3.5" />
+            {visible.length ? "Show in Atlas" : "Find links"}
+          </button>
+        )}
+      </div>
 
       <div
         className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
