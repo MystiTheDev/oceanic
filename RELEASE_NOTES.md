@@ -1,3 +1,24 @@
+# 🌊 Oceanic v3.2.0: Timers, Atlas lenses and a calmer Nerida
+
+## 🖥️ Desktop
+
+- ⏱️ Timers: countdowns, Pomodoro, stopwatch with laps and alarms (once or on chosen days). A floating widget you can drag shows every running timer, with Snooze and +1 min when one rings.
+- 🔔 Pick a chime or upload your own sound, set the volume, and get a system notification when a timer ends.
+- 📚 Study mode: tag a timer as General or Subject study to fill your daily goal, streak and 7-day chart. The Student dashboard Focus timer now runs on Timers.
+- 🗺️ Atlas lenses: Study shows what to review next, Exam map gathers an exam's notes with tag-based recommendations, Suggest finds notes that should be linked, and Cleanup lists unlinked, untagged and stale notes.
+- ✨ Nerida in Atlas: explain how two notes relate, or ask for more link ideas. Nothing changes until you approve it.
+- 🧭 Get to Atlas faster: Show in Atlas or Find links under every note title, an Atlas chip on Home, and a nudge after new notes.
+- 💬 Nerida chat polish: cleaner replies, better maths, a bigger composer, smart auto-scroll, and a chat list with pins and Undo on delete. Nerida is out of beta.
+- 🧱 Collapsed sidebar: New page, view switcher and favourite pages right on the rail, and tooltips that read well in light mode.
+- 🏠 Home and Trash polish: smoother cards and empty states, and Trash shows how long until each page is deleted.
+- 🔒 Security: Android updates only install Oceanic's own GitHub releases, synced attachments are checked and virus-scanned, and the maths renderer is updated.
+
+## 📱 Android
+
+- ⏱️ Timers in the menu.
+- 📱 Tablet polish: a wider list beside the page, a full-width Home and a labelled side rail.
+- 🐛 Fixed bugs, plus lots of smaller polish.
+
 # 🌊 Oceanic v3.1.0: Polish everywhere
 
 ## 🖥️ Desktop
