@@ -1050,7 +1050,7 @@ export function MobileShell(p: Props) {
   return (
     // "user": follows Android's Remove animations setting; Settings can force them off.
     <MotionConfig reducedMotion={prefs.reduceMotion ? "always" : "user"}>
-      <div className={`ocm-root${tablet ? ` ocm-tab ocm-${tablet}` : ""}`}>
+      <div className={`ocm-root${tablet ? ` ocm-tab ocm-${tablet} ocm-on-${tab}` : ""}`}>
         {/* No initial={false} here: Motion would then block entrance animations of everything inside. */}
         {/* Tablets keep the list (and its side rail) mounted under the page. */}
         <AnimatePresence>{tablet ? [list, page] : openPage ? page : list}</AnimatePresence>

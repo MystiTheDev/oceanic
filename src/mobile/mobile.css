@@ -769,7 +769,7 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
 .ocm-bulk button:disabled { opacity: 0.35; }
 
 /* ---------- Tablets: side rail (ocm-tab); ocm-split also puts the list and the page side by side */
-.ocm-tab { --rail: 84px; --list: 400px; }
+.ocm-tab { --rail: 84px; --list: clamp(360px, 36vw, 480px); }
 .ocm-tab .ocm-nav-fade { display: none; }
 .ocm-tab .ocm-nav { top: 0; bottom: 0; left: 14px; right: auto; flex-direction: column; transform-origin: 0 50%; }
 .ocm-tab .ocm-nav.compact { transform: none; gap: 10px; }
@@ -780,7 +780,10 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
 .ocm-split .ocm-layer:not(.ocm-page) { right: auto; width: calc(var(--rail) + var(--list)); }
 .ocm-split .ocm-page { left: calc(var(--rail) + var(--list)); box-shadow: none; border-left: 1px solid rgba(var(--oc-ink), 0.08); }
 .ocm-split::after { content: "Open a page to see it here"; position: absolute; inset: 0 0 0 calc(var(--rail) + var(--list)); display: grid; place-items: center; color: var(--oc-text-muted, gray); font-size: 15px; pointer-events: none; z-index: 0; }
-.ocm-split .ocm-folders, .ocm-split .ocm-tiles, .ocm-split .ocm-shortcuts { grid-template-columns: repeat(2, 1fr) !important; }
+/* Home uses the full width; split is for lists. */
+.ocm-split.ocm-on-home .ocm-layer:not(.ocm-page) { right: 0; width: auto; }
+.ocm-split.ocm-on-home::after { content: none; }
+.ocm-split:not(.ocm-on-home) .ocm-folders, .ocm-split:not(.ocm-on-home) .ocm-tiles, .ocm-split .ocm-shortcuts { grid-template-columns: repeat(2, 1fr) !important; }
 
 @media (min-width: 600px) {
   .tablet .ocm-root { zoom: 1.1; }
@@ -807,7 +810,14 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
 .tablet :is(.ocm-widget, .ocm-create, .ocm-note) { padding: 18px; border-radius: 24px; }
 .tablet .ocm-tiles:not(.ocm-tiles-3) { grid-template-columns: 1fr 1fr; }
 .tablet .ocm-widget-head, .tablet .ocm-create-head { font-size: 15px; margin-bottom: 10px; }
-@media (orientation: landscape) {
+/* Rail: icon over small label, fits its column. */
+@media (orientation: portrait) { .tablet .ocm-homeview > .ocm-create { grid-column: 1 / -1 !important; } }
+.ocm-tab { --rail: 100px; }
+.ocm-tab .ocm-nav { --h: 76px; }
+.ocm-tab .ocm-pill { gap: 6px; padding: 10px 0; }
+.ocm-tab .ocm-lens { inset: 0 8px; border-radius: 16px; }
+.ocm-tab .ocm-pill button { flex-direction: column; justify-content: center; gap: 4px; width: 100%; height: 64px; padding: 0; font-size: 12px; }
+@media (min-width: 760px) {
   .tablet .ocm-scroll > * { max-width: 860px; }
   .tablet .ocm-homeview { grid-auto-flow: dense; }
   .tablet .ocm-homeview > :is(.ocm-create, .ocm-hs-today) { grid-column: 1; }
