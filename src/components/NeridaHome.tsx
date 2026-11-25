@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { House, MessageSquare, Pencil, Plus, Search, Sparkles, Trash2 } from "lucide-react";
+import { House, MessageSquare, Pencil, Pin, PinOff, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { chatGroups, nerida, useNerida } from "../lib/nerida";
 import { NeridaMark } from "./NeridaOrb";
 import { openContextMenu } from "./ContextMenu";
@@ -90,7 +90,7 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
         {shown.length === 0 && (q
           ? <p className="mt-3 px-2 py-1 text-[13px] text-neutral-500">No chats match “{q}”</p>
           : <p className="mt-3 whitespace-normal px-2 py-1 text-[12.5px] leading-relaxed text-neutral-500">Your chats will show up here. Start one on the right, or type <kbd className="text-neutral-300">/</kbd> for study actions.</p>)}
-        {chatGroups(shown).map(([group, list]) => (
+        {[...(shown.some((c) => c.top) ? [["Pinned", shown.filter((c) => c.top)] as [string, typeof shown]] : []), ...chatGroups(shown.filter((c) => !c.top))].map(([group, list]) => (
           <div key={group}>
             <p className="mt-3 px-2 pb-1 text-[11.5px] font-semibold text-neutral-500">{group}</p>
             {list.map((c) => editing === c.id ? (
@@ -99,16 +99,19 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
                 onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(null); }} />
             ) : (
               <div key={c.id} role="button" tabIndex={0} onClick={() => nerida.set({ activeId: c.id })} onDoubleClick={() => setEditing(c.id)}
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) (e.preventDefault(), nerida.set({ activeId: c.id })); }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   openContextMenu(e, [
+                    { label: c.top ? "Unpin" : "Pin to top", icon: c.top ? <PinOff className="size-4" /> : <Pin className="size-4" />, onSelect: () => nerida.toggleTop(c.id) },
                     { label: "Rename", icon: <Pencil className="size-4" />, onSelect: () => setEditing(c.id) },
                     { label: "Delete chat", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => nerida.remove(c.id) },
                   ]);
                 }}
-                className={`group oc-msg-in relative ${ROW} ${c.id === activeId ? "bg-white/[0.08] font-medium text-neutral-100 before:absolute before:inset-y-1.5 before:left-0 before:w-[2px] before:rounded-full before:bg-teal-300" : "text-neutral-300 hover:bg-white/5"}`}>
+                className={`group relative ${ROW} ${c.id === activeId ? "bg-white/[0.08] font-medium text-neutral-100 before:absolute before:inset-y-1.5 before:left-0 before:w-[2px] before:rounded-full before:bg-teal-300" : "text-neutral-300 hover:bg-white/5"}`}>
                 <MessageSquare className="size-3.5 shrink-0 text-neutral-500" />
                 <span className="min-w-0 flex-1 truncate text-left">{c.title}</span>
+                <button type="button" title={c.top ? "Unpin" : "Pin to top"} onClick={(e) => { e.stopPropagation(); nerida.toggleTop(c.id); }} className={`cursor-pointer text-neutral-500 hover:text-neutral-200 ${c.top ? "" : "hidden group-hover:block"}`}>{c.top ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}</button>
                 <button type="button" title="Rename" onClick={(e) => { e.stopPropagation(); setEditing(c.id); }} className="hidden cursor-pointer text-neutral-500 hover:text-neutral-200 group-hover:block"><Pencil className="size-3.5" /></button>
                 <button type="button" title="Delete chat" onClick={(e) => { e.stopPropagation(); nerida.remove(c.id); }} className="hidden cursor-pointer text-neutral-500 hover:text-red-400 group-hover:block"><Trash2 className="size-3.5" /></button>
               </div>

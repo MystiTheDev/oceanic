@@ -51,8 +51,33 @@ import { neridaSafeMarkdown } from "../lib/neridaSafe";
 /** $…$ → KaTeX. Plain numbers or words ("$6.53$", "$P$" stays math-italic) need no braces; money like "$5 and $10" isn't matched (no space inside the $s). */
 function MathSpan({ tex, display = false }: { tex: string; display?: boolean }) {
   if (/^-?[\d.,]+$/.test(tex.trim())) return <>{tex.trim()}</>;
-  const html = katex.renderToString(tex, { displayMode: display, throwOnError: false, output: "html" });
-  return display ? <div className="my-2 overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} /> : <span dangerouslySetInnerHTML={{ __html: html }} />;
+  const render = (t: string) => { try { return katex.renderToString(t, { displayMode: display, throwOnError: true, output: "html" }); } catch { return null; } };
+  const html = render(tex) ?? render(repairTex(tex));
+  // Still broken: show it as readable text, never raw TeX or KaTeX's red error.
+  if (html === null) return <span title={tex}>{texToText(tex)}</span>;
+  return display ? <div className="my-3 overflow-x-auto overflow-y-hidden text-[1.1em]" dangerouslySetInnerHTML={{ __html: html }} /> : <span dangerouslySetInnerHTML={{ __html: html }} />;
+}
+/** Common model slips: unclosed braces or \left, a missing \end{…}, unknown commands. */
+function repairTex(tex: string) {
+  let t = tex.replace(/\\$/, ""); // dangling backslash
+  const ends = [...t.matchAll(/\\begin\{(\w+\*?)\}/g)].map((m) => m[1]).filter((e) => !t.includes(`\\end{${e}}`));
+  const lefts = (t.match(/\\left\b/g)?.length ?? 0) - (t.match(/\\right\b/g)?.length ?? 0);
+  let open = 0;
+  for (const c of t.replace(/\\[{}]/g, "")) open = Math.max(0, open + (c === "{" ? 1 : c === "}" ? -1 : 0));
+  t += "}".repeat(open) + "\\right.".repeat(Math.max(0, lefts)) + ends.reverse().map((e) => `\\end{${e}}`).join("");
+  // Unknown commands: KaTeX names them in its error; turn each into its plain name.
+  for (let i = 0; i < 5; i++) {
+    try { katex.renderToString(t, { throwOnError: true }); break; }
+    catch (e) { const m = /Undefined control sequence: (\\\w+)/.exec(String(e)); if (!m) break; t = t.split(m[1]).join(`\\text{${m[1].slice(1)}}`); }
+  }
+  return t;
+}
+/** Readable fallback: \frac{a}{b} → a/b, \sqrt{x} → √(x), ^ and _ kept, other commands dropped. */
+function texToText(tex: string) {
+  let t = tex;
+  for (let i = 0; i < 3; i++) t = t.replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}?/g, (_, a, b) => `${a}/${b || "…"}`).replace(/\\sqrt\{([^{}]*)\}?/g, "√($1)");
+  return t.replace(/\\(cdot|times)\b/g, "×").replace(/\\(le|leq)\b/g, "≤").replace(/\\(ge|geq)\b/g, "≥").replace(/\\to\b/g, "→").replace(/\\pi\b/g, "π")
+    .replace(/\\[a-zA-Z]+/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim() || "…";
 }
 /** Opens a cited note, scrolled to the cited section. */
 export const openSource = (s: SourceRef) => window.dispatchEvent(new CustomEvent("oc-open-block", { detail: { pageId: s.pageId, blockId: s.blockId } }));
@@ -76,21 +101,28 @@ function inlineRaw(t: string, stream = false, sources?: SourceRef[]): ReactNode[
 export function Markdown({ text, stream = false, sources }: { text: string; stream?: boolean; sources?: SourceRef[] }) {
   const inline = (t: string) => inlineRaw(t, stream, sources);
   const out: ReactNode[] = [];
-  const lines = text.split("\n");
+  // \( \) and \[ \] mean the same as $ and $$.
+  let t = text.replace(/\\\((.+?)\\\)/g, (_, m: string) => `$${m.trim()}$`).replace(/\\\[([\s\S]+?)\\\]/g, (_, m: string) => `\n$$${m.trim()}$$\n`);
+  // Streaming: hide a formula until it closes (an open $$ block, \( or \[, or a $ not followed by a digit or space).
+  if (stream) t = t.replace(/(^|\n)\s*\$\$(?![\s\S]*\$\$)[\s\S]*$|\\[([][^\])]*$|\$(?![\d\s$])[^$\n]*$/, "");
+  const lines = t.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
-    if (l.startsWith("```")) {
+    if (/^\s*\$\$/.test(l)) {
+      // $$ block, on one line or several.
+      const tex = [l.trim().slice(2)];
+      while (!/\$\$\s*$/.test(tex[tex.length - 1]) && ++i < lines.length) tex.push(lines[i]);
+      out.push(<MathSpan key={i} tex={tex.join("\n").trim().replace(/\$\$$/, "")} display />);
+    } else if (l.startsWith("```")) {
       const code: string[] = [];
       while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
       out.push(<pre key={i} className="my-2.5 overflow-x-auto rounded-lg border border-white/[0.06] bg-black/35 p-3 font-mono text-[12px] leading-relaxed text-neutral-200">{code.join("\n")}</pre>);
-    } else if (/^\s*\$\$.*\$\$\s*$/.test(l)) out.push(<MathSpan key={i} tex={l.trim().slice(2, -2)} display />);
-    else if (/^#{1,3} /.test(l)) out.push(<p key={i} className="mt-3 mb-1 font-semibold text-neutral-100">{inline(l.replace(/^#+ /, ""))}</p>);
+    } else if (/^#{1,3} /.test(l)) out.push(<p key={i} className="mt-3 mb-1 font-semibold text-neutral-100">{inline(l.replace(/^#+ /, ""))}</p>);
     else if (/^\s*([-*]|\d+\.) /.test(l))
       out.push(<p key={i} className="flex gap-2 pl-1" style={{ marginLeft: (l.match(/^\s*/)![0].length / 2) * 12 }}><span className="text-neutral-500">{/^\s*\d/.test(l) ? l.trim().split(" ")[0] : "•"}</span><span>{inline(l.replace(/^\s*([-*]|\d+\.) /, ""))}</span></p>);
     else if (l.trim()) out.push(<p key={i} className="my-1.5">{inline(l)}</p>);
   }
-  if (stream) out.push(<span key="caret" className="oc-caret" aria-hidden />);
-  return <div className="text-[13.5px] leading-relaxed text-neutral-200">{out}</div>;
+  return <div className={`oc-md ${stream ? "oc-streaming" : ""} text-[13.5px] leading-relaxed text-neutral-200`}>{out}</div>;
 }
 
 /* ----------------------------------------------------------------- setup */
@@ -304,6 +336,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   const [scrolled, setScrolled] = useState(false);
   const [stuck, setStuck] = useState(true); // follow new text while at the bottom
   const stick = useRef(true);
+  const box = useRef<HTMLTextAreaElement>(null);
   const [mentions, setMentions] = useState<ContextNote[]>([]);
   const { pages } = usePageDirectory();
   const mentionQuery = /(?:^|\s)@([^\s@]*)$/.exec(input)?.[1];
@@ -499,10 +532,11 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     window.addEventListener(NERIDA_ASK, on);
     return () => window.removeEventListener(NERIDA_ASK, on);
   }, []);
+  useEffect(() => { if (home) box.current?.focus(); }, [home, activeId]);
   // New message or chat: always follow again.
   useEffect(() => { stick.current = true; setStuck(true); }, [chat?.messages.length, chat?.id]);
   useEffect(() => {
-    if (stick.current) scroller.current?.scrollTo({ top: 1e9, behavior: "smooth" });
+    if (stick.current) scroller.current?.scrollTo({ top: 1e9, behavior: draft ? "auto" : "smooth" });
   }, [chat?.messages.length, draft]);
   const onScroll = () => {
     const el = scroller.current;
@@ -844,6 +878,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             </span>
           ); })()}
           <textarea
+            ref={box}
             value={input}
             disabled={!ready}
             onChange={(e) => { setInput(e.target.value); setPick(0); }}
@@ -906,7 +941,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     <aside
       onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
       onDrop={(e) => { if (!ready || !e.dataTransfer.files.length) return; e.preventDefault(); e.stopPropagation(); void addFiles(e.dataTransfer.files); }}
-      className={home ? "oc-nerida oc-page-in oc-main-aura relative flex h-full w-full flex-col" : "oc-nerida oc-nerida-in oc-glass-panel relative m-2 flex h-[calc(100%-16px)] w-[360px] shrink-0 flex-col overflow-hidden rounded-[20px]"}>
+      className={home ? "oc-nerida oc-nerida-home oc-page-in oc-main-aura relative flex h-full w-full flex-col" : "oc-nerida oc-nerida-in oc-glass-panel relative m-2 flex h-[calc(100%-16px)] w-[360px] shrink-0 flex-col overflow-hidden rounded-[20px]"}>
       {/* header */}
       {home ? (
         <div className="h-12 shrink-0" />
@@ -951,7 +986,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       )}
 
       {/* conversation */}
-      <div ref={scroller} onScroll={onScroll} className={`scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-3 ${home ? "" : "pt-12"}`}>
+      <div ref={scroller} onScroll={onScroll} onWheel={(e) => e.deltaY < 0 && ((stick.current = false), setStuck(false))} className={`scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-3 ${home ? "" : "pt-12"}`}>
       <div className={home ? "mx-auto w-full max-w-3xl" : ""}>
         {intro && (
           <NeridaIntro
@@ -1018,7 +1053,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
             <div key={i} className="group oc-msg-in mt-5 flex gap-2.5">
               <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
               <div className="min-w-0 flex-1 leading-relaxed">
-              <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20">
+              <div className="oc-reply w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20">
                 {m.thought && <ThoughtLine thought={m.thought} secs={m.thoughtSecs ?? 0} />}
                 {m.actions?.length ? <AgentLogList actions={m.actions} onChange={(a) => chat && nerida.upsert({ ...chat, messages: chat.messages.map((x, j) => (j === i ? { ...x, actions: a } : x)) })} /> : null}
                 <div className="oc-selectable"><Markdown text={m.content} sources={m.sources} /></div>
@@ -1073,7 +1108,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
               <div className="flex gap-2.5">
                 <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
                 <div className="min-w-0 flex-1 leading-relaxed">
-                  <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20"><Markdown text={draft} stream /></div>
+                  <div className="oc-reply w-fit max-w-full rounded-2xl rounded-tl-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 shadow-md shadow-black/20"><Markdown text={draft} stream /></div>
                 </div>
               </div>
             )}

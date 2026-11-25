@@ -1087,8 +1087,11 @@ export default function App() {
       const { id, title } = (e as CustomEvent<{ id: string; title: string }>).detail;
       setNotice({ text: `Nerida finished replying: “${title || "Chat"}”`, key: Date.now(), action: { label: "Open", run: () => nerida.set({ activeId: id, open: true }) } });
     };
+    // Any notice with an action, e.g. Nerida's "Chat deleted · Undo".
+    const any = (e: Event) => setNotice({ ...(e as CustomEvent<{ text: string; action?: { label: string; run: () => void } }>).detail, key: Date.now() });
     window.addEventListener(NERIDA_DONE, on);
-    return () => window.removeEventListener(NERIDA_DONE, on);
+    window.addEventListener("oc-notice", any);
+    return () => (window.removeEventListener(NERIDA_DONE, on), window.removeEventListener("oc-notice", any));
   }, []);
 
   /** Trash keeps pages 30 days, then deletes them for good (checked once after load). */

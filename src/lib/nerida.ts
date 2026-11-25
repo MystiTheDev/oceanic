@@ -55,7 +55,7 @@ export type ToolCall = { id: string; type: "function"; function: { name: string;
 /** One line of Nerida's agent activity log, kept on the reply. */
 export type AgentLog = { id: string; kind: "read" | "create" | "edit" | "delete" | "study" | "error"; text: string; pageId?: string; state?: "applied" | "rejected" | "undone"; /** make_test: notes to open the test setup with. */ test?: string[] };
 export type Msg = { role: "user" | "assistant"; content: string; /** Small previews of pictures sent with a user message. */ images?: string[];/** Deep only */ thought?: string; thoughtSecs?: number; /** Note sources that the reply's [n] marks open. */ sources?: SourceRef[]; /** Agent mode: what Nerida did. */ actions?: AgentLog[] };
-export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number; /** Notes pinned to this chat's context. */ pinned?: string[] };
+export type Chat = { id: string; title: string; messages: Msg[]; updatedAt: number; /** Notes pinned to this chat's context. */ pinned?: string[]; /** Kept at the top of the chat list. */ top?: boolean };
 export type AiStatus = { server: boolean; models: { id: ModelId; size: number; installed: boolean; outdated: boolean }[]; running: string | null; lite_removed: boolean; nvidia: boolean; cuda: boolean; /** Vision add-on (scanned PDFs). */ vision: boolean; /** Search model (semantic search). */ embed: boolean };
 
 /* ------------------------------------------------------------------ store */
@@ -133,7 +133,16 @@ export const nerida = {
     emit();
     persist();
   },
+  toggleTop(id: string) {
+    state = { ...state, chats: state.chats.map((c) => (c.id === id ? { ...c, top: !c.top } : c)) };
+    emit();
+    persist();
+  },
+  /** Delete, with an Undo notice that puts the chat back where it was. */
   remove(id: string) {
+    const i = state.chats.findIndex((c) => c.id === id);
+    const gone = state.chats[i];
+    if (gone) window.dispatchEvent(new CustomEvent("oc-notice", { detail: { text: `Deleted “${gone.title}”`, action: { label: "Undo", run: () => { const c = [...state.chats]; c.splice(i, 0, gone); state = { ...state, chats: c }; emit(); persist(); } } } }));
     state = { ...state, chats: state.chats.filter((c) => c.id !== id), activeId: state.activeId === id ? null : state.activeId };
     emit();
     persist();
@@ -489,6 +498,7 @@ const IDENTITY =
 
 const STYLE =
   "Answer first, short and direct: a few sentences or a list. Use Markdown. " +
+  "Write math as LaTeX: $...$ inline, $$...$$ on its own lines for blocks; close every brace. " +
   "No disclaimers, no restating the question, and never tell the user to ask a teacher or instructor. " +
   "When the user's message contains their notes, those ARE the user's notes: read them and answer from them. Never say you can't access their notes. " +
   'If the user asks "can you…" or "could you…", do the task right away and show the result; never reply only "yes, I can". ' +

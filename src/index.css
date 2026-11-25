@@ -422,3 +422,11 @@ html.oc-pen * {
   --color-violet-200: #6d28d9; --color-violet-300: #7c3aed;
   --color-red-200: #b91c1c;
 }
+
+/* Streaming caret at the end of the last line, not on its own line. */
+.oc-streaming > :last-child::after, .oc-streaming:empty::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: var(--color-teal-300); animation: oc-caret 1s steps(2, start) infinite; }
+@media (prefers-reduced-motion: reduce) { .oc-streaming > :last-child::after { animation: none; } }
+/* Full-page Nerida: replies without a bubble, larger text and composer. */
+.oc-nerida-home .oc-reply { border: 0; background: none; box-shadow: none; padding: 0; }
+.oc-nerida-home .oc-md { font-size: 15px; line-height: 1.7; }
+.oc-nerida-home textarea { font-size: 15px; min-height: 44px; }
