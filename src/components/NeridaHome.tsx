@@ -5,6 +5,9 @@ import { NeridaMark } from "./NeridaOrb";
 import { openContextMenu } from "./ContextMenu";
 
 const ROW = "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-[13.5px] transition-colors";
+const STARTERS = ["Plan my study week", "Explain a concept simply", "Quiz me on a note"];
+const NERIDA_ASK = "oc-nerida-ask"; // same event the panel listens for (kept local to avoid loading PDF code here)
+const ago = (t: number) => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`; };
 
 /** Top-right segmented pill on Home: Home | Nerida. The highlight stretch-slides between items.
  * Plain Home vs Student dashboard is chosen in Settings → General. */
@@ -54,14 +57,14 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
   const shown = chats.filter((c) => c.title.toLowerCase().includes(q.toLowerCase()));
   return (
     // Expanded: content keeps full width and never wraps, so the animating edge uncovers it.
-    <aside className={`oc-fade-in flex h-full w-[256px] shrink-0 flex-col overflow-hidden whitespace-nowrap border-r border-white/[0.06] ${collapsed ? "" : "[&>*]:w-[256px]"} ${closing ? "oc-keep [&_.overflow-y-auto]:!visible" : ""}`}>
+    <aside className={`oc-nerida-side oc-fade-in flex h-full w-[256px] shrink-0 flex-col overflow-hidden whitespace-nowrap border-r border-white/[0.06] ${collapsed ? "" : "[&>*]:w-[256px]"} ${closing ? "oc-keep [&_.overflow-y-auto]:!visible" : ""}`}>
       <div className="flex h-14 items-center gap-2.5 px-3 pt-1">
-        <NeridaMark size={30} />
+        <span className="oc-nerida-side-orb"><NeridaMark size={30} /></span>
         {!collapsed && <span className="bg-gradient-to-r from-white via-sky-200 to-violet-300 bg-clip-text text-[18px] font-extrabold tracking-tight text-transparent">Nerida</span>}
 
       </div>
       <div className="flex flex-col gap-1 px-2 pb-1">
-        <button type="button" title="New chat" onClick={() => nerida.set({ activeId: null })} className={`${ROW} text-neutral-300 hover:bg-white/5`}>
+        <button type="button" title="New chat" onClick={() => nerida.set({ activeId: null })} className={`${ROW} oc-nerida-side-new text-neutral-300 hover:bg-white/5`}>
           <Plus className="size-4 shrink-0 text-neutral-500" /> New chat
         </button>
         {collapsed ? (
@@ -69,7 +72,7 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
             <Search className="size-4 shrink-0 text-neutral-500" />
           </button>
         ) : (
-          <label className="flex h-8 items-center gap-2 rounded-lg bg-white/[0.04] px-2 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(45,212,191,0.35)]">
+          <label className="oc-nerida-side-search flex h-8 items-center gap-2 rounded-lg bg-white/[0.04] px-2 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(45,212,191,0.35)]">
             <Search className="size-3.5 shrink-0 text-neutral-500" />
             <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-200 outline-none placeholder:text-neutral-600" />
           </label>
@@ -88,11 +91,16 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
       )}
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
         {shown.length === 0 && (q
-          ? <p className="mt-3 px-2 py-1 text-[13px] text-neutral-500">No chats match “{q}”</p>
-          : <p className="mt-3 whitespace-normal px-2 py-1 text-[12.5px] leading-relaxed text-neutral-500">Your chats will show up here. Start one on the right, or type <kbd className="text-neutral-300">/</kbd> for study actions.</p>)}
+          ? <p className="oc-nerida-side-miss">No chats match “{q}”</p>
+          : !collapsed && <div className="oc-nerida-side-empty">
+              <NeridaMark size={34} />
+              <p className="oc-nerida-side-empty-title">No chats yet</p>
+              <p className="oc-nerida-side-empty-copy">Ask anything about your notes, or start with one of these.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">{STARTERS.map((s) => <button key={s} type="button" onClick={() => window.dispatchEvent(new CustomEvent(NERIDA_ASK, { detail: { text: s, send: true } }))} className="oc-nerida-side-chip">{s}</button>)}</div>
+            </div>)}
         {[...(shown.some((c) => c.top) ? [["Pinned", shown.filter((c) => c.top)] as [string, typeof shown]] : []), ...chatGroups(shown.filter((c) => !c.top))].map(([group, list]) => (
           <div key={group}>
-            <p className="mt-3 px-2 pb-1 text-[11.5px] font-semibold text-neutral-500">{group}</p>
+            <p className="oc-nerida-side-group mt-3 px-2 pb-1 text-[11.5px] font-semibold text-neutral-500">{group}</p>
             {list.map((c) => editing === c.id ? (
               <input key={c.id} autoFocus defaultValue={c.title} className={`${ROW} bg-white/10 text-neutral-100 outline-none`}
                 onBlur={(e) => { if (e.target.value.trim()) nerida.rename(c.id, e.target.value.trim()); setEditing(null); }}
@@ -108,9 +116,10 @@ export function NeridaSidebar({ footer, collapsed: target, onExpand }: { footer:
                     { label: "Delete chat", icon: <Trash2 className="size-4" />, danger: true, onSelect: () => nerida.remove(c.id) },
                   ]);
                 }}
-                className={`group relative ${ROW} ${c.id === activeId ? "bg-white/[0.08] font-medium text-neutral-100 before:absolute before:inset-y-1.5 before:left-0 before:w-[2px] before:rounded-full before:bg-teal-300" : "text-neutral-300 hover:bg-white/5"}`}>
-                <MessageSquare className="size-3.5 shrink-0 text-neutral-500" />
+                className={`group relative ${ROW} oc-nerida-side-row ${c.id === activeId ? "oc-nerida-side-row-on font-medium before:absolute before:inset-y-1.5 before:left-0 before:w-[2px] before:rounded-full before:bg-teal-300" : "text-neutral-300 hover:bg-white/5"}`}>
+                <span className="oc-nerida-side-row-icon"><MessageSquare className="size-3.5" /></span>
                 <span className="min-w-0 flex-1 truncate text-left">{c.title}</span>
+                <span className="shrink-0 text-[10.5px] text-neutral-500 group-hover:hidden">{ago(c.updatedAt)}</span>
                 <button type="button" title={c.top ? "Unpin" : "Pin to top"} onClick={(e) => { e.stopPropagation(); nerida.toggleTop(c.id); }} className={`cursor-pointer text-neutral-500 hover:text-neutral-200 ${c.top ? "" : "hidden group-hover:block"}`}>{c.top ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}</button>
                 <button type="button" title="Rename" onClick={(e) => { e.stopPropagation(); setEditing(c.id); }} className="hidden cursor-pointer text-neutral-500 hover:text-neutral-200 group-hover:block"><Pencil className="size-3.5" /></button>
                 <button type="button" title="Delete chat" onClick={(e) => { e.stopPropagation(); nerida.remove(c.id); }} className="hidden cursor-pointer text-neutral-500 hover:text-red-400 group-hover:block"><Trash2 className="size-3.5" /></button>

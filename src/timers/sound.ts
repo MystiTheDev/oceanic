@@ -60,6 +60,16 @@ export async function clearCustom() {
 }
 void loadCustom();
 
+/** Very short click for manually stopping / resetting a timer. */
+export function tick(vol = 0.6) {
+  if (vol <= 0) return;
+  try {
+    const a = ctx();
+    if (a.state === "suspended") void a.resume();
+    tone(1200, a.currentTime + 0.02, 0.07, vol * 0.25, "square");
+  } catch {}
+}
+
 /** Play one ring of the sound. `vol` is 0–1. */
 export function play(id: SoundId, vol: number) {
   if (vol <= 0) return;

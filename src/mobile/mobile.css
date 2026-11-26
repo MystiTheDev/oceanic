@@ -369,6 +369,28 @@
 .ocm-plus-menu i { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 11px; color: var(--oc-text-strong); background: rgba(var(--oc-ink), 0.08); }
 .ocm-plus-menu span { display: flex; flex-direction: column; font-size: 15px; font-weight: 600; color: var(--oc-text-strong); }
 .ocm-plus-menu small { font-size: 12px; font-weight: 400; color: var(--ocm-muted); }
+.ocm-profile-wrap { position: relative; display: grid; }
+.ocm-profile-menu { width: 250px; max-height: min(70vh, 420px); overflow-y: auto; transform-origin: 100% 100%; }
+.ocm-profile-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; margin-bottom: 4px; border-bottom: 1px solid rgba(var(--oc-ink), 0.08); }
+.ocm-profile-head span { display: flex; flex-direction: column; min-width: 0; }
+.ocm-profile-head strong { font-size: 14px; color: var(--oc-text-strong); }
+.ocm-profile-head small { font-size: 12px; color: var(--ocm-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocm-profile-menu button span { display: block; font-size: 14px; white-space: nowrap; }
+.ocm-profile-menu button small { display: block; font-size: 12px; font-weight: 400; color: var(--ocm-muted); white-space: normal; }
+/* Apps popup: a small animated card above the dimmed app. */
+.ocm-apps-bg { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.ocm-apps-pop { width: min(320px, calc(100% - 40px)); padding: 12px; border-radius: 24px; border: 1px solid rgba(var(--oc-ink), 0.08); background: color-mix(in srgb, var(--oc-surface) 96%, transparent); box-shadow: 0 20px 60px rgba(0, 0, 0, calc(0.5 * var(--oc-shadow-k))); }
+.ocm-apps-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 12px; }
+.ocm-apps-head h2 { font-size: 18px; font-weight: 700; color: var(--oc-text-strong); }
+.ocm-apps-head button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--ocm-muted); }
+.ocm-app-tile { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border-radius: 16px; text-align: left; }
+.ocm-app-tile + .ocm-app-tile { margin-top: 6px; }
+.ocm-app-tile i { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 13px; background: rgba(var(--oc-ink), 0.08); color: var(--oc-text-strong); }
+.ocm-app-tile span { display: flex; flex-direction: column; min-width: 0; }
+.ocm-app-tile strong { font-size: 15px; color: var(--oc-text-strong); }
+.ocm-app-tile small { font-size: 12px; line-height: 1.35; color: var(--ocm-muted); }
+.ocm-trashview { padding: 8px 16px 120px; }
+.ocm-trashview .ocm-trash { min-height: 56px; margin-bottom: 6px; padding-left: 14px; border-radius: 14px; background: rgba(var(--oc-ink), 0.04); }
 @media (prefers-reduced-motion: reduce) {
   .ocm-pill button, .ocm-nav { transition: none; }
 }

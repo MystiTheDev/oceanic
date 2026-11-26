@@ -5,7 +5,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { play, type SoundId } from "./sound";
+import { play, tick as tickSound, type SoundId } from "./sound";
 import { askTrack, credit } from "./study";
 
 export type Kind = "countdown" | "pomodoro" | "stopwatch" | "alarm";
@@ -161,6 +161,7 @@ export function updateAlarm(id: string, p: Partial<Pick<Timer, "hh" | "mm" | "da
 }
 export function toggle(id: string) {
   const now = Date.now();
+  const was = state.timers.find((x) => x.id === id);
   patchTimer(id, (t) => {
     creditRun(t, now);
     if (t.kind === "alarm") return { running: !t.running, next: t.running ? 0 : nextAlarm(t.hh, t.mm, t.days) };
@@ -170,12 +171,15 @@ export function toggle(id: string) {
     const left = t.left > 0 ? t.left : t.total;
     return { running: true, left, at: now + left, seg: now };
   });
+  if (was?.running) stopNotice(was.label, "Stopped early.");
 }
 export function addMinute(id: string, ms = 60e3) {
   patchTimer(id, (t) => (t.running ? { at: t.at + ms, total: t.total + ms } : { left: t.left + ms, total: t.total + ms }));
 }
 export function reset(id: string) {
+  const was = state.timers.find((x) => x.id === id);
   patchTimer(id, (t) => (creditRun(t, Date.now()), t.kind === "stopwatch" ? { running: false, elapsed: 0, laps: [] } : t.kind === "pomodoro" ? { running: false, phase: "work", round: 1, total: phaseMs("work"), left: phaseMs("work") } : { running: false, left: t.total }));
+  if (was && (was.running || was.left !== was.total || was.elapsed)) stopNotice(was.label, "Reset.");
 }
 export function lap(id: string) {
   patchTimer(id, (t) => ({ laps: [...t.laps, valueOf(t, Date.now())] }));
@@ -191,12 +195,14 @@ export function remove(id: string) {
   if (t) creditRun(t, Date.now());
   set({ timers: state.timers.filter((t) => t.id !== id), rings: state.rings.filter((r) => r.timerId !== id) });
 }
-export function dismiss(ringId: string) {
-  set({ rings: state.rings.filter((r) => r.id !== ringId) });
+export function dismiss(ringId: string, quiet = false) {
+  const r = state.rings.find((x) => x.id === ringId);
+  set({ rings: state.rings.filter((x) => x.id !== ringId) });
+  if (r && !quiet) stopNotice(r.label, "Dismissed.");
 }
 export function snooze(ringId: string, min = 5) {
   const r = state.rings.find((x) => x.id === ringId);
-  dismiss(ringId);
+  dismiss(ringId, true); // the snoozed countdown will ring again; don't double-notify
   if (r) addCountdown(min * 60e3, `${r.label} (snoozed)`, false);
 }
 export const setSettings = (p: Partial<Settings>) => set({ settings: { ...state.settings, ...p } });
@@ -220,6 +226,13 @@ function notify(title: string, body: string) {
   if (!("Notification" in window)) return;
   if (Notification.permission === "granted") new Notification(title, { body });
   else if (Notification.permission !== "denied") void Notification.requestPermission();
+}
+/** Manual stop / reset / dismiss: notify, a short tick, and a brief vibration on phones. */
+function stopNotice(label: string, body: string) {
+  if (!state.settings.notify) return;
+  notify(label, body);
+  tickSound();
+  if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(12);
 }
 /** Ask for browser notification permission (call from a click). */
 export const askNotifyPermission = () => "Notification" in window && !("__TAURI_INTERNALS__" in window) && Notification.permission === "default" && void Notification.requestPermission();

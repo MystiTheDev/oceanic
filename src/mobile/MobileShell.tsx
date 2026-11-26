@@ -37,10 +37,10 @@ export const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 if (isMobile) document.querySelector('meta[name="viewport"]')?.setAttribute("content",
   "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content, viewport-fit=cover");
 
-type TabId = "home" | "pages" | "calendar";
+type TabId = "home" | "pages" | "calendar" | "trash";
 const RECENT_KEY = "ocm.recentSearches";
 type Filter = null | { tag: string } | { folder: string; title: string };
-type Sheet = null | "export" | "filter" | "bulktag" | "bulkstatus" | "profile" | "trash" | "workspaces" | "page" | "note" | PropKind;
+type Sheet = null | "export" | "filter" | "bulktag" | "bulkstatus" | "workspaces" | "page" | "note" | PropKind;
 
 type Props = {
   userName: string;
@@ -224,6 +224,7 @@ const TABS = [
   ["home", Home, "Home"],
   ["pages", FileText, "Pages"],
   ["calendar", CalendarDays, "Calendar"],
+  ["trash", Trash2, "Trash"],
 ] as const;
 const TAB_ORDER = TABS.map(([id]) => id as TabId);
 
@@ -297,18 +298,20 @@ export function MobileShell(p: Props) {
   });
   // Tapping + opens a small create menu.
   const [plusMenu, setPlusMenu] = useState(false);
+  const [profileMenu, setProfileMenu] = useState(false);
+  const [appsOpen, setAppsOpen] = useState(false);
   const [appsMenu, setAppsMenu] = useState(false);
   // Open page: the top bar turns frosted and shows the title once the title scrolls away.
   const [pageScrolled, setPageScrolled] = useState(false);
   useEffect(() => setPageScrolled(false), [openPage?.id]);
 
   // Android back gesture: an open page or sheet adds a history entry; going back closes it.
-  const layer = sheet ?? (openPage ? `page:${openPage.id}` : null);
+  const layer = appsOpen ? "apps" : sheet ?? (openPage ? `page:${openPage.id}` : null);
   useEffect(() => {
     if (!layer) return;
     history.pushState({ oc: layer }, "");
     // The photo viewer handles its own back step.
-    const onPop = () => !document.querySelector(".oc-avatar-view") && (sheet ? setSheet(null) : p.onBack());
+    const onPop = () => !document.querySelector(".oc-avatar-view") && (appsOpen ? setAppsOpen(false) : sheet ? setSheet(null) : p.onBack());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [layer]);
@@ -571,37 +574,6 @@ export function MobileShell(p: Props) {
             transition={calm}
           >
             <div className="ocm-grab" />
-            {sheet === "profile" && (
-              <>
-                <div className="ocm-profile">
-                  <button aria-label="View photo" disabled={!p.avatar.startsWith("data:")} onClick={() => (buzz(), setViewing(true))}>
-                    <Avatar name={p.userName} avatar={p.avatar} size={52} />
-                  </button>
-                  <div>
-                    <strong>{p.userName || "You"}</strong>
-                    <span>{p.workspaces.find((w) => w.id === p.workspaceId)?.name ?? "Workspace"}</span>
-                  </div>
-                </div>
-                <button className="ocm-item" onClick={() => setSheet("workspaces")}>
-                  <Layers size={20} /> Switch workspace
-                </button>
-                <button className="ocm-item" onClick={() => run(p.onTags)}>
-                  <Tag size={20} /> Tags
-                </button>
-                <button className="ocm-item" onClick={() => setSheet("trash")}>
-                  <Trash2 size={20} /> Trash <em>{p.trashed.length || ""}</em>
-                </button>
-                <button className="ocm-item" onClick={() => run(p.onToggleTheme)}>
-                  {p.theme === "dark" ? <Sun size={20} /> : <MoonStar size={20} />} {p.theme === "dark" ? "Light mode" : "Dark mode"}
-                </button>
-                <button className="ocm-item" onClick={() => run(p.onTimers)}>
-                  <AlarmClock size={20} /> Timers
-                </button>
-                <button className="ocm-item" onClick={() => run(p.onSettings)}>
-                  <Settings size={20} /> Settings
-                </button>
-              </>
-            )}
             {sheet === "filter" && (
               <>
                 <h2>Sort by</h2>
@@ -658,28 +630,6 @@ export function MobileShell(p: Props) {
                     <span className="ocm-ws">{w.icon || "🌊"}</span> {w.name}
                   </button>
                 ))}
-              </>
-            )}
-            {sheet === "trash" && (
-              <>
-                <h2>Trash</h2>
-                {p.trashed.length ? (
-                  p.trashed.map((x) => (
-                    <div key={x.id} className="ocm-trash">
-                      <span>
-                        {x.icon} {x.title || "Untitled"}
-                      </span>
-                      <button aria-label="Restore" onClick={() => (buzz(), p.onRestore(x.id))}>
-                        <RotateCcw size={18} />
-                      </button>
-                      <button aria-label="Delete forever" onClick={() => (buzz(), p.onDeleteForever(x.id))}>
-                        <X size={18} />
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="ocm-empty">Trash is empty.</p>
-                )}
               </>
             )}
             {sheet === "note" && note && (
@@ -881,6 +831,19 @@ export function MobileShell(p: Props) {
             <motion.div key="calendar" className="ocm-calview" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
               <MobileCalendar pages={pages} day={calDay} setDay={setCalDay} onOpen={p.onOpen} hold={hold} onCreateTask={p.onCreateTask} />
             </motion.div>
+          ) : tab === "trash" ? (
+            <motion.div key="trash" className="ocm-trashview" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
+              <header className="ocm-title ocm-pages-head">
+                <div><h1>Trash</h1><p>{p.trashed.length} {p.trashed.length === 1 ? "page" : "pages"}</p></div>
+              </header>
+              {p.trashed.length ? p.trashed.map((x) => (
+                <div key={x.id} className="ocm-trash">
+                  <span>{x.icon} {x.title || "Untitled"}</span>
+                  <button aria-label="Restore" onClick={() => (buzz(), p.onRestore(x.id))}><RotateCcw size={18} /></button>
+                  <button aria-label="Delete forever" onClick={() => (buzz(), p.onDeleteForever(x.id))}><X size={18} /></button>
+                </div>
+              )) : <p className="ocm-empty">Trash is empty.</p>}
+            </motion.div>
           ) : (
             <motion.div key="pages" initial={{ opacity: 0, x: 40 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 * dir }} transition={calm}>
               <header className="ocm-title ocm-pages-head">
@@ -974,6 +937,7 @@ export function MobileShell(p: Props) {
       <div className="ocm-nav-fade" aria-hidden />
       <AnimatePresence>
         {plusMenu && <motion.div className="ocm-plus-scrim" onClick={() => setPlusMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
+        {profileMenu && <motion.div className="ocm-plus-scrim" onClick={() => setProfileMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />}
       </AnimatePresence>
       {selecting && tab === "pages" ? (
         <div className="ocm-bulk">
@@ -1001,8 +965,8 @@ export function MobileShell(p: Props) {
               <span className="ocm-pill-label">{label}</span>
             </motion.button>
           ))}
-          {/* App switcher: only apps that work on Android are listed. */}
-          <span className="ocm-apps-wrap">
+          {/* Phones keep the pill to the four tabs + profile; Apps lives in the profile popover there. */}
+          {tablet && <span className="ocm-apps-wrap">
             <motion.button aria-label="Apps" aria-expanded={appsMenu} onClick={() => (buzz(), setAppsMenu((o) => !o))} whileTap={{ scale: 0.88 }} transition={spring}>
               <LayoutGrid size={22} />
               <span className="ocm-pill-label">Apps</span>
@@ -1014,11 +978,28 @@ export function MobileShell(p: Props) {
                 </motion.div>
               )}
             </AnimatePresence>
+          </span>}
+          <span className="ocm-profile-wrap">
+            <motion.button className="ocm-pill-me" aria-label="Profile" aria-expanded={profileMenu} onClick={() => (buzz(), setProfileMenu((o) => !o))} whileTap={{ scale: 0.88 }} transition={spring}>
+              <Avatar name={p.userName} avatar={p.avatar} size={28} />
+              <span className="ocm-pill-label">You</span>
+            </motion.button>
+            <AnimatePresence>
+              {profileMenu && (
+                <motion.div className="ocm-plus-menu ocm-profile-menu" initial={{ opacity: 0, scale: 0.85, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.85, y: 8 }} transition={spring}>
+                  <div className="ocm-profile-head">
+                    <Avatar name={p.userName} avatar={p.avatar} size={32} />
+                    <span><strong>{p.userName || "You"}</strong><small>{p.workspaces.find((w) => w.id === p.workspaceId)?.name ?? "Workspace"}</small></span>
+                  </div>
+                  <button onClick={() => (setProfileMenu(false), buzz(), setSheet("workspaces"))}><i><Layers size={18} /></i><span>Switch workspace</span></button>
+                  <button onClick={() => (setProfileMenu(false), run(p.onTags))}><i><Tag size={18} /></i><span>Tags</span></button>
+                  <button onClick={() => (setProfileMenu(false), run(p.onToggleTheme))}><i>{p.theme === "dark" ? <Sun size={18} /> : <MoonStar size={18} />}</i><span>{p.theme === "dark" ? "Light mode" : "Dark mode"}</span></button>
+                  <button onClick={() => (setProfileMenu(false), buzz(), setAppsOpen(true))}><i><LayoutGrid size={18} /></i><span>Apps</span></button>
+                  <button onClick={() => (setProfileMenu(false), run(p.onSettings))}><i><Settings size={18} /></i><span>Settings</span></button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </span>
-          <motion.button className="ocm-pill-me" aria-label="Profile" onClick={() => (buzz(), setSheet("profile"))} whileTap={{ scale: 0.88 }} transition={spring}>
-            <Avatar name={p.userName} avatar={p.avatar} size={28} />
-            <span className="ocm-pill-label">You</span>
-          </motion.button>
         </div>
         <span className="ocm-plus-wrap">
           <AnimatePresence>
@@ -1055,6 +1036,17 @@ export function MobileShell(p: Props) {
         {/* Tablets keep the list (and its side rail) mounted under the page. */}
         <AnimatePresence>{tablet ? [list, page] : openPage ? page : list}</AnimatePresence>
         {sheets}
+        <AnimatePresence>
+          {appsOpen && (
+            <motion.div className="ocm-apps-bg" onClick={() => setAppsOpen(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={calm}>
+              <motion.div className="ocm-apps-pop" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} transition={calm}>
+                <header className="ocm-apps-head"><h2>Apps</h2><button aria-label="Close apps" onClick={() => setAppsOpen(false)}><X size={20} /></button></header>
+                <button className="ocm-app-tile" onClick={() => (setAppsOpen(false), run(p.onTimers))}><i><AlarmClock size={22} /></i><span><strong>Timers</strong><small>Focus, alarms and study timers</small></span></button>
+                <button className="ocm-app-tile" onClick={() => (setAppsOpen(false), run(p.onSketch))}><i><img src={APPS.sketch.logo} alt="" width={26} /></i><span><strong>{APPS.sketch.name}</strong><small>{APPS.sketch.tagline}</small></span></button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {viewing && <AvatarViewer src={p.avatar} onClose={() => setViewing(false)} />}
       </div>
     </MotionConfig>

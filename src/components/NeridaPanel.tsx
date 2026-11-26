@@ -329,6 +329,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
   }, [chat?.id]);
   /** Agent mode: this reply's activity log, live. */
   const [err, setErr] = useState("");
+  const [waited, setWaited] = useState(0);
   const [copied, setCopied] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -588,12 +589,21 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     if (draft) return setTask({ draft, base: { ...base, messages } });
     setRun({ busy: true, chatId: base.id });
     setDraft("");
+    setWaited(0);
     setStepsOpen(true);
-    let used = sendList;
-    // Stuck: no step, token or thought for 30 s stops the run with an error.
+    let used = sendList, first = false;
+    // Built-in engine: cold start and the wait for the first token are normal on slow PCs.
+    // Only silence after the first token counts (2 min); cloud/Ollama keep the 30 s watchdog.
     let last = Date.now(), stalled = false, loading = false; // loading: model start can take long, not a stall
+    const began = Date.now();
     const bump = () => void (last = Date.now());
-    const watch = setInterval(() => { if (!loading && Date.now() - last > 30000) (stalled = true, void engine.stop()); }, 2000);
+    const watch = setInterval(() => {
+      if (loading || stalled) return;
+      const quiet = Date.now() - last;
+      if (!b) { if (quiet > 30000) (stalled = true, void engine.stop()); return; }
+      if (first) { if (quiet > 120000) (stalled = true, void engine.stop()); }
+      else setWaited(Math.floor((Date.now() - began) / 1000));
+    }, 2000);
     const mark = (label: string) => (bump(), setSteps((s) => (s[s.length - 1]?.label === label ? s : [...s.map((x) => ({ ...x, done: true })), { label, done: false }])));
     setSteps([]);
     let reply = "";
@@ -602,7 +612,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
     const t0 = Date.now();
     let thoughtSecs = 0;
     const onThink = (t: string) => {
-      bump();
+      if (stalled) return;
+      bump(); first = true; setWaited(0);
       if (!thought) mark("Thinking");
       thought = t;
       thoughtSecs = Math.max(1, Math.round((Date.now() - t0) / 1000));
@@ -635,7 +646,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         }
         mark("Editing your note");
         let raw = "";
-        await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (bump(), (raw += t)), onThink);
+        await engine.chat(model, [{ role: "system", content: EDIT_SYSTEM }, { role: "user", content: editPrompt(blocks, text) }], (t) => (bump(), (first = true), (raw += t)), onThink);
         const proposals = parseEdits(raw, blocks);
         const n = proposeEdits(proposals);
         const warn = n ? proposalWarning(proposals, blocks) : "";
@@ -731,7 +742,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
           messages: [{ role: "system", content: AGENT_SYSTEM + open }, ...trimHistory(history).msgs, { role: "user", content: [context && `Reference material:\n${context}\n\n(${book.rules()})`, tools, `My request: ${text}`, choices, force && `Call the ${force} tool first.`].filter(Boolean).join("\n\n") }],
           force,
           allow: once && !nerida.get().agent ? AUTO_TOOLS : undefined,
-          onText: (t) => (bump(), (reply = t), setDraft(t)),
+          onText: (t) => { if (stalled) return; bump(); first = true; setWaited(0); reply = t; setDraft(t); },
           onLog: (l) => ((log = [...log, l]), setActions(log)),
           onStep: mark,
           onThink,
@@ -743,7 +754,8 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       }
       mark(b ? "Writing answer" : `Asking ${modelLabel(model)}`);
       await engine.chat(model, [{ role: "system", content: SYSTEM }, ...trimHistory(history).msgs, { role: "user", content: isFeaturesQuestion(text) ? text : withNotes(text, context, book, tools) }], (t) => {
-        bump();
+        if (stalled) return;
+        bump(); first = true; setWaited(0);
         reply += t;
         setDraft(reply);
       }, onThink);
@@ -753,14 +765,17 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
       if (e !== null) setErr(String(e)); // null = note edit finished early
     }
     clearInterval(watch);
-    if (stalled) (setErr("Nerida stopped: nothing happened for 30 seconds. Try again, or turn on Agent mode for note changes."), (reply = ""));
+    if (stalled) (setErr(b ? "Nerida stopped: no output for 2 minutes. Try again." : "Nerida stopped: nothing happened for 30 seconds. Try again, or turn on Agent mode for note changes."), (reply = ""));
     engine.halted = false; // clear here, not on send: Nerida in docs, maps and PDFs shares the engine
     if (reply && garbled) reply += GARBLED_NOTE;
     if (reply) reply += book.footer(reply);
     const sources = book.refs();
     if (!reply && log.length) reply = "Stopped.";
-    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...messages, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }), ...(log.length && { actions: log }) }], updatedAt: Date.now() }, true, nerida.get().activeId === base.id);
+    const sent = used.length ? messages.map((m, j) => j === messages.length - 1 ? { ...m, notes: used.map(({ id, title, icon }) => ({ id, title, icon })) } : m) : messages;
+    if (reply) nerida.upsert({ ...base, pinned: nerida.get().chats.find((c) => c.id === base.id)?.pinned ?? base.pinned, messages: [...sent, { role: "assistant", content: reply, ...(thought && { thought, thoughtSecs }), ...(sources.length && { sources }), ...(log.length && { actions: log }) }], updatedAt: Date.now() }, true, nerida.get().activeId === base.id);
+    else if (sent !== messages) nerida.upsert({ ...base, messages: sent, updatedAt: Date.now() }, true, nerida.get().activeId === base.id);
     setRun({ busy: false, chatId: null, actions: [], draft: "" });
+    setWaited(0);
     if (reply && !watching.get(base.id)) window.dispatchEvent(new CustomEvent(NERIDA_DONE, { detail: { id: base.id, title: base.title } }));
   };
 
@@ -1048,7 +1063,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
         {trimHistory(msgs, model).cut > 0 && <p className="text-center text-[11.5px] text-neutral-500">Earlier messages summarized to keep Nerida fast</p>}
         {msgs.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex flex-col items-end">{m.images?.length ? <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5">{m.images.map((src, j) => <button key={j} type="button" title="View picture" onClick={() => setViewing(src)} className="size-20 cursor-zoom-in overflow-hidden rounded-xl border border-white/10 shadow-md shadow-black/20"><img src={src} alt="" className="size-full object-cover" /></button>)}</div> : null}<div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div><div className="mt-1 mr-1 flex justify-end text-neutral-500"><Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act></div></div>
+            <div key={i} className="oc-msg-in oc-msg-user mt-5 flex flex-col items-end">{m.images?.length ? <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5">{m.images.map((src, j) => <button key={j} type="button" title="View picture" onClick={() => setViewing(src)} className="size-20 cursor-zoom-in overflow-hidden rounded-xl border border-white/10 shadow-md shadow-black/20"><img src={src} alt="" className="size-full object-cover" /></button>)}</div> : null}{m.notes?.length ? <div className="mb-1 flex max-w-[85%] flex-wrap justify-end gap-1">{m.notes.slice(0, 2).map((n, j) => <span key={j} title={n.title} className="oc-nl-chip flex max-w-[150px] items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-neutral-300"><span>{n.icon}</span><span className="truncate">{n.title}</span></span>)}{m.notes.length > 2 && <span className="oc-nl-chip rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-neutral-400">+{m.notes.length - 2} notes</span>}</div> : null}<div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-teal-300/20 bg-gradient-to-br from-teal-400/[0.18] to-sky-400/[0.08] px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-100 shadow-md shadow-black/20">{m.content}</div><div className="mt-1 mr-1 flex justify-end text-neutral-500"><Act title="Copy" onClick={() => { void navigator.clipboard.writeText(m.content); setCopied(i); setTimeout(() => setCopied(null), 1200); }}>{copied === i ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}</Act></div></div>
           ) : (
             <div key={i} className="group oc-msg-in mt-5 flex gap-2.5">
               <div className="mt-1 shrink-0"><NeridaMark size={20} /></div>
@@ -1102,6 +1117,7 @@ export function NeridaPanel({ pageId, home = false, pdf = null }: { pageId: stri
                 )}
               </div>
             )}
+            {waited > 0 && !draft && <p className="mt-2 text-center text-[11.5px] text-neutral-500">Still waiting for Nerida… {waited}s</p>}
             {actions.length > 0 && <AgentLogList actions={actions} />}
             <AgentCards />
             {draft && (
