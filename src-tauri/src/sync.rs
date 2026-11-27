@@ -416,7 +416,7 @@ pub fn sync_info(app: AppHandle, db: State<Db>, st: State<Sync>) -> Res<Value> {
     let pending: i64 = conn.query_row("SELECT COUNT(*) FROM sync_clock WHERE seq > ?1", [min_sent], |r| r.get(0)).unwrap_or(0);
     let listen_error = st.listen_error.lock().unwrap().clone();
     let last_error: Option<String> = conn.query_row("SELECT error FROM sync_log WHERE error IS NOT NULL ORDER BY at DESC LIMIT 1", [], |r| r.get(0)).optional().unwrap_or(None);
-    let offline = peer_count == 0 || !on_trusted(app);
+    let offline = peer_count == 0 || !on_trusted(&app);
     let state = |max_seq: i64| -> &'static str {
         if offline { "offline" }
         else if listen_error.is_some() || (last_error.is_some() && max_seq > min_sent) { "error" }
@@ -1184,7 +1184,8 @@ pub fn start_watch(app: &AppHandle) {
             ticks += 1;
             if ticks % 4 == 0 {
                 let waiting = {
-                    let conn = app.state::<Db>().0.lock().unwrap();
+                    let db = app.state::<Db>();
+                    let conn = db.0.lock().unwrap();
                     conn.query_row(
                         "SELECT 1 FROM sync_clock WHERE seq > (SELECT IFNULL(MIN(sent), 0) FROM sync_peers) LIMIT 1",
                         [],
