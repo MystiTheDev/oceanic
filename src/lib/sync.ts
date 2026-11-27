@@ -1,5 +1,6 @@
 /** LAN sync 7a pairing + 7b metadata sync. Rust side: src-tauri/src/sync.rs. */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { useSyncExternalStore } from "react";
 
 export type SyncPeer = { id: string; name: string; addr: string };
 export type SyncInfo = {
@@ -19,7 +20,11 @@ export type SyncInfo = {
   /** Hold files over holdMb while on a hotspot. */
   hold: boolean;
   holdMb: number;
+  /** Overall and per-note sync state. */
+  status: SyncStatus;
+  notes: Record<string, SyncStatus>;
 };
+export type SyncStatus = "synced" | "pending" | "error" | "offline";
 export type SyncLogEntry = { at: number; peer: string; added: number; edited: number; deleted: number; error: string | null };
 export type SyncResult = { added: number; edited: number; deleted: number };
 
@@ -64,6 +69,35 @@ export const sync = {
   /** Phone only: hasLocation, askLocation, batteryOk, askBattery. */
   android: (cmd: "hasLocation" | "askLocation" | "batteryOk" | "askBattery") => call<boolean>("sync_android", { cmd }),
 };
+
+/* Lightweight status subscription: polled every 15s and refreshed on sync events. */
+type SyncStatusState = { status: SyncStatus; notes: Record<string, SyncStatus> };
+let statusState: SyncStatusState = { status: "offline", notes: {} };
+const statusListeners = new Set<() => void>();
+const refreshStatus = () => {
+  if (!isTauri()) return;
+  void sync.info().then((i) => {
+    statusState = { status: i.status, notes: i.notes };
+    statusListeners.forEach((f) => f());
+  }).catch(() => {});
+};
+export const startSyncStatus = () => {
+  if (!isTauri()) return () => {};
+  refreshStatus();
+  const t = window.setInterval(refreshStatus, 15_000);
+  const on = () => refreshStatus();
+  window.addEventListener("sync-network", on);
+  window.addEventListener("sync-status", on);
+  return () => {
+    window.clearInterval(t);
+    window.removeEventListener("sync-network", on);
+    window.removeEventListener("sync-status", on);
+  };
+};
+if (typeof window !== "undefined") startSyncStatus();
+export const useSyncStatus = () =>
+  useSyncExternalStore((f) => (statusListeners.add(f), () => statusListeners.delete(f)), () => statusState);
+
 export type SyncNetwork = { key: string; name: string; trust: "always" | "never" | "once" | null };
 
 /** Reads the laptop's pairing QR: oceanic://pair?a=<ip:port>&c=<code>. */

@@ -12,6 +12,7 @@ import { openNeridaCards } from "./NeridaCards";
 import { TestSetup } from "./TestSetup";
 import { askNerida } from "../lib/neridaPdf";
 import { nerida, useNerida } from "../lib/nerida";
+import { SyncStatusBadge } from "./SyncStatusBadge";
 
 type PageHeaderProps = {
   page: PageMeta;
@@ -105,6 +106,8 @@ export function PageHeader({
             Edited {relativeTime(editedAt, now)}
           </span>
         )}
+
+        <SyncStatusBadge pageId={page.id} />
 
         <IconButton title="Ask Nerida (Ctrl+J)" active={neridaOpen} onClick={() => nerida.toggle()}>
           <NeridaMark size={20} />

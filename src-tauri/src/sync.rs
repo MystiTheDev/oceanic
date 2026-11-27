@@ -410,15 +410,39 @@ pub fn sync_info(app: AppHandle, db: State<Db>, st: State<Sync>) -> Res<Value> {
         });
         json!({ "code": p.code, "secondsLeft": (p.until - Instant::now()).as_secs(), "qr": qr })
     });
+    let peer_list = peers(&conn)?;
+    let peer_count = peer_list.len();
+    let min_sent: i64 = conn.query_row("SELECT IFNULL(MIN(sent), 0) FROM sync_peers", [], |r| r.get(0)).unwrap_or(0);
+    let pending: i64 = conn.query_row("SELECT COUNT(*) FROM sync_clock WHERE seq > ?1", [min_sent], |r| r.get(0)).unwrap_or(0);
+    let listen_error = st.listen_error.lock().unwrap().clone();
+    let last_error: Option<String> = conn.query_row("SELECT error FROM sync_log WHERE error IS NOT NULL ORDER BY at DESC LIMIT 1", [], |r| r.get(0)).optional().unwrap_or(None);
+    let offline = peer_count == 0 || !on_trusted(app);
+    let state = |max_seq: i64| -> &'static str {
+        if offline { "offline" }
+        else if listen_error.is_some() || (last_error.is_some() && max_seq > min_sent) { "error" }
+        else if max_seq > min_sent { "pending" }
+        else { "synced" }
+    };
+    let global = state(if pending > 0 { min_sent + 1 } else { min_sent });
+    let mut notes = serde_json::Map::new();
+    if let Ok(mut q) = conn.prepare("SELECT id, MAX(seq) FROM sync_clock WHERE tbl = 'pages' GROUP BY id") {
+        if let Ok(rows) = q.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))) {
+            for row in rows.flatten() {
+                notes.insert(row.0, json!(state(row.1)));
+            }
+        }
+    }
     Ok(json!({
         "id": device_id(&conn),
         "name": device_name(&app),
         "ip": ip.map(|i| i.to_string()),
         "port": PORT,
-        "peers": peers(&conn)?,
+        "peers": peer_list,
         "pairing": pairing,
-        "listenError": *st.listen_error.lock().unwrap(),
-        "pending": conn.query_row("SELECT COUNT(*) FROM sync_clock WHERE seq > (SELECT IFNULL(MIN(sent), 0) FROM sync_peers)", [], |r| r.get::<_, i64>(0)).unwrap_or(0),
+        "listenError": listen_error,
+        "pending": pending,
+        "status": global,
+        "notes": notes,
         "log": sync_log(&conn),
         "auto": crate::db::read_setting(&conn, "syncAuto").as_deref() != Some("0"),
         "notify": crate::db::read_setting(&conn, "syncNotify").as_deref() != Some("0"),
@@ -1141,6 +1165,7 @@ pub fn start_watch(app: &AppHandle) {
     std::thread::spawn(move || {
         let mut last: Option<Option<String>> = None;
         let mut wall = std::time::SystemTime::now();
+        let mut ticks = 0u32;
         loop {
             let woke = wall.elapsed().is_ok_and(|d| d > Duration::from_secs(90));
             wall = std::time::SystemTime::now();
@@ -1154,6 +1179,22 @@ pub fn start_watch(app: &AppHandle) {
             if moved || woke {
                 refresh_announce(&app, on_trusted(&app));
                 auto_sync(&app);
+            }
+            // Every 4th tick (~2 min): sync only when changes are waiting.
+            ticks += 1;
+            if ticks % 4 == 0 {
+                let waiting = {
+                    let conn = app.state::<Db>().0.lock().unwrap();
+                    conn.query_row(
+                        "SELECT 1 FROM sync_clock WHERE seq > (SELECT IFNULL(MIN(sent), 0) FROM sync_peers) LIMIT 1",
+                        [],
+                        |_| Ok(()),
+                    ).optional().unwrap_or(None).is_some()
+                };
+                if waiting {
+                    auto_sync(&app);
+                    let _ = app.emit("sync-status", ());
+                }
             }
             std::thread::sleep(Duration::from_secs(30));
         }

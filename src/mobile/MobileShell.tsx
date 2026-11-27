@@ -9,6 +9,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { isTablet } from "./formFactor";
 import { APPS } from "../components/AppSwitcher";
 import { VersionHistory } from "../components/VersionHistory";
+import { SyncStatusBadge } from "../components/SyncStatusBadge";
 import { AnimatePresence, MotionConfig, animate, motion, useMotionValueEvent, useScroll, useTransform, type Transition } from "motion/react";
 import {
   ArrowUpLeft, CalendarDays, Camera, SlidersHorizontal, ImagePlus, Paperclip, Check, Clock, CheckSquare, ChevronLeft, Copy, FileText, Home, Layers, MoonStar, MoreHorizontal, PenLine, Pin, Plus, Share2,
@@ -750,6 +751,7 @@ export function MobileShell(p: Props) {
           <ChevronLeft size={24} />
         </motion.button>
         <span className="ocm-pagebar-title">{openPage.icon} {openPage.title || "Untitled"}</span>
+        <SyncStatusBadge pageId={openPage.id} compact />
         <motion.button {...press} className="ocm-icon" aria-label="Page menu" onClick={() => (buzz(), setSheet("page"))}>
           <MoreHorizontal size={22} />
         </motion.button>
