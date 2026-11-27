@@ -25,7 +25,7 @@ function AskModePick() {
 }
 
 /* Nerida settings look: grouped cards, muted row icons, cyan→violet accent. */
-const card = "oc-st-card overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.045] shadow-[0_1px_2px_rgb(0_0_0/0.2)] divide-y divide-white/[0.06]";
+const card = "oc-st-card rounded-xl border border-white/[0.07] bg-white/[0.045] shadow-[0_1px_2px_rgb(0_0_0/0.2)] divide-y divide-white/[0.06]";
 const rowCls = "flex items-center gap-3 px-4 py-3";
 const accentBtn = "cursor-pointer rounded-md bg-gradient-to-r from-[#38d6ff] to-[#7c3aed] px-3 py-1 text-[12.5px] font-medium text-white shadow-sm shadow-violet-900/30 hover:brightness-110 disabled:cursor-default disabled:opacity-40";
 const RowIcon = ({ icon: I }: { icon: LucideIcon }) => (
@@ -349,13 +349,13 @@ function GpuMenu({ value, options }: { value: string; options: (readonly [string
   }, [open]);
   const cur = options.find((o) => o[0] === value) ?? options[0];
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative ${open ? "z-50" : ""}`}>
       <button onClick={() => setOpen(!open)} className="flex max-w-[260px] items-center gap-2 rounded-md border border-white/[0.1] bg-neutral-900 px-2.5 py-1.5 text-[12.5px] text-neutral-100 hover:border-white/[0.2]">
         <span className="truncate">{cur[1]}</span>
         <svg width="10" height="10" viewBox="0 0 10 10" className={`shrink-0 text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`}><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[280px] rounded-lg border border-white/[0.1] bg-neutral-900 p-1 shadow-2xl shadow-black/60">
+        <div className="absolute right-0 top-full z-[100] mt-1 w-[280px] rounded-lg border border-white/[0.1] bg-neutral-900 p-1 shadow-2xl shadow-black/60">
           {options.map(([v, name, detail]) => (
             <button key={v} onClick={() => (nerida.setGpu(v), setOpen(false))} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-white/[0.06] ${v === value ? "bg-white/[0.04]" : ""}`}>
               <span className="min-w-0 flex-1"><span className="block truncate text-[12.5px] text-neutral-100">{name}</span><span className="block text-[11px] text-neutral-500">{detail}</span></span>
