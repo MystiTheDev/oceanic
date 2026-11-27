@@ -89,3 +89,20 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      - name: Publish SHA256 checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLATFORM: ${{ runner.os }}
+        run: |
+          mkdir -p checksums
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --dir checksums --pattern '*' --clobber
+          node - <<'NODE'
+          const fs = require('fs'), path = require('path'), crypto = require('crypto');
+          const dir = 'checksums';
+          const files = fs.readdirSync(dir).filter((f) => /\.(exe|dmg|AppImage|deb|rpm|msi|zip|tar\.gz)$/i.test(f)).sort();
+          const lines = files.map((f) => `${crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, f))).digest('hex')}  ${f}`);
+          fs.writeFileSync(`SHA256SUMS-${process.env.PLATFORM}.txt`, lines.join('\n') + '\n');
+          NODE
+          gh release upload "$GITHUB_REF_NAME" "SHA256SUMS-${PLATFORM}.txt" -R "$GITHUB_REPOSITORY" --clobber

@@ -122,6 +122,10 @@ Get the latest version from the **[Releases page](https://github.com/MystiTheDev
 > - **Windows:** click **More info → Run anyway**.
 > - **macOS:** right-click the app, then choose **Open**.
 
+> **Antivirus false positives:** the Windows installer is an unsigned NSIS installer, so some antivirus products (notably Norton) may flag it as `NSIS`/`NSIS/Injector`. Each release includes a `SHA256SUMS-Windows.txt` file — verify the installer hash against it, then in Norton open **Security → History**, select the detection and choose **Allow/Exclude**. If the in-app updater's temporary download is blocked, pause Auto-Protect briefly, let the update finish, then turn it back on. Please also submit the file to Norton as a false positive.
+
+> **LAN sync on Windows:** Oceanic no longer changes Windows Firewall during install. If pairing fails, allow the app through the firewall for **Private** networks (TCP 47823).
+
 Oceanic updates itself when a new version is out. You can see what's new on the **[Releases page](https://github.com/MystiTheDev/oceanic/releases)**.
 
 ### System requirements
@@ -177,7 +181,7 @@ Yes. Pick a smaller local model, or connect a cloud provider with your own API k
 <details>
 <summary><b>Why does Windows or macOS warn me when I install it?</b></summary>
 
-Oceanic isn't code-signed yet. Signing costs money every year, and Oceanic is free. See the steps under **Download** to open it anyway.
+Oceanic isn't code-signed yet. Signing costs money every year, and Oceanic is free. See the steps under **Download** to open it anyway. If Norton flagged the installer as `NSIS`/`NSIS/Injector`, verify it with `SHA256SUMS-Windows.txt` on the release page, then allow it from **Security → History** and submit it as a false positive.
 </details>
 
 <details>

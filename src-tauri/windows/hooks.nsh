@@ -26,12 +26,6 @@
   !insertmacro OCEANIC_WAIT_FOR_CLOSE
 !macroend
 
-; LAN sync: allow Oceanic's sync port (TCP 47823) on Private networks only.
-!macro NSIS_HOOK_POSTINSTALL
-  nsExec::Exec 'netsh advfirewall firewall delete rule name="Oceanic LAN sync"'
-  nsExec::Exec 'netsh advfirewall firewall add rule name="Oceanic LAN sync" dir=in action=allow protocol=TCP localport=47823 profile=private program="$INSTDIR\${MAINBINARYNAME}.exe"'
-!macroend
-
-!macro NSIS_HOOK_POSTUNINSTALL
-  nsExec::Exec 'netsh advfirewall firewall delete rule name="Oceanic LAN sync"'
-!macroend
+; LAN sync (TCP 47823) is no longer opened by the installer: netsh in an
+; unsigned NSIS installer is a common antivirus false-positive trigger.
+; If pairing fails, allow Oceanic through Windows Firewall for Private networks.
