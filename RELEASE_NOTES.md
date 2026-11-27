@@ -1,3 +1,24 @@
+# 🌊 Oceanic v3.3.0: Smarter sync, calmer Nerida and mobile polish
+
+## 🖥️ Desktop
+
+- 🔁 LAN sync now runs automatically every 2 minutes when changes are waiting, so paired devices stay current without pressing **Sync now**.
+- 🟢 A new phone+PC badge on every note shows sync state: green synced, amber waiting/syncing, red problem, grey offline or unpaired. Tap it for details.
+- ⚡ Nerida waits for slow models before declaring a timeout, stops after 2 minutes of silence, and shows attached notes as chips on sent messages.
+- 🎨 Nerida's chat list and settings got a visual refresh; the graphics-card dropdown now opens above neighbouring cards.
+- 🛡️ Closing the startup splash from the taskbar now quits instead of opening the app. The unsigned installer is less likely to trip antivirus heuristics, and release checksums are published with each build.
+- 🔔 Timers notify on time-up, early stop, reset and dismiss, with a short tick and vibration on phones and tablets.
+
+## 📱 Mobile
+
+- 🧭 The bottom pill is decluttered: Apps moved into the animated profile popover, Trash has its own tab and full-screen view, and the same sync badge appears in the note bar.
+- 🔄 Phone and tablet share the improved sync and timer behavior.
+
+## 🐛 Fixes
+
+- Fixed the GPU dropdown being overlapped by other settings cards.
+- Fixed the splash screen reopening the app when closed from the taskbar.
+
 # 🌊 Oceanic v3.2.0: Timers, Atlas lenses and a calmer Nerida
 
 ## 🖥️ Desktop

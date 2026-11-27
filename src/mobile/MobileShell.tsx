@@ -27,7 +27,7 @@ import { startOfWeek } from "../lib/prefs";
 import { PropSheet, RowProps, fmtDue, setPropOpener, type PropKind } from "./MobileProps";
 import type { PageProperties as PageProps } from "../data/api";
 import { STATUSES } from "../lib/colors";
-import { useTabletUI } from "./formFactor";
+import { useLandscape, useTabletUI } from "./formFactor";
 import { buzz, useMobilePrefs, type HomeSection } from "./mobilePrefs";
 import type { AttachKind } from "./attach";
 import { TagChip } from "../components/PageProperties";
@@ -352,6 +352,8 @@ export function MobileShell(p: Props) {
     setTab(t);
   };
   const tablet = useTabletUI();
+  // Landscape: notes open full screen, like on the phone.
+  const landscape = useLandscape();
   // Hardware keyboard on tablets: Ctrl+N new page, Ctrl+K/F search, Esc closes the page.
   useEffect(() => {
     if (!tablet) return;
@@ -1033,10 +1035,10 @@ export function MobileShell(p: Props) {
   return (
     // "user": follows Android's Remove animations setting; Settings can force them off.
     <MotionConfig reducedMotion={prefs.reduceMotion ? "always" : "user"}>
-      <div className={`ocm-root${tablet ? ` ocm-tab ocm-${tablet} ocm-on-${tab}` : ""}`}>
+      <div className={`ocm-root${tablet ? ` ocm-tab ocm-${tablet} ocm-on-${tab}` : ""}${openPage ? " ocm-page-on" : ""}`}>
         {/* No initial={false} here: Motion would then block entrance animations of everything inside. */}
         {/* Tablets keep the list (and its side rail) mounted under the page. */}
-        <AnimatePresence>{tablet ? [list, page] : openPage ? page : list}</AnimatePresence>
+        <AnimatePresence>{tablet && !landscape ? [list, page] : openPage ? page : list}</AnimatePresence>
         {sheets}
         <AnimatePresence>
           {appsOpen && (

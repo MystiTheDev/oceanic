@@ -870,6 +870,12 @@ form.ocm-search:focus-within { border-color: rgba(var(--oc-ink), 0.22); backgrou
   .tablet :not(.ocm-calview) > .ocm-list > .ocm-row .ocm-row-preview { -webkit-line-clamp: 3; white-space: normal; }
   .tablet :not(.ocm-calview) > .ocm-list > .ocm-row .ocm-row-date { grid-column: 1 / -1; align-self: end; }
   .tablet .ocm-calview > .ocm-list { padding: 8px; border-radius: 24px; background: var(--oc-raised); border: 1px solid var(--ocm-line); align-self: start; }
+  /* Greeting banner full width; content below stays in its column. */
+  .tablet .ocm-homeview > .ocm-hero { width: 100vw; margin-inline: calc(50% - 50vw); }
+  .tablet .ocm-homeview > .ocm-hero .ocm-hero-row { justify-content: center; text-align: center; }
+  /* Open note takes the whole area (list unmounts under it). */
+  .ocm-split.ocm-page-on .ocm-page { left: var(--rail); box-shadow: -12px 0 32px rgb(0 0 0 / 0.35); border-left: 0; }
+  .ocm-split.ocm-page-on::after { content: none; }
 }
 .tablet .ocm-group { grid-column: 1 / -1; padding: 14px 4px 2px; }
 .tablet .ocm-cal-grid { gap: 0; }
