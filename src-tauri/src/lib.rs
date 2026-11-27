@@ -26,6 +26,10 @@ use tauri_plugin_notification::NotificationExt;
 /// splash watcher thread (spawned in setup) uses it to decide whether the
 /// splash page needs a forced dismissal.
 static SPLASH_READY: AtomicBool = AtomicBool::new(false);
+/// Set only when Oceanic itself hands over from the splash (reveal, close,
+/// tray-start or the failure fallback). A splash closed by the user never sets it.
+#[cfg(desktop)]
+static SPLASH_HANDOFF: AtomicBool = AtomicBool::new(false);
 
 const SPLASH_FINISH_JS: &str =
     "window.__oceanicFinish = true; window.dispatchEvent(new Event('oceanic:finish'))";
@@ -48,6 +52,8 @@ fn finish_splash(app: AppHandle) {
 /// the app window.
 #[tauri::command]
 fn close_splash(app: AppHandle) {
+    #[cfg(desktop)]
+    SPLASH_HANDOFF.store(true, Ordering::Relaxed);
     if let Some(splash) = app.get_webview_window("splash") {
         let _ = splash.close();
     }
@@ -58,6 +64,8 @@ fn close_splash(app: AppHandle) {
 /// the splash, kept on top, finishes and then closes via `close_splash`.
 #[tauri::command]
 fn reveal_main(app: AppHandle) {
+    #[cfg(desktop)]
+    SPLASH_HANDOFF.store(true, Ordering::Relaxed);
     #[cfg(mobile)]
     show_main(&app);
     #[cfg(desktop)]
@@ -817,6 +825,7 @@ pub fn run() {
             // Launched at login: stay in the tray unless "Start minimized" was turned off.
             if std::env::args().any(|a| a == "--tray") && !start_shown_file(app.handle()).is_some_and(|f| f.exists()) {
                 TRAY_START.store(true, Ordering::Relaxed);
+                SPLASH_HANDOFF.store(true, Ordering::Relaxed);
                 if let Some(splash) = app.get_webview_window("splash") {
                     let _ = splash.close();
                 }
@@ -845,6 +854,7 @@ pub fn run() {
                             let _ = splash.eval(SPLASH_FINISH_JS);
                             std::thread::sleep(std::time::Duration::from_millis(700));
                         }
+                        SPLASH_HANDOFF.store(true, Ordering::Relaxed);
                         if let Some(splash) = handle.get_webview_window("splash") {
                             let _ = splash.close();
                         }
@@ -852,7 +862,13 @@ pub fn run() {
                     }
                     std::thread::sleep(std::time::Duration::from_millis(250));
                 }
-                show_main(&handle);
+                // A splash closed by the user (taskbar X) never handed off: quit rather
+                // than revealing a main window the user never asked to open.
+                if SPLASH_HANDOFF.load(Ordering::Relaxed) {
+                    show_main(&handle);
+                } else {
+                    handle.exit(0);
+                }
             });
             Ok(())
         })
